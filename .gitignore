@@ -1,0 +1,105 @@
+# ====================================================================
+# N.O.V.A — .gitignore
+# Backend: Python / FastAPI | Frontend: Next.js / React | DB: PostgreSQL
+# ====================================================================
+
+# --- Environment & Secrets (PALING PENTING — jangan pernah ke-push) ---
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+credentials.json
+secrets/
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+venv/
+env/
+ENV/
+.venv/
+backend/venv/
+backend/.venv/
+
+# Pytest / coverage
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.hypothesis/
+coverage.xml
+*.cover
+
+# Type checkers / linters cache
+.mypy_cache/
+.ruff_cache/
+.pytype/
+
+# --- FastAPI / Uvicorn ---
+*.log
+logs/
+
+# --- Node / Next.js / React (frontend) ---
+node_modules/
+.next/
+out/
+frontend/node_modules/
+frontend/.next/
+.npm/
+.pnpm-store/
+yarn-error.log
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+
+# --- Database ---
+*.sqlite3
+*.db
+pgdata/
+postgres-data/
+
+# --- Docker ---
+*.env.docker
+docker-compose.override.yml
+
+# --- IDE / Editor ---
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# --- OS files ---
+.DS_Store
+desktop.ini
+
+# --- Testing / Lab environment artifacts ---
+*.pcap
+test-results/
+
+# --- Audit / execution history dumps (jangan ikut ter-push kalau ada dump lokal) ---
+audit_logs/
+*.dump
