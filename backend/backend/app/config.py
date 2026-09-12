@@ -50,20 +50,7 @@ class Settings(BaseSettings):
 
     # --- Model behavior ---
     openrouter_request_timeout_seconds: float = 30.0
-    # Default dinaikkan dari 1024 -> 4096: reasoning model (mis. nemotron)
-    # menghabiskan token budget untuk reasoning sebelum menulis jawaban
-    # akhir, sehingga 1024 sering membuat content kosong dan dianggap
-    # gagal. Evidence: NOVA_Phase2_OpenRouter_Integration_Log.txt Bug #2.
-    openrouter_max_tokens: int = 4096
-
-    # --- Linux Executor (SSH) — Milestone 4 ---
-    # Wajib diisi di .env, tidak ada default — sesuai prinsip fail-safe
-    # (aplikasi menolak start daripada diam-diam pakai target kosong).
-    linux_ssh_host: str
-    linux_ssh_port: int = 22
-    linux_ssh_username: str = "nova"
-    linux_ssh_private_key_path: str
-    linux_ssh_connect_timeout_seconds: float = 10.0
+    openrouter_max_tokens: int = 1024
 
     model_config = SettingsConfigDict(
         env_file=".env",
