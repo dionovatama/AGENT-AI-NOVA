@@ -27,6 +27,7 @@ from app.tools.linux import (
     service_status_tool,
     process_status_tool,
     docker_status_tool,
+    log_check_tool,
 )
 
 app = FastAPI(
@@ -47,6 +48,7 @@ tool_manager.register(memory_info_tool)
 tool_manager.register(service_status_tool)
 tool_manager.register(process_status_tool)
 tool_manager.register(docker_status_tool)
+tool_manager.register(log_check_tool)
 
 
 @app.get("/health", tags=["system"])

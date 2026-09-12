@@ -121,16 +121,69 @@ system_info_tool = ToolDefinition(
 # linux.network_info
 # ============================================================
 
+import re
+
 class NetworkInfoInput(BaseModel):
     """Tidak butuh argumen — membaca seluruh interface pada target."""
 
 
+class NetworkInterfaceEntry(BaseModel):
+    name: str
+    ip: str | None = None
+    state: str
+
+
 class NetworkInfoOutput(BaseModel):
     success: bool
-    interfaces_raw: str | None = None
+    interfaces: list[NetworkInterfaceEntry] = []
     default_route: str | None = None
     dns_servers: list[str] = []
     error: str | None = None
+
+
+# Header interface: "2: enp0s3: <BROADCAST,...,UP,...> mtu 1500 ... state UP ..."
+# Menangkap nama interface (grup 1) dan nilai setelah kata "state" (grup 2).
+# Nama bisa mengandung "@ifN" (mis. veth pair) — tetap disimpan apa adanya
+# karena itu informasi valid, bukan noise.
+_IFACE_HEADER_RE = re.compile(r"^\d+:\s+(\S+):\s+<[^>]*>.*\bstate\s+(\S+)")
+# Baris "inet 10.0.2.15/24 brd ... scope global ..." — ambil token setelah "inet".
+_INET_RE = re.compile(r"^\s*inet\s+(\S+)")
+
+
+def _parse_interfaces(raw: str) -> list[NetworkInterfaceEntry]:
+    """
+    Parse output `ip -4 addr show` menjadi list terstruktur per interface.
+
+    Murni fungsi string -> data (tidak menyentuh SSH), sehingga bisa
+    diuji langsung dengan data contoh tanpa perlu VM aktif.
+    """
+    interfaces: list[NetworkInterfaceEntry] = []
+    current_name: str | None = None
+    current_state: str | None = None
+    current_ip: str | None = None
+
+    def _flush() -> None:
+        if current_name is not None:
+            interfaces.append(NetworkInterfaceEntry(
+                name=current_name, ip=current_ip, state=current_state or "UNKNOWN",
+            ))
+
+    for line in raw.splitlines():
+        header_match = _IFACE_HEADER_RE.match(line)
+        if header_match:
+            _flush()
+            current_name = header_match.group(1)
+            current_state = header_match.group(2)
+            current_ip = None
+            continue
+
+        if current_name is not None and current_ip is None:
+            inet_match = _INET_RE.match(line)
+            if inet_match:
+                current_ip = inet_match.group(1)
+
+    _flush()
+    return interfaces
 
 
 async def execute_network_info(input: NetworkInfoInput) -> NetworkInfoOutput:
@@ -154,7 +207,7 @@ async def execute_network_info(input: NetworkInfoInput) -> NetworkInfoOutput:
 
         return NetworkInfoOutput(
             success=True,
-            interfaces_raw=interfaces_raw,
+            interfaces=_parse_interfaces(interfaces_raw),
             default_route=default_route or None,
             dns_servers=dns_servers,
         )
@@ -371,6 +424,126 @@ service_status_tool = ToolDefinition(
     executor=execute_service_status,
 )
 
+# ============================================================
+# linux.log_check
+# ============================================================
+#
+# Sengaja DIBATASI ke systemd journal per-service (journalctl -u),
+# BUKAN pembacaan file log bebas (mis. `cat /var/log/whatever`).
+# Alasan (PRD section 30 — Least Privilege, section 40 — Non-Goals MVP
+# "unrestricted shell"):
+#   - Kalau tool ini menerima path file bebas, dia jadi arbitrary file
+#     read primitive (bisa dipakai baca /etc/shadow, private key, dst),
+#     bukan sekadar "log check".
+#   - journalctl -u membatasi bacaan HANYA ke unit systemd yang memang
+#     ada, dan service_name divalidasi whitelist yang SAMA dengan
+#     linux.service_status (sudah teruji aman dari command injection —
+#     lihat test_linux_injection.py).
+#   - `lines` di-cap keras (maks 200) supaya tidak jadi vector DoS lewat
+#     dump log raksasa ke response API / LLM context.
+
+class LogCheckInput(BaseModel):
+    service_name: str = Field(
+        ...,
+        pattern=_SERVICE_NAME_PATTERN,
+        max_length=128,
+        description="Nama systemd unit yang log-nya ingin dibaca, mis. 'ssh' atau 'docker'.",
+    )
+    lines: int = Field(
+        default=50,
+        ge=1,
+        le=200,
+        description="Jumlah baris log terakhir yang diambil (maks 200 — cap keras anti-DoS).",
+    )
+
+
+class LogCheckOutput(BaseModel):
+    success: bool
+    service_name: str
+    lines_requested: int
+    log_lines: list[str] = []
+    unit_found: bool | None = None
+    error: str | None = None
+
+
+# journalctl mencetak baris ini ke stdout (bukan stderr) kalau unit
+# tidak dikenal SAMA SEKALI oleh systemd — beda dengan unit yang
+# dikenal tapi belum pernah punya log entry apa pun.
+_NO_ENTRIES_MARKER = "-- No entries --"
+
+
+async def execute_log_check(input: LogCheckInput) -> LogCheckOutput:
+    try:
+        async with _open_connection() as conn:
+            result = await conn.run(
+                f"journalctl -u {input.service_name} -n {input.lines} --no-pager --output=short-iso",
+                check=False,
+            )
+
+        if result.exit_status != 0:
+            stderr_lower = (result.stderr or "").lower()
+            unit_not_found = "no such" in stderr_lower or (
+                "unit" in stderr_lower and "not" in stderr_lower
+            )
+            if unit_not_found:
+                # Unit memang tidak ada — kondisi valid, bukan kegagalan tool.
+                return LogCheckOutput(
+                    success=True,
+                    service_name=input.service_name,
+                    lines_requested=input.lines,
+                    log_lines=[],
+                    unit_found=False,
+                )
+            return LogCheckOutput(
+                success=False,
+                service_name=input.service_name,
+                lines_requested=input.lines,
+                error=f"journalctl gagal: {result.stderr.strip()}",
+            )
+
+        raw_lines = result.stdout.strip().splitlines()
+        # Unit valid tapi belum pernah ada log entry.
+        if raw_lines == [_NO_ENTRIES_MARKER]:
+            return LogCheckOutput(
+                success=True,
+                service_name=input.service_name,
+                lines_requested=input.lines,
+                log_lines=[],
+                unit_found=True,
+            )
+
+        return LogCheckOutput(
+            success=True,
+            service_name=input.service_name,
+            lines_requested=input.lines,
+            log_lines=raw_lines,
+            unit_found=True,
+        )
+    except (asyncssh.Error, OSError) as exc:
+        return LogCheckOutput(
+            success=False,
+            service_name=input.service_name,
+            lines_requested=input.lines,
+            error=f"SSH error: {exc}",
+        )
+
+
+log_check_tool = ToolDefinition(
+    name="linux.log_check",
+    description=(
+        "Membaca N baris terakhir dari systemd journal untuk sebuah "
+        "service tertentu (bukan file log bebas — dibatasi ke journalctl -u)."
+    ),
+    input_model=LogCheckInput,
+    output_model=LogCheckOutput,
+    permission_level=PermissionLevel.READ,
+    risk_level=RiskLevel.LOW,
+    supported_platforms=["linux"],
+    timeout_seconds=15.0,
+    logging_policy=LoggingPolicy.RESULT_ONLY,
+    executor=execute_log_check,
+)
+
 
 # ============================================================
 # linux.process_status
@@ -399,6 +572,20 @@ class ProcessStatusOutput(BaseModel):
     error: str | None = None
 
 
+def _is_self_measurement(command: str) -> bool:
+    """
+    True jika command adalah pemanggilan 'ps aux' itu sendiri.
+
+    %CPU dari `ps` dihitung sebagai rata-rata sejak proses itu start —
+    proses yang baru saja dijalankan (perintah pengukurnya sendiri) bisa
+    muncul dengan angka tinggi yang menyesatkan, padahal bukan representasi
+    beban sistem nyata. Tanpa filter ini, LLM yang membaca hasil tool ini
+    untuk diagnosis "kenapa server lambat" bisa salah menyimpulkan bahwa
+    'ps aux' adalah penyebab beban tinggi.
+    """
+    return "ps aux" in command.lower()
+
+
 async def execute_process_status(input: ProcessStatusInput) -> ProcessStatusOutput:
     try:
         async with _open_connection() as conn:
@@ -413,6 +600,9 @@ async def execute_process_status(input: ProcessStatusInput) -> ProcessStatusOutp
                 continue
             user, pid, cpu, mem = parts[0], parts[1], parts[2], parts[3]
             command = parts[10]
+
+            if _is_self_measurement(command):
+                continue
 
             if input.name_filter and input.name_filter.lower() not in command.lower():
                 continue
