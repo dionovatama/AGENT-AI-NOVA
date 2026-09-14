@@ -1,0 +1,56 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    @apply border-base-700;
+  }
+  ::selection {
+    background-color: theme("colors.signal.teal");
+    color: theme("colors.base.950");
+  }
+  :focus-visible {
+    outline: 2px solid theme("colors.signal.teal");
+    outline-offset: 2px;
+  }
+}
+
+@layer components {
+  /* Panel: satuan visual utama console. Radius kecil (6px), bukan
+     rounded-2xl generik — ini alat kerja, bukan kartu marketing. */
+  .panel {
+    @apply bg-base-800 border border-base-700 rounded-md;
+  }
+
+  .panel-header {
+    @apply flex items-center justify-between px-4 py-3 border-b border-base-700;
+  }
+
+  .btn-primary {
+    @apply inline-flex items-center gap-2 rounded-sm bg-signal-teal px-3.5 py-2
+      text-sm font-medium text-base-950 transition-colors
+      hover:bg-signal-teal/90 disabled:opacity-40 disabled:pointer-events-none;
+  }
+
+  .btn-secondary {
+    @apply inline-flex items-center gap-2 rounded-sm border border-base-600
+      bg-base-800 px-3.5 py-2 text-sm font-medium text-ink-100 transition-colors
+      hover:border-signal-teal/60 disabled:opacity-40 disabled:pointer-events-none;
+  }
+
+  .btn-danger {
+    @apply inline-flex items-center gap-2 rounded-sm bg-signal-rose px-3.5 py-2
+      text-sm font-medium text-base-950 transition-colors hover:bg-signal-rose/90;
+  }
+
+  .field-input {
+    @apply w-full rounded-sm border border-base-600 bg-base-900 px-3 py-2 text-sm
+      text-ink-100 placeholder:text-ink-500
+      focus:border-signal-teal focus:outline-none;
+  }
+
+  .field-label {
+    @apply mb-1.5 block text-[13px] text-ink-300;
+  }
+}

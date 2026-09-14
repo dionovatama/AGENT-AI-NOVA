@@ -14,6 +14,7 @@ if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
 from app.api import auth, chat, tools
@@ -34,6 +35,17 @@ app = FastAPI(
     title=settings.app_name,
     description="Nexus Operation Virtual Assistant — Backend API",
     version="0.4.0-milestone4",
+)
+
+# CORS — diperlukan agar console frontend (Next.js, localhost:3000) bisa
+# memanggil backend ini dari browser. Tanpa ini browser menolak request
+# lintas-origin sebelum sempat sampai ke endpoint mana pun.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 app.include_router(auth.router)
