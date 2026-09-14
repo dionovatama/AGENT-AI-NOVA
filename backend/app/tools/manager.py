@@ -67,6 +67,15 @@ class ToolManager:
     def list_tools(self) -> list[str]:
         return list(self._registry.keys())
 
+    def get_tool(self, name: str) -> ToolDefinition | None:
+        """Lookup read-only satu ToolDefinition, atau None kalau tidak terdaftar.
+
+        Dipakai oleh caller yang butuh metadata tool (mis. input_model
+        untuk membangun function-calling schema di app/ai/tool_calling.py)
+        tanpa perlu mengakses _registry secara langsung.
+        """
+        return self._registry.get(name)
+
     async def execute(self, request: ToolRequest) -> ToolResult:
         start = time.perf_counter()
 

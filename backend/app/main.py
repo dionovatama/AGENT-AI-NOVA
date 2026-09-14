@@ -30,6 +30,7 @@ from app.tools.linux import (
     docker_status_tool,
     log_check_tool,
 )
+from app.tools.web import web_search_tool, web_read_page_tool
 
 app = FastAPI(
     title=settings.app_name,
@@ -61,6 +62,8 @@ tool_manager.register(service_status_tool)
 tool_manager.register(process_status_tool)
 tool_manager.register(docker_status_tool)
 tool_manager.register(log_check_tool)
+tool_manager.register(web_search_tool)
+tool_manager.register(web_read_page_tool)
 
 
 @app.get("/health", tags=["system"])

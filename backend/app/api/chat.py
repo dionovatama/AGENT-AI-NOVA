@@ -16,6 +16,7 @@ from app.database.models import User
 from app.security.dependencies import get_current_user
 from app.ai.model_router import TaskCategory
 from app.ai.openrouter import ChatMessage, ChatCompletionResult, OpenRouterError, get_completion
+from app.ai.tool_calling import ChatWithToolsResult, get_completion_with_tools
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
@@ -23,6 +24,12 @@ router = APIRouter(prefix="/chat", tags=["chat"])
 class ChatRequest(BaseModel):
     message: str = Field(min_length=1, max_length=8000)
     category: TaskCategory = TaskCategory.GENERAL_CHAT
+    # Default False: perilaku endpoint ini TIDAK berubah dari Milestone 2
+    # kecuali user secara eksplisit minta tool-calling diaktifkan. Saat
+    # True, hanya tool READ yang ada di allowlist kategori (lihat
+    # app/ai/tool_calling.py) yang bisa dipanggil model — mis. web.search
+    # untuk category=general_chat.
+    use_tools: bool = False
 
 
 @router.post("/completions", response_model=ChatCompletionResult)
@@ -34,8 +41,28 @@ async def chat_completions(
     Kirim satu pesan ke NOVA AI Gateway.
 
     Membutuhkan Bearer token (dari /auth/login). Endpoint ini murni
-    reasoning — tidak ada tool execution, tidak ada akses sistem.
+    reasoning — tidak ada tool execution, tidak ada akses sistem —
+    KECUALI payload.use_tools=True (lihat docstring ChatRequest.use_tools).
     """
+    if payload.use_tools:
+        try:
+            tools_result = await get_completion_with_tools(payload.message, payload.category)
+        except OpenRouterError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=f"AI Gateway gagal memproses request: {exc}",
+            )
+        # Dipetakan ke ChatCompletionResult (kontrak response lama) supaya
+        # frontend yang sudah ada tidak perlu tahu field tools_used —
+        # endpoint terpisah bisa ditambah belakangan kalau frontend perlu
+        # menampilkan tool apa saja yang dipakai.
+        return ChatCompletionResult(
+            content=tools_result.content,
+            model_used=tools_result.model_used,
+            category=tools_result.category,
+            used_fallback=tools_result.used_fallback,
+        )
+
     messages = [ChatMessage(role="user", content=payload.message)]
 
     try:
