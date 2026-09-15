@@ -25,6 +25,7 @@ export default function ToolsPage() {
 
   const networkTools = known.filter((t) => t.platform === "network");
   const linuxTools = known.filter((t) => t.platform === "linux");
+  const generalTools = known.filter((t) => t.platform === "general");
 
   return (
     <div className="mx-auto max-w-4xl">
@@ -64,6 +65,17 @@ export default function ToolsPage() {
           <h2 className="mb-2.5 text-[13px] text-ink-500">Linux Executor (SSH)</h2>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             {linuxTools.map((tool) => (
+              <ToolCard key={tool.name} tool={tool} onRun={setActiveTool} />
+            ))}
+          </div>
+        </section>
+      )}
+
+      {generalTools.length > 0 && (
+        <section className="mb-8">
+          <h2 className="mb-2.5 text-[13px] text-ink-500">General / Web</h2>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            {generalTools.map((tool) => (
               <ToolCard key={tool.name} tool={tool} onRun={setActiveTool} />
             ))}
           </div>

@@ -5,12 +5,16 @@ import { ChatWindow } from "@/components/chat/ChatWindow";
 import { CategoryPicker } from "@/components/chat/CategoryPicker";
 import { novaApi, NovaApiError } from "@/lib/api";
 import type { ChatMessage, TaskCategory } from "@/lib/types";
+import { TOOL_CALLING_CATEGORIES } from "@/lib/types";
 
 export default function ChatPage() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [category, setCategory] = useState<TaskCategory>("general_chat");
+  const [useTools, setUseTools] = useState(false);
   const [sending, setSending] = useState(false);
+
+  const toolsSupported = TOOL_CALLING_CATEGORIES.includes(category);
 
   async function handleSend(e: React.FormEvent) {
     e.preventDefault();
@@ -22,7 +26,7 @@ export default function ChatPage() {
     setSending(true);
 
     try {
-      const result = await novaApi.chatCompletion(text, category);
+      const result = await novaApi.chatCompletion(text, category, toolsSupported && useTools);
       setMessages((prev) => [
         ...prev,
         {
@@ -52,8 +56,18 @@ export default function ChatPage() {
       </div>
 
       <form onSubmit={handleSend} className="panel p-3">
-        <div className="mb-2.5">
+        <div className="mb-2.5 flex items-center justify-between">
           <CategoryPicker value={category} onChange={setCategory} />
+          {toolsSupported && (
+            <label className="flex shrink-0 items-center gap-1.5 pl-2 text-[12px] text-ink-500">
+              <input
+                type="checkbox"
+                checked={useTools}
+                onChange={(e) => setUseTools(e.target.checked)}
+              />
+              gunakan web.search / web.read_page
+            </label>
+          )}
         </div>
         <div className="flex items-end gap-2">
           <textarea
