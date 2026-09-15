@@ -82,10 +82,19 @@ class Settings(BaseSettings):
     # user awam tanpa sadar pilih model berbayar mahal atau model yang
     # tool-calling-nya tidak reliable.
     #
-    # nex-agi/nex-n2-pro:free dipilih karena terdokumentasi resmi
-    # mendukung function calling (bukan dugaan) per API reference
-    # OpenRouter, konteks 262K, gratis (kuota mingguan).
-    tool_calling_model: str = "nex-agi/nex-n2-pro:free"
+    # nex-agi/nex-n2-pro:free (pilihan semula) mulai 404 "No endpoints
+    # found" -- provider gratisnya sudah ditarik OpenRouter. Diganti ke
+    # generasi penerusnya, nex-agi/nex-n2.5-mini:free, yang FAQ resmi
+    # halaman modelnya eksplisit mengonfirmasi dukungan tools/tool_choice
+    # (bukan dugaan), konteks 262K.
+    #
+    # CATATAN: pengumuman resmi OpenRouter menyebut model N2.5 ini
+    # "free for a limited time" -- artinya berpotensi ditarik/dibayar
+    # lagi seperti nex-n2-pro:free. Kalau ini 404 lagi di kemudian hari,
+    # itu BUKAN bug kode -- cek dulu status model di openrouter.ai
+    # sebelum menyalahkan tool_calling.py. Jaring pengaman untuk kasus
+    # ini sudah ada lewat tool_calling_fallback_model di bawah.
+    tool_calling_model: str = "nex-agi/nex-n2.5-mini:free"
 
     # Fallback KHUSUS tool-calling: openrouter/free adalah router yang
     # otomatis memfilter model yang mendukung tool-calling -- fallback
