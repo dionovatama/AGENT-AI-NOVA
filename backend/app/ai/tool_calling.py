@@ -46,7 +46,8 @@ import logging
 
 from pydantic import BaseModel
 
-from app.ai.model_router import TaskCategory, get_fallback_model, get_primary_model
+from app.ai.model_router import TaskCategory
+from app.config import settings
 from app.ai.openrouter import ChatMessage, OpenRouterError, _call_openrouter_raw
 from app.tools.manager import ToolManagerError, tool_manager
 from app.tools.schemas import PermissionLevel, ToolRequest
@@ -223,8 +224,24 @@ async def get_completion_with_tools(
     system_prompt: str | None = None,
 ) -> ChatWithToolsResult:
     """
-    Entry point utama untuk chat DENGAN tool-calling. Sama seperti
-    get_completion() (Milestone 2) dari sisi fallback (Primary -> gagal
+    Entry point utama untuk chat DENGAN tool-calling.
+
+    PENTING -- beda dari get_completion() (Milestone 2): model yang
+    dipakai di sini SENGAJA BUKAN get_primary_model(category)/model
+    chat biasa. Model chat umum (mis. nvidia/nemotron-3.5-lightning:free
+    untuk general_chat) terbukti TIDAK reliable untuk function-calling --
+    diam-diam mengabaikan parameter 'tools' dan menjawab dari memori
+    sendiri, alih-alih benar-benar memanggil tool (evidence: NOVA
+    menjawab tanggal pelantikan presiden yang salah padahal web.search
+    seharusnya mengembalikan tanggal yang benar).
+
+    settings.tool_calling_model / settings.tool_calling_fallback_model
+    dipilih backend secara eksplisit karena TERBUKTI mendukung
+    function-calling (bukan asumsi) -- bukan dipilih user, konsisten
+    dengan Core Principle bahwa backend yang berwenang menentukan
+    kapabilitas eksekusi, bukan LLM/user.
+
+    Sama seperti get_completion() dari sisi fallback (Primary -> gagal
     -> Fallback -> gagal -> Safe Error), tapi setiap model boleh
     melakukan beberapa putaran tool call sebelum menjawab akhir.
     """
@@ -235,7 +252,7 @@ async def get_completion_with_tools(
 
     tool_schemas = _build_tool_schemas(category)
 
-    primary_model = get_primary_model(category)
+    primary_model = settings.tool_calling_model
     try:
         content, tools_used = await _run_with_model(list(messages), primary_model, tool_schemas)
         return ChatWithToolsResult(
@@ -247,14 +264,14 @@ async def get_completion_with_tools(
         )
     except OpenRouterError as primary_error:
         logger.warning(
-            "Model primary '%s' gagal (tool-calling) untuk kategori '%s': %s. Mencoba fallback.",
+            "Model tool-calling primary '%s' gagal untuk kategori '%s': %s. Mencoba fallback.",
             primary_model, category.value, primary_error,
         )
 
-    fallback_model = get_fallback_model(category)
+    fallback_model = settings.tool_calling_fallback_model
     if fallback_model == primary_model:
         raise OpenRouterError(
-            f"Model primary '{primary_model}' gagal dan fallback model sama "
+            f"Model tool-calling primary '{primary_model}' gagal dan fallback model sama "
             f"dengan primary — tidak ada opsi lain."
         )
 
@@ -269,10 +286,10 @@ async def get_completion_with_tools(
         )
     except OpenRouterError as fallback_error:
         logger.error(
-            "Model fallback '%s' juga gagal (tool-calling) untuk kategori '%s': %s",
+            "Model tool-calling fallback '%s' juga gagal untuk kategori '%s': %s",
             fallback_model, category.value, fallback_error,
         )
         raise OpenRouterError(
             f"Primary ('{primary_model}') dan fallback ('{fallback_model}') "
-            f"model sama-sama gagal (tool-calling) untuk kategori '{category.value}'."
+            f"model tool-calling sama-sama gagal untuk kategori '{category.value}'."
         ) from fallback_error

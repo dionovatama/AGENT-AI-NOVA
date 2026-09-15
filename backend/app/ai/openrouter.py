@@ -99,6 +99,14 @@ async def _post_chat_completion(
         # sebagian provider menolak field asing bernilai null.
         "messages": [m.model_dump(exclude_none=True) for m in messages],
         "max_tokens": settings.openrouter_max_tokens,
+        # Batasi porsi max_tokens yang dipakai untuk reasoning tersembunyi
+        # (dokumentasi resmi OpenRouter: reasoning.effort). Tanpa ini,
+        # reasoning model (mis. nemotron) bisa menghabiskan sebagian
+        # besar max_tokens untuk "berpikir" sebelum menulis jawaban --
+        # makin parah saat tool-calling aktif karena konteks yang perlu
+        # dirangkum lebih besar. Evidence: Phase 2 Bug #2, kambuh di
+        # jalur tool-calling dengan gejala jawaban terpotong 1-2 kata.
+        "reasoning": {"effort": settings.openrouter_reasoning_effort},
     }
     if tools:
         payload["tools"] = tools
