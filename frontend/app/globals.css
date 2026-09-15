@@ -14,6 +14,19 @@
     outline: 2px solid theme("colors.signal.teal");
     outline-offset: 2px;
   }
+
+  /* Dipakai HudRing.tsx — didefinisikan manual (bukan andalkan
+     animate-spin bawaan Tailwind) karena arbitrary-value duration
+     (animate-[nova-hud-spin_10s_linear_infinite]) butuh nama keyframe
+     yang benar-benar ter-generate, bukan cuma dirujuk namanya. */
+  @keyframes nova-hud-spin {
+    from {
+      transform: rotate(0deg);
+    }
+    to {
+      transform: rotate(360deg);
+    }
+  }
 }
 
 @layer components {
