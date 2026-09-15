@@ -47,6 +47,13 @@ export interface ChatCompletionResult {
   model_used: string;
   category: TaskCategory;
   used_fallback: boolean;
+  // Additive -- kosong untuk jalur chat biasa (use_tools=false). Diisi
+  // backend hanya kalau tool-calling benar-benar memanggil tool (lihat
+  // app/ai/tool_calling.py). Dipakai UI untuk menunjukkan tool APA
+  // yang benar-benar jalan, bukan menebak dari isi jawaban model --
+  // penting karena model kadang menjawab dari memori sendiri meski
+  // use_tools=true (lihat catatan di ChatWindow.tsx).
+  tools_used: string[];
 }
 
 export interface ChatMessage {
@@ -55,6 +62,12 @@ export interface ChatMessage {
   meta?: {
     model_used?: string;
     used_fallback?: boolean;
+    tools_used?: string[];
+    // True kalau request ini dikirim dengan use_tools=true (checkbox
+    // "gunakan web.search" dicentang) -- dipakai ChatWindow untuk
+    // membedakan "memang tidak ditawarkan tool" vs "ditawarkan tapi
+    // model tidak memanggilnya sama sekali".
+    tools_offered?: boolean;
     error?: string;
   };
 }

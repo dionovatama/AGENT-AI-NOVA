@@ -65,6 +65,13 @@ class ChatCompletionResult(BaseModel):
     model_used: str
     category: TaskCategory
     used_fallback: bool
+    # Additive, default [] -- jalur chat biasa (Milestone 2, use_tools=False)
+    # selalu kosong. Diisi hanya oleh jalur tool-calling (chat.py, saat
+    # use_tools=True) supaya frontend bisa menampilkan tool apa saja yang
+    # BENAR-BENAR dipanggil, bukan menebak dari isi jawaban. Field baru yang
+    # additive dengan default aman untuk backward compatibility -- client
+    # lama yang belum tahu field ini cukup mengabaikannya.
+    tools_used: list[str] = []
 
     # 'model_used' bentrok dengan reserved prefix Pydantic v2 (model_dump,
     # model_validate, dst). protected_namespaces=() menonaktifkan proteksi

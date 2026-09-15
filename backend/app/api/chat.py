@@ -52,15 +52,16 @@ async def chat_completions(
                 status_code=status.HTTP_502_BAD_GATEWAY,
                 detail=f"AI Gateway gagal memproses request: {exc}",
             )
-        # Dipetakan ke ChatCompletionResult (kontrak response lama) supaya
-        # frontend yang sudah ada tidak perlu tahu field tools_used —
-        # endpoint terpisah bisa ditambah belakangan kalau frontend perlu
-        # menampilkan tool apa saja yang dipakai.
+        # Dipetakan ke ChatCompletionResult (kontrak response lama) --
+        # sekarang termasuk tools_used (field additive) supaya frontend
+        # bisa menampilkan tool apa saja yang BENAR-BENAR dipanggil,
+        # bukan menebak dari isi jawaban model.
         return ChatCompletionResult(
             content=tools_result.content,
             model_used=tools_result.model_used,
             category=tools_result.category,
             used_fallback=tools_result.used_fallback,
+            tools_used=tools_result.tools_used,
         )
 
     messages = [ChatMessage(role="user", content=payload.message)]
