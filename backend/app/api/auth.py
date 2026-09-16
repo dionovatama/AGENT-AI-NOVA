@@ -1,5 +1,5 @@
 """
-Authentication endpoints — register & login.
+Authentication endpoints — register, login, & current-user identity.
 
 Belum ada di sini (sengaja, sesuai scope Milestone 1):
 - RBAC / permission levels
@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 
 from app.database.session import get_db
 from app.database.models import User
+from app.security.dependencies import get_current_user
 from app.security.hashing import hash_password, verify_password, create_access_token
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -92,3 +93,16 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)):
 
     token = create_access_token(subject=str(user.id))
     return TokenResponse(access_token=token)
+
+
+@router.get("/me", response_model=UserResponse)
+def get_me(current_user: User = Depends(get_current_user)):
+    """
+    Identitas user yang sedang login lewat token Bearer.
+
+    Ditambahkan khusus supaya frontend (Sidebar profile row) bisa
+    menampilkan email asli, BUKAN placeholder hardcoded seperti
+    "sysadmin@nova" -- reuse penuh get_current_user yang sudah ada,
+    tidak ada logic auth baru.
+    """
+    return current_user

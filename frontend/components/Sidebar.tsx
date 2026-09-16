@@ -1,8 +1,11 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { clearToken } from "@/lib/auth";
+import { novaApi } from "@/lib/api";
+import { NovaOrb } from "@/components/NovaOrb";
 
 const NAV_ITEMS = [
   { href: "/chat", label: "Chat", live: true },
@@ -15,18 +18,46 @@ const NAV_ITEMS = [
 export function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
+  const [email, setEmail] = useState<string | null>(null);
+
+  useEffect(() => {
+    // Identitas asli lewat GET /auth/me -- kalau gagal (token expired,
+    // dll), profile row cukup disembunyikan, TIDAK diisi placeholder palsu.
+    novaApi
+      .me()
+      .then((res) => setEmail(res.email))
+      .catch(() => setEmail(null));
+  }, []);
+
+  function handleNewChat() {
+    // Reset percakapan beneran: chat_page.tsx membaca query param ini
+    // lewat useSearchParams() dan mengosongkan state messages saat
+    // nilainya berubah -- bukan tombol dekoratif yang diam saja kalau
+    // sudah berada di /chat.
+    router.push(`/chat?new=${Date.now()}`);
+  }
 
   return (
-    <aside className="flex h-screen w-56 shrink-0 flex-col border-r border-base-700 bg-base-950">
+    <aside className="flex h-screen w-60 shrink-0 flex-col border-r border-base-700 bg-base-950">
       <div className="flex items-center gap-2.5 px-4 py-5">
-        <img src="/brand/nova-icon.png" alt="" className="h-7 w-7 rounded-sm" />
+        <NovaOrb size={30} />
         <div>
           <p className="font-mono text-xs tracking-[0.3em] text-signal-teal">N·O·V·A</p>
           <p className="mt-0.5 text-[11px] text-ink-500">operator console</p>
         </div>
       </div>
 
-      <nav className="flex-1 px-2">
+      <div className="px-3">
+        <button
+          onClick={handleNewChat}
+          className="flex w-full items-center gap-2 rounded-sm border border-base-600 px-3 py-2 text-[13px] text-ink-100 transition-colors hover:border-signal-blue/50 hover:bg-base-800/60"
+        >
+          <span className="text-base leading-none">+</span>
+          New chat
+        </button>
+      </div>
+
+      <nav className="flex-1 px-2 pt-4">
         {NAV_ITEMS.map((item) => {
           const active = pathname?.startsWith(item.href);
           return (
@@ -49,6 +80,14 @@ export function Sidebar() {
       </nav>
 
       <div className="border-t border-base-700 p-3">
+        {email && (
+          <div className="mb-1.5 flex items-center gap-2.5 rounded-sm px-3 py-2">
+            <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-signal-blue/20 text-[11px] font-medium text-signal-blue">
+              {email.slice(0, 2).toUpperCase()}
+            </div>
+            <p className="truncate text-[12px] text-ink-300">{email}</p>
+          </div>
+        )}
         <button
           onClick={() => {
             clearToken();

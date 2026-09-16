@@ -69,6 +69,8 @@ export const novaApi = {
       false
     ),
 
+  me: () => request<{ id: string; email: string; is_active: boolean }>("/auth/me"),
+
   // useTools: kalau true, dikirim sebagai use_tools=true ke backend —
   // backend lalu boleh memanggil tool READ yang ada di allowlist
   // kategori ini (lihat _CATEGORY_TOOL_ALLOWLIST di
