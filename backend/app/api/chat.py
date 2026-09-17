@@ -46,7 +46,9 @@ async def chat_completions(
     """
     if payload.use_tools:
         try:
-            tools_result = await get_completion_with_tools(payload.message, payload.category)
+            tools_result = await get_completion_with_tools(
+                payload.message, payload.category, user=current_user
+            )
         except OpenRouterError as exc:
             raise HTTPException(
                 status_code=status.HTTP_502_BAD_GATEWAY,

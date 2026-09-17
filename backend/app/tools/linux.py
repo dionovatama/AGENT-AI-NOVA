@@ -31,13 +31,25 @@ from app.tools.schemas import (
 
 def _open_connection() -> asyncssh.connect:
     """Factory koneksi SSH — satu tempat kebenaran untuk parameter
-    koneksi, dipakai oleh semua tool linux.* di file ini."""
+    koneksi, dipakai oleh semua tool linux.* di file ini.
+
+    Host Key Verification (AUDIT FIX-01 Phase 9):
+    - Jika settings.linux_ssh_host_key_checking=False (default),
+      known_hosts=None digunakan untuk kompatibilitas lab development.
+    - Jika settings.linux_ssh_host_key_checking=True, strict host verification
+      diaktifkan menggunakan settings.linux_ssh_known_hosts_path (atau default system).
+    - Host key atau private key tidak pernah dibocorkan ke caller/LLM.
+    """
+    known_hosts = None
+    if settings.linux_ssh_host_key_checking:
+        known_hosts = settings.linux_ssh_known_hosts_path or ()
+
     return asyncssh.connect(
         host=settings.linux_ssh_host,
         port=settings.linux_ssh_port,
         username=settings.linux_ssh_username,
         client_keys=[settings.linux_ssh_private_key_path],
-        known_hosts=None,  # lihat CATATAN SKELETON di atas
+        known_hosts=known_hosts,
         connect_timeout=settings.linux_ssh_connect_timeout_seconds,
     )
 

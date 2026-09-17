@@ -17,8 +17,11 @@ import logging
 import time
 
 from pydantic import ValidationError
+from sqlalchemy.orm import Session
 
-from app.security.audit import log_tool_execution
+from app.database.models import User
+from app.security.audit import log_tool_execution, record_audit_event
+from app.security.authorization import AuthorizationError, authorize_tool_execution
 from app.security.permissions import PermissionDeniedError, check_permission
 from app.tools.schemas import RiskLevel, ToolDefinition, ToolRequest, ToolResult
 
@@ -76,7 +79,12 @@ class ToolManager:
         """
         return self._registry.get(name)
 
-    async def execute(self, request: ToolRequest) -> ToolResult:
+    async def execute(
+        self,
+        request: ToolRequest,
+        user: User | None = None,
+        db: Session | None = None,
+    ) -> ToolResult:
         start = time.perf_counter()
 
         # 1. Allowlist check.
@@ -96,14 +104,33 @@ class ToolManager:
             ) from exc
 
         # 3. Risk Assessment — untuk skeleton ini sebatas logging;
-        #    keputusan boleh/tidak tetap di tahap Permission (langkah 4).
+        #    keputusan boleh/tidak tetap di tahap Authorization & Permission (langkah 4).
         if tool.risk_level == RiskLevel.HIGH:
             logger.warning("Tool HIGH RISK dipanggil: %s", tool.name)
 
-        # 4. Permission — backend yang memutuskan, bukan LLM.
+        # 4. Authorization Boundary — identitas JWT wajib, backend yang memutuskan bukan LLM.
         try:
-            check_permission(tool.permission_level, request.confirmed)
-        except PermissionDeniedError as exc:
+            authorize_tool_execution(
+                user=user,
+                tool_name=tool.name,
+                permission=tool.permission_level,
+                confirmed=request.confirmed,
+                context={"tool": tool, "request": request},
+            )
+        except (AuthorizationError, PermissionDeniedError) as exc:
+            duration_ms = (time.perf_counter() - start) * 1000
+            record_audit_event(
+                action="tool.execute",
+                result_status="DENIED",
+                user_id=getattr(user, "id", None),
+                tool_name=tool.name,
+                permission=tool.permission_level.value,
+                risk_level=tool.risk_level.value,
+                request_metadata=request.arguments,
+                error_message=str(exc),
+                duration_ms=duration_ms,
+                db=db,
+            )
             self._log_failure(tool, request, str(exc), start)
             raise
 
@@ -114,10 +141,36 @@ class ToolManager:
             )
         except asyncio.TimeoutError as exc:
             error = f"Timeout setelah {tool.timeout_seconds}s"
+            duration_ms = (time.perf_counter() - start) * 1000
+            record_audit_event(
+                action="tool.execute",
+                result_status="TIMEOUT",
+                user_id=getattr(user, "id", None),
+                tool_name=tool.name,
+                permission=tool.permission_level.value,
+                risk_level=tool.risk_level.value,
+                request_metadata=request.arguments,
+                error_message=error,
+                duration_ms=duration_ms,
+                db=db,
+            )
             self._log_failure(tool, request, error, start)
             raise ToolTimeoutError(error) from exc
         except Exception as exc:  # noqa: BLE001 — executor pihak ketiga, semua exception ditangkap
             error = f"Executor error: {exc}"
+            duration_ms = (time.perf_counter() - start) * 1000
+            record_audit_event(
+                action="tool.execute",
+                result_status="FAILED",
+                user_id=getattr(user, "id", None),
+                tool_name=tool.name,
+                permission=tool.permission_level.value,
+                risk_level=tool.risk_level.value,
+                request_metadata=request.arguments,
+                error_message=error,
+                duration_ms=duration_ms,
+                db=db,
+            )
             self._log_failure(tool, request, error, start)
             raise ToolExecutionError(error) from exc
 
@@ -130,6 +183,17 @@ class ToolManager:
             risk_level=tool.risk_level,
             output=output.model_dump(),
             duration_ms=duration_ms,
+        )
+        record_audit_event(
+            action="tool.execute",
+            result_status="SUCCESS",
+            user_id=getattr(user, "id", None),
+            tool_name=tool.name,
+            permission=tool.permission_level.value,
+            risk_level=tool.risk_level.value,
+            request_metadata=request.arguments,
+            duration_ms=duration_ms,
+            db=db,
         )
         log_tool_execution(tool.name, tool.logging_policy, request.arguments, result)
         return result

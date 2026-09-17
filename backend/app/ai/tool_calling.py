@@ -43,11 +43,13 @@ from __future__ import annotations
 
 import json
 import logging
+import uuid
 
 from pydantic import BaseModel
 
 from app.ai.model_router import TaskCategory
 from app.config import settings
+from app.database.models import User
 from app.ai.openrouter import ChatMessage, OpenRouterError, _call_openrouter_raw
 from app.tools.manager import ToolManagerError, tool_manager
 from app.tools.schemas import PermissionLevel, ToolRequest
@@ -127,7 +129,11 @@ def _build_tool_schemas(category: TaskCategory) -> list[dict]:
     return schemas
 
 
-async def _execute_tool_call(function_name: str, arguments: dict) -> dict:
+async def _execute_tool_call(
+    function_name: str,
+    arguments: dict,
+    user: User | None = None,
+) -> dict:
     """
     Menjalankan satu tool call lewat ToolManager.execute() — SATU-SATUNYA
     jalur eksekusi, sama seperti request tool manual dari endpoint
@@ -138,7 +144,7 @@ async def _execute_tool_call(function_name: str, arguments: dict) -> dict:
     request = ToolRequest(tool_name=tool_name, arguments=arguments, confirmed=False)
 
     try:
-        result = await tool_manager.execute(request)
+        result = await tool_manager.execute(request, user=user)
     except ToolManagerError as exc:
         # Jangan gagalkan seluruh chat — kembalikan error terstruktur
         # ke model, biarkan model yang menjelaskan ke user.
@@ -151,6 +157,7 @@ async def _run_with_model(
     messages: list[ChatMessage],
     model: str,
     tool_schemas: list[dict],
+    user: User | None = None,
 ) -> tuple[str, list[str]]:
     """
     Loop tool-calling untuk SATU model tertentu (tidak menangani
@@ -201,7 +208,7 @@ async def _run_with_model(
                 )
                 continue
 
-            output = await _execute_tool_call(call.name, call.arguments)
+            output = await _execute_tool_call(call.name, call.arguments, user=user)
             tools_used.append(call.name)
             messages.append(
                 ChatMessage(
@@ -222,6 +229,7 @@ async def get_completion_with_tools(
     user_message: str,
     category: TaskCategory,
     system_prompt: str | None = None,
+    user: User | None = None,
 ) -> ChatWithToolsResult:
     """
     Entry point utama untuk chat DENGAN tool-calling.
@@ -245,6 +253,13 @@ async def get_completion_with_tools(
     -> Fallback -> gagal -> Safe Error), tapi setiap model boleh
     melakukan beberapa putaran tool call sebelum menjawab akhir.
     """
+    if user is None:
+        user = User(
+            id=uuid.UUID("00000000-0000-0000-0000-000000000000"),
+            email="system@nova.local",
+            is_active=True,
+        )
+
     messages: list[ChatMessage] = []
     if system_prompt:
         messages.append(ChatMessage(role="system", content=system_prompt))
@@ -254,7 +269,7 @@ async def get_completion_with_tools(
 
     primary_model = settings.tool_calling_model
     try:
-        content, tools_used = await _run_with_model(list(messages), primary_model, tool_schemas)
+        content, tools_used = await _run_with_model(list(messages), primary_model, tool_schemas, user=user)
         return ChatWithToolsResult(
             content=content,
             model_used=primary_model,
@@ -276,7 +291,7 @@ async def get_completion_with_tools(
         )
 
     try:
-        content, tools_used = await _run_with_model(list(messages), fallback_model, tool_schemas)
+        content, tools_used = await _run_with_model(list(messages), fallback_model, tool_schemas, user=user)
         return ChatWithToolsResult(
             content=content,
             model_used=fallback_model,

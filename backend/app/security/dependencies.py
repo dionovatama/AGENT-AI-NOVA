@@ -15,15 +15,13 @@ from app.database.session import get_db
 from app.database.models import User
 from app.security.hashing import decode_access_token
 
-# HTTPBearer dipakai (bukan OAuth2PasswordBearer) karena /auth/login NOVA
-# menerima JSON body {"email", "password"} — bukan form-data OAuth2 standar
-# {"username", "password"}. HTTPBearer membuat Swagger UI menampilkan kolom
-# sederhana untuk paste token langsung, sesuai alur login custom NOVA.
-bearer_scheme = HTTPBearer()
+# HTTPBearer dipakai dengan auto_error=False agar request tanpa token menghasilkan
+# HTTP 401 Unauthorized (bukan default FastAPI 403 Forbidden).
+bearer_scheme = HTTPBearer(auto_error=False)
 
 
 def get_current_user(
-    credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
+    credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
     db: Session = Depends(get_db),
 ) -> User:
     credentials_error = HTTPException(
@@ -31,6 +29,9 @@ def get_current_user(
         detail="Could not validate credentials.",
         headers={"WWW-Authenticate": "Bearer"},
     )
+
+    if credentials is None:
+        raise credentials_error
 
     token = credentials.credentials
     subject = decode_access_token(token)

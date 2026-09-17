@@ -111,6 +111,13 @@ class Settings(BaseSettings):
     linux_ssh_private_key_path: str
     linux_ssh_connect_timeout_seconds: float = 10.0
 
+    # --- SSH Host Key Verification (AUDIT FIX-01 Phase 9) ---
+    # Default False: menjaga kompatibilitas lab development (test VM dengan host key dinamis).
+    # Production / Secure mode: set LINUX_SSH_HOST_KEY_CHECKING=true dan arahkan
+    # LINUX_SSH_KNOWN_HOSTS_PATH ke file known_hosts untuk strict host verification.
+    linux_ssh_host_key_checking: bool = False
+    linux_ssh_known_hosts_path: str | None = None
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

@@ -8,10 +8,12 @@ tergantung koneksi internet. Logika kita sendiri (parsing hasil,
 error handling, truncation) tetap diuji sungguhan.
 """
 
+import uuid
 from unittest.mock import patch
 
 import pytest
 
+from app.database.models import User
 from app.main import app  # memicu registrasi tool ke tool_manager saat import
 from app.tools.manager import tool_manager
 from app.tools.schemas import PermissionLevel, RiskLevel, ToolRequest
@@ -67,7 +69,8 @@ class TestWebSearchExecution:
                 arguments={"query": "cuaca hari ini", "max_results": 3},
                 confirmed=False,  # READ — tidak butuh confirmed=True
             )
-            result = await tool_manager.execute(request)
+            mock_user = User(id=uuid.uuid4(), email="web-tester@nova.test", is_active=True)
+            result = await tool_manager.execute(request, user=mock_user)
 
         assert result.success is True
         assert result.permission_level == PermissionLevel.READ

@@ -71,7 +71,10 @@ class TestPingToolExecution:
             arguments={"target": "127.0.0.1", "count": 1},
             confirmed=False,
         )
-        result = await tool_manager.execute(request)
+        import uuid
+        from app.database.models import User
+        mock_user = User(id=uuid.uuid4(), email="tester@nova.test", is_active=True)
+        result = await tool_manager.execute(request, user=mock_user)
 
         # Struktur output harus selalu valid, terlepas dari firewall.
         assert result.permission_level == PermissionLevel.READ
