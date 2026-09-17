@@ -38,7 +38,7 @@ export function Sidebar() {
   }
 
   return (
-    <aside className="flex h-screen w-60 shrink-0 flex-col border-r border-base-700 bg-base-950">
+    <aside className="chrome-glass flex h-screen w-60 shrink-0 flex-col border-r">
       <div className="flex items-center gap-2.5 px-4 py-5">
         <NovaOrb size={30} />
         <div>

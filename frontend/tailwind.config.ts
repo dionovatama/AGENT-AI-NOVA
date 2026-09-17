@@ -31,6 +31,7 @@ const config: Config = {
         },
         signal: {
           teal: "#2FD9C4",   // aksi utama, tool aktif, link
+          blue: "#4C8EF7",   // aksen sekunder (NovaOrb glow, ambient glow chat) — sebelumnya dipakai di 4 tempat tapi TIDAK PERNAH didefinisikan di sini, jadi selama ini render tanpa warna sama sekali
           amber: "#F0B33D",  // MODIFY / butuh konfirmasi / pending
           rose: "#F0645F",   // HIGH_RISK / error / gagal
           green: "#3FCB7C",  // READ / sukses / online

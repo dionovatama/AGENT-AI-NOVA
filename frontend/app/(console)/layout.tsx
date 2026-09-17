@@ -32,10 +32,14 @@ export default function ConsoleLayout({
   }
 
   return (
-    <div className="flex h-screen">
+    <div className="relative flex h-screen">
+      {/* Ambient glow — sekarang di root shell, bukan di dalam halaman
+          chat saja. Lihat globals.css .ambient-glow untuk rasional. */}
+      <div className="ambient-glow" aria-hidden="true" />
+
       <Sidebar />
       <div className="flex flex-1 flex-col overflow-hidden">
-        <header className="flex items-center justify-between border-b border-base-700 px-6 py-3">
+        <header className="chrome-glass flex items-center justify-between border-b px-6 py-3">
           <SystemPulse />
         </header>
         <main className="flex-1 overflow-y-auto p-6">{children}</main>

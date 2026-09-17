@@ -1,7 +1,10 @@
 /**
- * NovaOrb — brand identity mark. Dipakai di dua tempat: hero welcome
- * screen (size besar) dan sidebar header (size kecil, ganti nova-icon.png)
- * -- satu identitas visual, bukan dua logo berbeda.
+ * NovaOrb — brand identity mark. Dipakai di sidebar header (logo kecil,
+ * 30px) sebagai satu-satunya identitas visual NOVA. TIDAK dipakai lagi
+ * di hero welcome screen — itu sekarang pakai HudRing (components/chat/
+ * HudRing.tsx), aset gambar terpisah yang didesain untuk ukuran besar.
+ * Dipisah sengaja: NovaOrb harus tetap jelas walau dikecilin ke 30px,
+ * sementara HudRing boleh detail karena selalu dirender besar.
  *
  * Sengaja TIDAK pakai animasi berputar terus-menerus (itu bahasa visual
  * HudLoader, dipakai khusus untuk momen tunggu nyata). Orb ini identitas

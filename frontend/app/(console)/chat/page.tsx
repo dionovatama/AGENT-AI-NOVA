@@ -1,9 +1,10 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { ChatWindow } from "@/components/chat/ChatWindow";
 import { CategoryPicker } from "@/components/chat/CategoryPicker";
-import { WelcomeHero } from "@/components/chat/WelcomeHero";
+import { CapabilityShortcuts } from "@/components/chat/CapabilityShortcuts";
 import { novaApi, NovaApiError } from "@/lib/api";
 import type { ChatMessage, TaskCategory } from "@/lib/types";
 import { TOOL_CALLING_CATEGORIES } from "@/lib/types";
@@ -14,32 +15,34 @@ export default function ChatPage() {
   const [category, setCategory] = useState<TaskCategory>("general_chat");
   const [useTools, setUseTools] = useState(false);
   const [sending, setSending] = useState(false);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  const searchParams = useSearchParams();
+  const resetKey = searchParams.get("new");
+
+  // Dipicu oleh tombol "New chat" di Sidebar (?new=<timestamp>) --
+  // reset state percakapan beneran, bukan navigasi kosong yang diam
+  // saja kalau sudah berada di /chat.
+  useEffect(() => {
+    if (resetKey) {
+      setMessages([]);
+      setInput("");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [resetKey]);
 
   const toolsSupported = TOOL_CALLING_CATEGORIES.includes(category);
-
-  // Dipakai CapabilityShortcuts di WelcomeHero — isi composer + ganti
-  // kategori sekaligus, TIDAK auto-kirim. User tetap yang menekan Kirim,
-  // konsisten dengan prinsip "AI tidak boleh langsung bertindak tanpa
-  // konfirmasi user" yang sama dipegang di seluruh NOVA (PRD section 23).
-  function handleFillFromShortcut(cat: TaskCategory, prompt: string) {
-    setCategory(cat);
-    setInput(prompt);
-    textareaRef.current?.focus();
-  }
 
   async function handleSend(e: React.FormEvent) {
     e.preventDefault();
     const text = input.trim();
     if (!text || sending) return;
 
-    const toolsRequested = toolsSupported && useTools;
-
     setMessages((prev) => [...prev, { role: "user", content: text }]);
     setInput("");
     setSending(true);
 
     try {
+      const toolsRequested = toolsSupported && useTools;
       const result = await novaApi.chatCompletion(text, category, toolsRequested);
       setMessages((prev) => [
         ...prev,
@@ -71,30 +74,46 @@ export default function ChatPage() {
   return (
     <div className="mx-auto flex h-full max-w-3xl flex-col">
       <div className="flex-1 overflow-y-auto pb-4">
-        {messages.length === 0 ? (
-          <WelcomeHero onFill={handleFillFromShortcut} />
-        ) : (
-          <ChatWindow messages={messages} />
-        )}
+        <ChatWindow messages={messages} />
       </div>
 
-      <form onSubmit={handleSend} className="panel p-3">
-        <div className="mb-2.5 flex items-center justify-between">
+      {messages.length === 0 && (
+        <div className="mb-4">
+          <CapabilityShortcuts />
+        </div>
+      )}
+
+      <form
+        onSubmit={handleSend}
+        className="panel-glass p-3.5 transition-colors focus-within:border-signal-teal/30"
+      >
+        <div className="mb-2.5 flex items-center justify-between gap-2">
           <CategoryPicker value={category} onChange={setCategory} />
+
           {toolsSupported && (
-            <label className="flex shrink-0 items-center gap-1.5 pl-2 text-[12px] text-ink-500">
-              <input
-                type="checkbox"
-                checked={useTools}
-                onChange={(e) => setUseTools(e.target.checked)}
+            <button
+              type="button"
+              onClick={() => setUseTools((v) => !v)}
+              aria-pressed={useTools}
+              className={`flex shrink-0 items-center gap-1.5 rounded-sm border px-2.5 py-1.5 text-[12px] transition-colors ${
+                useTools
+                  ? "border-signal-teal/50 bg-signal-teal/10 text-signal-teal"
+                  : "border-base-600 text-ink-500 hover:text-ink-300"
+              }`}
+            >
+              <span
+                className={`h-1.5 w-1.5 rounded-full transition-colors ${
+                  useTools ? "bg-signal-teal" : "bg-base-600"
+                }`}
               />
-              gunakan web.search / web.read_page
-            </label>
+              web.search / web.read_page
+            </button>
           )}
         </div>
+
         <div className="flex items-end gap-2">
+          <span className="mb-2 shrink-0 text-signal-blue">✦</span>
           <textarea
-            ref={textareaRef}
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => {
@@ -105,16 +124,22 @@ export default function ChatPage() {
             }}
             rows={2}
             placeholder="Tanya NOVA — reasoning murni, belum ada tool execution di sini."
-            className="field-input resize-none"
+            className="flex-1 resize-none bg-transparent text-sm text-ink-100 placeholder:text-ink-500 focus:outline-none"
           />
-          <button type="submit" disabled={sending} className="btn-primary shrink-0">
-            {sending ? "Mengirim…" : "Kirim"}
+          <button type="submit" disabled={sending} className="btn-primary shrink-0 !rounded-full !p-2.5">
+            {sending ? "…" : "↑"}
           </button>
         </div>
+
+        <div className="mt-2 flex items-center justify-between font-mono text-[11px] text-ink-500">
+          <span>NOVA · Operator Mode</span>
+          <span>Enter to send · Shift+Enter baris baru</span>
+        </div>
       </form>
+
       <p className="mt-2 text-center text-[11px] text-ink-500">
-        Endpoint ini murni reasoning (Milestone 2). Untuk eksekusi command
-        nyata, gunakan halaman Tools.
+        Endpoint ini murni reasoning (Milestone 2). Untuk eksekusi command nyata,
+        gunakan halaman Tools.
       </p>
     </div>
   );

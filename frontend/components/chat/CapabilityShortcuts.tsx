@@ -29,7 +29,7 @@ export function CapabilityShortcuts() {
         <Link
           key={item.href}
           href={item.href}
-          className="rounded-md border border-base-700 bg-base-800 p-4 transition-colors hover:border-signal-blue/40"
+          className="panel-glass p-4 transition-colors hover:border-signal-teal/40"
         >
           <h3 className="text-[14px] font-medium text-ink-100">{item.title}</h3>
           <p className="mt-1 text-[13px] leading-snug text-ink-500">{item.description}</p>
