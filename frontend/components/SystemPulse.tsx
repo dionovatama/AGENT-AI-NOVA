@@ -46,8 +46,15 @@ export function SystemPulse() {
       ? "backend tidak terjangkau"
       : "menghubungi backend…";
 
+  const pillClasses =
+    status === "online"
+      ? "border-signal-green/20 bg-signal-green/10 text-signal-green"
+      : status === "offline"
+      ? "border-signal-rose/20 bg-signal-rose/10 text-signal-rose"
+      : "border-base-600 bg-base-800 text-ink-500";
+
   return (
-    <div className="flex items-center gap-2 font-mono text-[11px] text-ink-500">
+    <div className={`flex items-center gap-2 rounded-full border px-3 py-1 font-mono text-[10px] font-medium uppercase tracking-wider ${pillClasses}`}>
       <span className="relative flex h-2 w-2">
         {status === "online" && (
           <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-signal-green opacity-60" />

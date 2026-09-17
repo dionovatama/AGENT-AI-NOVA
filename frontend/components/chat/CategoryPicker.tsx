@@ -34,14 +34,14 @@ export function CategoryPicker({
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="flex items-center gap-1.5 rounded-sm border border-base-600 bg-base-900 px-2.5 py-1.5 text-[12px] text-ink-300 transition-colors hover:border-signal-teal/50"
+        className="flex items-center gap-1.5 rounded-lg bg-white/[0.04] px-2.5 py-1 text-[12px] font-medium text-ink-300 transition-colors hover:bg-white/[0.08] hover:text-ink-100"
       >
         {current?.label}
         <span className={`text-ink-500 transition-transform ${open ? "rotate-180" : ""}`}>⌄</span>
       </button>
 
       {open && (
-        <div className="absolute bottom-full left-0 z-10 mb-1.5 w-56 overflow-hidden rounded-md border border-base-600 bg-base-800 py-1 shadow-panel">
+        <div className="absolute bottom-full left-0 z-10 mb-1.5 w-56 overflow-hidden rounded-xl border border-white/[0.08] bg-surface-card py-1 shadow-[0_20px_48px_-10px_rgba(0,0,0,0.7)] backdrop-blur-xl">
           {TASK_CATEGORIES.map((cat) => (
             <button
               key={cat.value}
@@ -51,7 +51,7 @@ export function CategoryPicker({
                 setOpen(false);
               }}
               className={`block w-full px-3 py-1.5 text-left text-[12px] transition-colors ${
-                value === cat.value ? "text-signal-teal" : "text-ink-300 hover:bg-base-700/60"
+                value === cat.value ? "text-orb-core" : "text-ink-300 hover:bg-white/[0.06]"
               }`}
             >
               {cat.label}

@@ -27,6 +27,22 @@
       transform: rotate(360deg);
     }
   }
+
+  /* Quantum Sphere orb (WelcomeHero) — 3 layer motion independen,
+     nama disamakan dengan istilah di DESIGN.md/code.html supaya
+     mudah ditelusuri balik ke spesifikasinya. */
+  @keyframes nova-orb-slow-spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+  }
+  @keyframes nova-orb-reverse-spin {
+    from { transform: rotate(360deg); }
+    to { transform: rotate(0deg); }
+  }
+  @keyframes nova-orb-pulse {
+    0%, 100% { opacity: 0.85; transform: scale(1); }
+    50% { opacity: 1; transform: scale(1.03); }
+  }
 }
 
 @layer components {
@@ -84,14 +100,11 @@
     @apply mb-1.5 block text-[13px] text-ink-300;
   }
 
-  /* Ambient glow — dipasang SEKALI di root console layout (bukan per
-     halaman) supaya sidebar, header, DAN konten halaman semuanya duduk
-     di atas cahaya yang sama -- itu yang bikin "semua ikut kaca"
-     konsisten, bukan cuma composer doang. Biru murni (signal.blue),
-     tanpa campuran teal -- campuran sebelumnya kelihatan kehijauan di
-     layar, bukan yang diminta. Warna status semantik (hijau=online di
-     SystemPulse, PRD section 23) SENGAJA tidak ikut diubah -- itu
-     makna, bukan dekorasi. */
+  /* Ambient glow — blob blur lembut di belakang panel-glass, supaya ada
+     "sesuatu" untuk di-blur (tanpa ini, backdrop-blur di atas bg flat
+     polos hampir tidak kelihatan bedanya). Dipasang absolute di
+     belakang konten (z-0), pointer-events-none supaya tidak mengganggu
+     klik. */
   .ambient-glow {
     @apply pointer-events-none absolute inset-0 -z-10 overflow-hidden;
   }
@@ -123,5 +136,98 @@
      sebagai kaca, bukan blok solid base-950 seperti sebelumnya. */
   .chrome-glass {
     @apply border-white/10 bg-base-950/50 backdrop-blur-xl;
+  }
+
+  /* ============================================================
+     Obsidian Violet Operator — kelas baru, dipakai area Chat saja
+     (lihat catatan di tailwind.config.ts). Nama & nilai disalin dari
+     DESIGN.md/code.html yang diberikan Tuan, bukan dikarang ulang.
+     ============================================================ */
+
+  /* Composer utama — panel kaca terapung. Fokus dikasih ring violet
+     supaya jelas kapan input aktif menerima ketikan. */
+  .glass-composer {
+    @apply relative w-full rounded-2xl border border-white/[0.09] bg-[rgba(22,17,33,0.72)] backdrop-blur-2xl transition-shadow;
+    box-shadow:
+      0 20px 48px -10px rgba(0, 0, 0, 0.7),
+      inset 0 1px 0 rgba(255, 255, 255, 0.12);
+  }
+  .glass-composer:focus-within {
+    box-shadow:
+      0 0 0 1px #a855f7,
+      0 0 24px rgba(168, 85, 247, 0.25),
+      0 20px 48px -10px rgba(0, 0, 0, 0.7),
+      inset 0 1px 0 rgba(255, 255, 255, 0.12);
+  }
+
+  /* Card shortcut (Verified Automations) — elevasi lebih ringan dari
+     composer, hover naik dikit + border teal (bukan violet, supaya
+     beda kegunaan: violet = fokus input, teal = tool/aksi). */
+  .glass-card {
+    @apply relative rounded-xl border border-white/[0.06] bg-[rgba(21,16,34,0.6)] backdrop-blur-xl
+      transition-all duration-200 hover:-translate-y-0.5 hover:border-signal-teal/30;
+  }
+  .glass-card:hover {
+    background: rgba(29, 22, 46, 0.85);
+  }
+
+  /* Suggestion / quick-action pill — dipakai untuk shortcut yang
+     ngisi composer, BUKAN tombol navigasi. */
+  .pill {
+    @apply inline-flex items-center gap-1.5 rounded-full border border-white/[0.06] bg-surface-panel
+      px-3 py-1.5 text-[12px] font-medium text-ink-300 transition-all
+      hover:border-border-glow/40 hover:text-ink-100;
+  }
+
+  /* Ambient glow di belakang hero saja (BUKAN seluruh shell — beda
+     dari .ambient-glow lama yang dipasang di layout.tsx). Sesuai
+     DESIGN.md "Level 0: ambient radial wash positioned behind the
+     hero element" — posisinya relatif ke container hero, bukan
+     seluruh halaman. */
+  .hero-glow {
+    @apply pointer-events-none absolute inset-x-0 top-0 -z-10 overflow-visible;
+  }
+  .hero-glow::before,
+  .hero-glow::after {
+    content: "";
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    border-radius: 9999px;
+  }
+  .hero-glow::before {
+    top: -64px;
+    width: 680px;
+    height: 360px;
+    filter: blur(110px);
+    background: linear-gradient(
+      to bottom,
+      rgba(140, 70, 220, 0.18),
+      rgba(76, 142, 247, 0.08),
+      transparent
+    );
+  }
+  .hero-glow::after {
+    top: 140px;
+    width: 420px;
+    height: 220px;
+    filter: blur(90px);
+    background: radial-gradient(circle, rgba(168, 85, 247, 0.14), transparent 70%);
+  }
+
+  /* Badge permission — mono, pulse dot kecil. Warnanya SEMANTIK
+     (PRD section 23), sama seperti sistem lama, cuma bentuknya pill
+     mono sesuai DESIGN.md komponen #4. */
+  .badge-read {
+    @apply inline-flex items-center gap-1.5 rounded-md border border-signal-green/30
+      bg-signal-green/10 px-2 py-1 font-mono text-[10px] font-medium tracking-wide text-signal-green;
+  }
+  .badge-modify {
+    @apply inline-flex items-center gap-1.5 rounded-md border border-signal-amber/30
+      bg-signal-amber/10 px-2 py-1 font-mono text-[10px] font-medium tracking-wide text-signal-amber;
+  }
+  .badge-high-risk {
+    @apply inline-flex items-center gap-1.5 rounded-md border border-signal-rose/[0.35]
+      bg-signal-rose/[0.12] px-2 py-1 font-mono text-[10px] font-medium tracking-wide text-signal-rose;
   }
 }

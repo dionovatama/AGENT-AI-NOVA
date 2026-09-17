@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import type { ChatMessage } from "@/lib/types";
+import type { ChatMessage, TaskCategory } from "@/lib/types";
 import { WelcomeHero } from "@/components/chat/WelcomeHero";
 
 /**
@@ -62,9 +62,15 @@ function MessageMeta({ meta }: { meta: NonNullable<ChatMessage["meta"]> }) {
   );
 }
 
-export function ChatWindow({ messages }: { messages: ChatMessage[] }) {
+export function ChatWindow({
+  messages,
+  onQuickAction,
+}: {
+  messages: ChatMessage[];
+  onQuickAction: (category: TaskCategory, prompt: string, useTools?: boolean) => void;
+}) {
   if (messages.length === 0) {
-    return <WelcomeHero />;
+    return <WelcomeHero onQuickAction={onQuickAction} />;
   }
 
   return (

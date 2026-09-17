@@ -1,31 +1,26 @@
 /**
- * NovaOrb — brand identity mark. Dipakai di sidebar header (logo kecil,
- * 30px) sebagai satu-satunya identitas visual NOVA. TIDAK dipakai lagi
- * di hero welcome screen — itu sekarang pakai HudRing (components/chat/
- * HudRing.tsx), aset gambar terpisah yang didesain untuk ukuran besar.
- * Dipisah sengaja: NovaOrb harus tetap jelas walau dikecilin ke 30px,
- * sementara HudRing boleh detail karena selalu dirender besar.
- *
- * Sengaja TIDAK pakai animasi berputar terus-menerus (itu bahasa visual
- * HudLoader, dipakai khusus untuk momen tunggu nyata). Orb ini identitas
- * statis + glow lembut -- "hidup" secukupnya, bukan spinner.
+ * NovaOrb — brand identity mark, dipakai di sidebar header (28px).
+ * Gradient ring (violet -> teal) + dot pusat, sesuai DESIGN.md/
+ * code.html: "relative w-6 h-6 rounded-full bg-gradient-to-tr from-
+ * [#6823c2] via-[#9B51E0] to-[#2FD9C4]". Statis (tidak berputar) --
+ * animasi terus-menerus itu bahasa visual HudLoader/HudRing, dipakai
+ * khusus momen tunggu nyata atau hero, bukan identitas sehari-hari
+ * yang harus tetap jelas dibaca di ukuran kecil.
  */
-export function NovaOrb({ size = 96 }: { size?: number }) {
+export function NovaOrb({ size = 28 }: { size?: number }) {
+  const dot = Math.max(6, Math.round(size * 0.3));
+
   return (
     <div
-      className="relative flex items-center justify-center"
+      className="relative flex shrink-0 items-center justify-center rounded-full bg-gradient-to-tr from-[#6823c2] via-[#9B51E0] to-signal-teal p-[1px] shadow-[0_0_12px_rgba(168,85,247,0.4)]"
       style={{ width: size, height: size }}
     >
-      {/* glow lembut -- blur murni, bukan gradient warna-warni */}
-      <div
-        className="absolute rounded-full bg-signal-blue/25 blur-xl"
-        style={{ width: size * 0.75, height: size * 0.75 }}
-      />
-      <svg width={size} height={size} viewBox="0 0 100 100" className="relative text-signal-blue">
-        <circle cx="50" cy="50" r="46" fill="none" stroke="currentColor" strokeWidth="1" opacity="0.25" />
-        <circle cx="50" cy="50" r="34" fill="none" stroke="currentColor" strokeWidth="1.5" opacity="0.45" />
-        <circle cx="50" cy="50" r="16" fill="currentColor" opacity="0.9" />
-      </svg>
+      <div className="flex h-full w-full items-center justify-center rounded-full bg-[#0E0917]">
+        <span
+          className="rounded-full bg-gradient-to-r from-orb-core to-signal-teal shadow-[0_0_6px_rgba(47,217,196,0.8)]"
+          style={{ width: dot, height: dot }}
+        />
+      </div>
     </div>
   );
 }
