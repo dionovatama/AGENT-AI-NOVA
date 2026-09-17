@@ -53,7 +53,7 @@ export function WelcomeHero({
   onQuickAction: (category: TaskCategory, prompt: string, useTools?: boolean) => void;
 }) {
   return (
-    <div className="relative flex h-full flex-col items-center justify-center text-center">
+    <div className="relative flex flex-col items-center pb-10 pt-10 text-center">
       <div className="hero-glow" aria-hidden="true" />
 
       <HudRing size={96} />

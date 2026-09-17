@@ -87,14 +87,22 @@ export default function ChatPage() {
   }
 
   return (
-    <div className="mx-auto flex h-full max-w-3xl flex-col">
-      <div className="flex-1 overflow-y-auto pb-4">
-        <ChatWindow messages={messages} onQuickAction={handleQuickAction} />
-      </div>
-
-      {messages.length === 0 && (
-        <div className="mb-6">
-          <CapabilityShortcuts />
+    <div className="mx-auto flex h-full min-h-0 max-w-3xl flex-col">
+      {messages.length === 0 ? (
+        // Empty state: TIDAK dibungkus overflow-y-auto sendiri --
+        // biarkan halaman (main, sudah overflow-y-auto di layout.tsx)
+        // yang scroll kalau kontennya (hero + kartu) lebih tinggi dari
+        // viewport, bukan bikin "kotak" kecil dengan scrollbar sendiri
+        // di tengah halaman.
+        <>
+          <ChatWindow messages={messages} onQuickAction={handleQuickAction} />
+          <div className="mb-6 mt-8">
+            <CapabilityShortcuts />
+          </div>
+        </>
+      ) : (
+        <div className="min-h-0 flex-1 overflow-y-auto pb-4">
+          <ChatWindow messages={messages} onQuickAction={handleQuickAction} />
         </div>
       )}
 
