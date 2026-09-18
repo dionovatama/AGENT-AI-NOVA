@@ -31,6 +31,7 @@ from app.tools.linux import (
     log_check_tool,
 )
 from app.tools.web import web_search_tool, web_read_page_tool
+from app.security.audit_retention import audit_retention_loop
 
 app = FastAPI(
     title=settings.app_name,
@@ -65,6 +66,17 @@ tool_manager.register(docker_status_tool)
 tool_manager.register(log_check_tool)
 tool_manager.register(web_search_tool)
 tool_manager.register(web_read_page_tool)
+
+
+@app.on_event("startup")
+async def start_background_tasks():
+    """
+    Retention policy audit_logs (PRD section 32/33) — purge otomatis
+    baris lebih tua dari AUDIT_LOG_RETENTION_DAYS, jalan di background
+    selama aplikasi hidup. Lihat app/security/audit_retention.py untuk
+    rasional kenapa ini otomatis, bukan tombol hapus manual.
+    """
+    asyncio.create_task(audit_retention_loop())
 
 
 @app.get("/health", tags=["system"])

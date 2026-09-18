@@ -221,6 +221,27 @@ class ToolManager:
             )
             self._log_failure(tool, request, error, start)
             raise ToolTimeoutError(error) from exc
+        except asyncio.CancelledError:
+            # BUG YANG DITEMUKAN: asyncio.CancelledError adalah subclass
+            # BaseException (sejak Python 3.8), BUKAN Exception -- jadi
+            # "except Exception" di bawah TIDAK PERNAH menangkapnya. Tanpa
+            # branch ini, request yang dibatalkan di tengah jalan (client
+            # disconnect, atau server di-restart --reload saat request
+            # masih in-flight) membuat baris EXECUTING nyangkut selamanya,
+            # tidak pernah ter-update ke status manapun.
+            #
+            # WAJIB raise ulang (bukan ditelan) -- menelan CancelledError
+            # merusak semantik cancellation asyncio, bisa bikin task lain
+            # yang menunggu cancellation ini jadi hang.
+            duration_ms = (time.perf_counter() - start) * 1000
+            update_audit_event(
+                audit_id=audit_id,
+                result_status="FAILED",
+                error_message="Request dibatalkan sebelum selesai (client disconnect atau server restart di tengah eksekusi).",
+                duration_ms=duration_ms,
+                db=db,
+            )
+            raise
         except Exception as exc:  # noqa: BLE001 — executor pihak ketiga, semua exception ditangkap
             # FIX-D: Sanitasi pesan error sebelum diekspos ke caller/LLM.
             # Internal detail (raw exc) hanya dicatat di server-side logger.
