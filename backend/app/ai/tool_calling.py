@@ -43,7 +43,6 @@ from __future__ import annotations
 
 import json
 import logging
-import uuid
 
 from pydantic import BaseModel
 
@@ -52,7 +51,7 @@ from app.config import settings
 from app.database.models import User
 from app.ai.openrouter import ChatMessage, OpenRouterError, _call_openrouter_raw
 from app.tools.manager import ToolManagerError, tool_manager
-from app.tools.schemas import PermissionLevel, ToolRequest
+from app.tools.schemas import PermissionLevel, RiskLevel, ToolRequest
 
 logger = logging.getLogger("nova.ai.tool_calling")
 
@@ -97,8 +96,11 @@ def _build_tool_schemas(category: TaskCategory) -> list[dict]:
     Bangun daftar tool (format OpenAI function-calling) untuk satu
     kategori, HANYA dari tool yang (a) ada di allowlist kategori ini
     DAN (b) benar-benar terdaftar di tool_manager DAN (c) permission
-    level-nya READ. Kalau salah satu syarat gagal, tool itu diam-diam
-    tidak diekspos (fail-safe), bukan error.
+    level-nya READ DAN (d) risk level-nya bukan HIGH. Kalau salah satu
+    syarat gagal, tool itu diam-diam tidak diekspos (fail-safe), bukan error.
+
+    FIX-H: HIGH_RISK tool TIDAK PERNAH diekspos ke LLM lewat jalur
+    conversational tool-calling ini, bahkan jika permission level-nya READ.
     """
     allowed_names = _CATEGORY_TOOL_ALLOWLIST.get(category, [])
     schemas: list[dict] = []
@@ -112,6 +114,15 @@ def _build_tool_schemas(category: TaskCategory) -> list[dict]:
                 "Tool '%s' ada di allowlist kategori '%s' tapi permission "
                 "level-nya bukan READ (%s) — tidak diekspos ke LLM.",
                 name, category.value, tool.permission_level.value,
+            )
+            continue
+        # FIX-H: Hard gate — HIGH_RISK tidak pernah masuk jalur conversational.
+        if tool.risk_level == RiskLevel.HIGH:
+            logger.error(
+                "Tool '%s' ada di allowlist tapi risk level-nya HIGH — "
+                "TIDAK DIEKSPOS ke LLM (HIGH_RISK tools require explicit "
+                "Configuration Flow, bukan conversational tool-calling).",
+                name,
             )
             continue
 
@@ -132,6 +143,7 @@ def _build_tool_schemas(category: TaskCategory) -> list[dict]:
 async def _execute_tool_call(
     function_name: str,
     arguments: dict,
+    category: TaskCategory,
     user: User | None = None,
 ) -> dict:
     """
@@ -139,8 +151,28 @@ async def _execute_tool_call(
     jalur eksekusi, sama seperti request tool manual dari endpoint
     /tools/execute. confirmed selalu False di sini karena hanya tool
     READ yang pernah sampai ke titik ini (lihat _build_tool_schemas).
+
+    FIX-A: user TIDAK BOLEH None. Jika None, ToolManager.execute() akan
+    menolak via AuthorizationError — tidak ada bypass fake system user.
+
+    FIX-O: Second-layer defense — verifikasi tool_name dari LLM ada di
+    allowlist kategori ini sebelum meneruskan ke ToolManager. Ini mencegah
+    LLM yang "nakal" meminta tool dari luar scope percakapan ini.
     """
     tool_name = _from_function_name(function_name)
+
+    # FIX-O: Second-layer category allowlist check.
+    allowed_names = _CATEGORY_TOOL_ALLOWLIST.get(category, [])
+    if tool_name not in allowed_names:
+        logger.warning(
+            "LLM meminta tool '%s' yang TIDAK ADA di allowlist kategori '%s' — ditolak.",
+            tool_name, category.value,
+        )
+        return {
+            "success": False,
+            "error": f"Tool '{tool_name}' tidak diizinkan untuk kategori ini.",
+        }
+
     request = ToolRequest(tool_name=tool_name, arguments=arguments, confirmed=False)
 
     try:
@@ -157,6 +189,7 @@ async def _run_with_model(
     messages: list[ChatMessage],
     model: str,
     tool_schemas: list[dict],
+    category: TaskCategory,
     user: User | None = None,
 ) -> tuple[str, list[str]]:
     """
@@ -208,7 +241,7 @@ async def _run_with_model(
                 )
                 continue
 
-            output = await _execute_tool_call(call.name, call.arguments, user=user)
+            output = await _execute_tool_call(call.name, call.arguments, category=category, user=user)
             tools_used.append(call.name)
             messages.append(
                 ChatMessage(
@@ -252,14 +285,12 @@ async def get_completion_with_tools(
     Sama seperti get_completion() dari sisi fallback (Primary -> gagal
     -> Fallback -> gagal -> Safe Error), tapi setiap model boleh
     melakukan beberapa putaran tool call sebelum menjawab akhir.
-    """
-    if user is None:
-        user = User(
-            id=uuid.UUID("00000000-0000-0000-0000-000000000000"),
-            email="system@nova.local",
-            is_active=True,
-        )
 
+    FIX-A: user TIDAK BOLEH None. Tidak ada lagi fake system user.
+    Jika user=None, tool execution akan ditolak oleh ToolManager via
+    AuthorizationError. Caller (chat.py) wajib menyediakan current_user
+    dari JWT dependency.
+    """
     messages: list[ChatMessage] = []
     if system_prompt:
         messages.append(ChatMessage(role="system", content=system_prompt))
@@ -269,7 +300,9 @@ async def get_completion_with_tools(
 
     primary_model = settings.tool_calling_model
     try:
-        content, tools_used = await _run_with_model(list(messages), primary_model, tool_schemas, user=user)
+        content, tools_used = await _run_with_model(
+            list(messages), primary_model, tool_schemas, category=category, user=user
+        )
         return ChatWithToolsResult(
             content=content,
             model_used=primary_model,
@@ -291,7 +324,9 @@ async def get_completion_with_tools(
         )
 
     try:
-        content, tools_used = await _run_with_model(list(messages), fallback_model, tool_schemas, user=user)
+        content, tools_used = await _run_with_model(
+            list(messages), fallback_model, tool_schemas, category=category, user=user
+        )
         return ChatWithToolsResult(
             content=content,
             model_used=fallback_model,

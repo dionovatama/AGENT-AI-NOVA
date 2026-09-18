@@ -148,3 +148,74 @@ def log_tool_execution(
         result.output,
         sanitized_error,
     )
+
+
+def update_audit_event(
+    audit_id: uuid.UUID | str | None,
+    result_status: str,
+    verification_status: str | None = None,
+    error_message: str | None = None,
+    duration_ms: float | None = None,
+    db: Session | None = None,
+) -> None:
+    """
+    Meng-update baris AuditLog yang SUDAH ADA (transisi status), BUKAN
+    membuat baris baru. Dipakai untuk melanjutkan siklus EXECUTING ->
+    SUCCESS/FAILED/TIMEOUT pada audit_id yang sama — melengkapi
+    record_audit_event() yang cuma bisa INSERT baris baru, supaya
+    lifecycle di docstring atas (REQUESTED/AUTHORIZED/DENIED -> EXECUTING
+    -> SUCCESS/FAILED/TIMEOUT) benar-benar satu baris yang bertransisi,
+    bukan satu baris per tahap.
+
+    Kalau audit_id None atau baris tidak ditemukan, diam-diam tidak
+    melakukan apa-apa (bukan exception) — audit logging tidak boleh
+    menjatuhkan request utama hanya karena gagal update.
+    """
+    if audit_id is None:
+        return
+
+    parsed_id: uuid.UUID | None = None
+    try:
+        parsed_id = audit_id if isinstance(audit_id, uuid.UUID) else uuid.UUID(str(audit_id))
+    except (ValueError, TypeError):
+        logger.warning("update_audit_event: audit_id tidak valid: %s", audit_id)
+        return
+
+    sanitized_error = sanitize_error_message(error_message) if error_message is not None else None
+
+    should_close_db = False
+    active_db = db
+    if active_db is None:
+        try:
+            active_db = SessionLocal()
+            should_close_db = True
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Gagal membuat DB session untuk update audit log: %s", exc)
+            return
+
+    try:
+        audit_entry = active_db.query(AuditLog).filter(AuditLog.id == parsed_id).first()
+        if audit_entry is None:
+            logger.warning("update_audit_event: AuditLog id=%s tidak ditemukan", parsed_id)
+            return
+
+        audit_entry.result_status = result_status
+        if verification_status is not None:
+            audit_entry.verification_status = verification_status
+        if sanitized_error is not None:
+            audit_entry.error_message = sanitized_error
+        if duration_ms is not None:
+            audit_entry.duration_ms = duration_ms
+
+        active_db.commit()
+    except Exception as exc:  # noqa: BLE001
+        active_db.rollback()
+        logger.error("Gagal update audit log id=%s: %s", parsed_id, exc)
+    finally:
+        if should_close_db:
+            active_db.close()
+
+    logger.info(
+        "AUDIT_EVENT_UPDATE id=%s status=%s duration_ms=%s",
+        parsed_id, result_status, duration_ms,
+    )

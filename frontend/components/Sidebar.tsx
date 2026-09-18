@@ -23,8 +23,8 @@ import { NovaOrb } from "@/components/NovaOrb";
 const NAV_ITEMS = [
   { href: "/chat", label: "Chat", icon: MessageSquare, live: true },
   { href: "/tools", label: "Tools", icon: Wrench, live: true },
-  { href: "/devices", label: "Devices", icon: Server, live: false },
-  { href: "/audit", label: "Audit Log", icon: ScrollText, live: false },
+  { href: "/devices", label: "Devices", icon: Server, live: true },
+  { href: "/audit", label: "Audit Log", icon: ScrollText, live: true },
   { href: "/settings", label: "Settings", icon: SettingsIcon, live: false },
 ];
 

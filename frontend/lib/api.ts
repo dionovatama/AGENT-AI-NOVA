@@ -1,5 +1,14 @@
 import { getToken } from "./auth";
-import type { ChatCompletionResult, TaskCategory, ToolResult } from "./types";
+import type {
+  AuditLogEntry,
+  ChatCompletionResult,
+  Credential,
+  CredentialCreateInput,
+  Device,
+  DeviceCreateInput,
+  TaskCategory,
+  ToolResult,
+} from "./types";
 
 const BASE_URL =
   process.env.NEXT_PUBLIC_NOVA_API_BASE_URL ?? "http://localhost:8000";
@@ -99,4 +108,27 @@ export const novaApi = {
         confirmed,
       }),
     }),
+
+  // --- Devices / Credentials / Audit Log ------------------------
+  // Semua endpoint ini butuh Bearer token dan tenant-isolated di sisi
+  // backend (owner_id dari JWT) — request() sudah otomatis menyertakan
+  // Authorization header selama auth=true (default).
+
+  listDevices: () => request<Device[]>("/devices"),
+
+  createDevice: (payload: DeviceCreateInput) =>
+    request<Device>("/devices", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+
+  listCredentials: () => request<Credential[]>("/credentials"),
+
+  createCredential: (payload: CredentialCreateInput) =>
+    request<Credential>("/credentials", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+
+  listAuditLogs: () => request<AuditLogEntry[]>("/audit-logs"),
 };

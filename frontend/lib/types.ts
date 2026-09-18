@@ -226,3 +226,68 @@ export const KNOWN_TOOLS: Record<string, KnownToolSpec> = {
     ],
   },
 };
+
+// --- Device / Credential / Audit Log ------------------------------
+//
+// Mencerminkan backend/app/schemas/devices.py persis. Endpoint terkait
+// (backend/app/api/devices.py) semuanya tenant-isolated lewat owner_id
+// dari JWT — user A tidak akan pernah melihat device/credential/audit
+// log milik user B, sisi backend yang menegakkan itu, bukan frontend.
+
+export type DevicePlatform = "linux" | "windows" | "mikrotik" | "cisco";
+
+export interface Device {
+  id: string;
+  owner_id: string;
+  credential_id: string | null;
+  name: string;
+  platform: string;
+  host: string;
+  port: number;
+  connection_type: string;
+  status: string;
+  metadata: Record<string, unknown> | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DeviceCreateInput {
+  name: string;
+  platform: DevicePlatform;
+  host: string;
+  port?: number;
+  connection_type?: string;
+  status?: string;
+  credential_id?: string | null;
+}
+
+export interface Credential {
+  id: string;
+  owner_id: string;
+  name: string;
+  type: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CredentialCreateInput {
+  name: string;
+  type: "ssh_key" | "password" | "api_token";
+  secret_reference: string;
+}
+
+export interface AuditLogEntry {
+  id: string;
+  user_id: string | null;
+  device_id: string | null;
+  tool_name: string | null;
+  permission: string | null;
+  risk_level: string | null;
+  action: string;
+  request_metadata: Record<string, unknown> | null;
+  result_status: string;
+  verification_status: string | null;
+  error_message: string | null;
+  duration_ms: number | null;
+  created_at: string;
+}

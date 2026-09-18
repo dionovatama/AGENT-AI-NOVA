@@ -20,12 +20,23 @@ from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
 from app.database.models import User
-from app.security.audit import log_tool_execution, record_audit_event
+from app.security.audit import log_tool_execution, record_audit_event, update_audit_event
 from app.security.authorization import AuthorizationError, authorize_tool_execution
 from app.security.permissions import PermissionDeniedError, check_permission
+from app.security.sanitization import sanitize_error_message, sanitize_metadata
 from app.tools.schemas import RiskLevel, ToolDefinition, ToolRequest, ToolResult
 
 logger = logging.getLogger("nova.tools.manager")
+
+# FIX-L: Concurrency limits — mencegah LLM loop abuse.
+# Global cap: maks 20 concurrent tool executions di seluruh instance.
+# Per-user cap: maks 5 concurrent tool executions per user.
+_GLOBAL_SEMAPHORE = asyncio.Semaphore(20)
+# Keyed by str(user_id). Dibuat lazily di execute().
+_USER_SEMAPHORES: dict[str, asyncio.Semaphore] = {}
+_USER_SEMAPHORE_LOCK = asyncio.Lock()
+_USER_SEMAPHORE_MAX = 5
+_SEMAPHORE_ACQUIRE_TIMEOUT = 5.0  # detik sebelum dianggap concurrency limit reached
 
 
 class ToolManagerError(Exception):
@@ -78,6 +89,14 @@ class ToolManager:
         tanpa perlu mengakses _registry secara langsung.
         """
         return self._registry.get(name)
+
+    async def _get_user_semaphore(self, user_key: str) -> asyncio.Semaphore:
+        """Lazily create a per-user semaphore (thread-safe via asyncio Lock)."""
+        if user_key not in _USER_SEMAPHORES:
+            async with _USER_SEMAPHORE_LOCK:
+                if user_key not in _USER_SEMAPHORES:
+                    _USER_SEMAPHORES[user_key] = asyncio.Semaphore(_USER_SEMAPHORE_MAX)
+        return _USER_SEMAPHORES[user_key]
 
     async def execute(
         self,
@@ -134,22 +153,68 @@ class ToolManager:
             self._log_failure(tool, request, str(exc), start)
             raise
 
+        # FIX-L: Concurrency enforcement.
+        user_key = str(getattr(user, "id", "anonymous"))
+        user_sem = await self._get_user_semaphore(user_key)
+
+        try:
+            await asyncio.wait_for(user_sem.acquire(), timeout=_SEMAPHORE_ACQUIRE_TIMEOUT)
+        except asyncio.TimeoutError:
+            raise ToolExecutionError(
+                "Terlalu banyak request bersamaan dari pengguna ini. Coba lagi sebentar."
+            )
+
+        try:
+            await asyncio.wait_for(_GLOBAL_SEMAPHORE.acquire(), timeout=_SEMAPHORE_ACQUIRE_TIMEOUT)
+        except asyncio.TimeoutError:
+            user_sem.release()
+            raise ToolExecutionError(
+                "Sistem sedang sibuk. Terlalu banyak tool execution bersamaan secara global. "
+                "Coba lagi sebentar."
+            )
+
         # 5. Executor — dijalankan dengan timeout, tidak pernah tanpa batas.
         try:
+            # FIX-M: Audit event EXECUTING — catat saat executor benar-benar mulai.
+            # BUG (ditemukan Tuan lewat log, konfirmasi 2025-...): baris ini
+            # cuma pernah INSERT, tidak pernah di-UPDATE lagi setelah
+            # eksekusi selesai -- setiap tool call selalu menyisakan satu
+            # baris EXECUTING yang nyangkut selamanya, terpisah dari baris
+            # status akhir (SUCCESS/FAILED/TIMEOUT). audit_id di-capture di
+            # sini supaya TIMEOUT/FAILED/SUCCESS di bawah bisa UPDATE baris
+            # yang SAMA (lewat update_audit_event) alih-alih INSERT baris
+            # baru -- lifecycle satu baris yang bertransisi, sesuai
+            # docstring app/security/audit.py, bukan satu baris per tahap.
+            # DENIED sengaja TETAP INSERT (lihat langkah 4 di atas): itu
+            # terjadi di Authorization/Permission, SEBELUM baris EXECUTING
+            # ini pernah ditulis, jadi tidak ada baris untuk di-update.
+            executing_entry = record_audit_event(
+                action="tool.execute",
+                result_status="EXECUTING",
+                user_id=getattr(user, "id", None),
+                tool_name=tool.name,
+                permission=tool.permission_level.value,
+                risk_level=tool.risk_level.value,
+                request_metadata=request.arguments,
+                db=db,
+            )
+            # getattr, bukan akses langsung .id -- kalau record_audit_event
+            # gagal persist (mis. DB down saat itu), audit_entry tetap
+            # dikembalikan (lihat audit.py) tapi .id bisa None/belum ter-
+            # assign. update_audit_event() sendiri sudah menangani
+            # audit_id=None dengan diam-diam no-op (lihat docstring-nya),
+            # jadi ini tetap aman tanpa exception baru.
+            audit_id = getattr(executing_entry, "id", None)
             output = await asyncio.wait_for(
                 tool.executor(validated_input), timeout=tool.timeout_seconds
             )
         except asyncio.TimeoutError as exc:
             error = f"Timeout setelah {tool.timeout_seconds}s"
             duration_ms = (time.perf_counter() - start) * 1000
-            record_audit_event(
-                action="tool.execute",
+            # UPDATE baris EXECUTING yang sama, bukan INSERT baris baru.
+            update_audit_event(
+                audit_id=audit_id,
                 result_status="TIMEOUT",
-                user_id=getattr(user, "id", None),
-                tool_name=tool.name,
-                permission=tool.permission_level.value,
-                risk_level=tool.risk_level.value,
-                request_metadata=request.arguments,
                 error_message=error,
                 duration_ms=duration_ms,
                 db=db,
@@ -157,41 +222,51 @@ class ToolManager:
             self._log_failure(tool, request, error, start)
             raise ToolTimeoutError(error) from exc
         except Exception as exc:  # noqa: BLE001 — executor pihak ketiga, semua exception ditangkap
-            error = f"Executor error: {exc}"
+            # FIX-D: Sanitasi pesan error sebelum diekspos ke caller/LLM.
+            # Internal detail (raw exc) hanya dicatat di server-side logger.
+            safe_error = sanitize_error_message(str(exc)) or "Executor error."
+            logger.error(
+                "Tool '%s' executor error (internal): %s",
+                tool.name,
+                sanitize_error_message(str(exc)),
+            )
             duration_ms = (time.perf_counter() - start) * 1000
-            record_audit_event(
-                action="tool.execute",
+            # UPDATE baris EXECUTING yang sama, bukan INSERT baris baru.
+            update_audit_event(
+                audit_id=audit_id,
                 result_status="FAILED",
-                user_id=getattr(user, "id", None),
-                tool_name=tool.name,
-                permission=tool.permission_level.value,
-                risk_level=tool.risk_level.value,
-                request_metadata=request.arguments,
-                error_message=error,
+                error_message=safe_error,
                 duration_ms=duration_ms,
                 db=db,
             )
-            self._log_failure(tool, request, error, start)
-            raise ToolExecutionError(error) from exc
+            self._log_failure(tool, request, safe_error, start)
+            raise ToolExecutionError(safe_error) from exc
+        finally:
+            # FIX-L: Always release both semaphores.
+            user_sem.release()
+            _GLOBAL_SEMAPHORE.release()
 
         # 6. Result — sukses hanya jika executor benar-benar selesai normal.
         duration_ms = (time.perf_counter() - start) * 1000
+
+        # FIX-E: Sanitasi output sebelum disimpan ke ToolResult dan dikirim ke LLM.
+        # Kunci jaringan aman (ip, subnet, interface, routes) dipertahankan;
+        # hanya kunci sensitif (password, token, key, dll) yang di-redact.
+        raw_output = output.model_dump()
+        sanitized_output = sanitize_metadata(raw_output)
+
         result = ToolResult(
             success=True,
             tool_name=tool.name,
             permission_level=tool.permission_level,
             risk_level=tool.risk_level,
-            output=output.model_dump(),
+            output=sanitized_output,
             duration_ms=duration_ms,
         )
-        record_audit_event(
-            action="tool.execute",
+        # UPDATE baris EXECUTING yang sama, bukan INSERT baris baru.
+        update_audit_event(
+            audit_id=audit_id,
             result_status="SUCCESS",
-            user_id=getattr(user, "id", None),
-            tool_name=tool.name,
-            permission=tool.permission_level.value,
-            risk_level=tool.risk_level.value,
-            request_metadata=request.arguments,
             duration_ms=duration_ms,
             db=db,
         )
