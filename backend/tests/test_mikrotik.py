@@ -435,6 +435,76 @@ class TestMikrotikFailureNeverLeaksRawException:
 
 
 # ============================================================
+# Parameter koneksi (_connect) — diverifikasi lewat kwargs yang diterima
+# librouteros.connect(), karena connect() sendiri di-mock total di test ini.
+# ============================================================
+
+_ALL_EXECUTORS = [
+    (execute_system_resource, SystemResourceInput()),
+    (execute_interface_status, InterfaceStatusInput()),
+    (execute_ip_address, IpAddressInput()),
+    (execute_route_table, RouteTableInput()),
+    (execute_arp_table, ArpTableInput()),
+    (execute_dhcp_leases, DhcpLeasesInput()),
+    (execute_firewall_rules, FirewallRulesInput()),
+]
+
+
+class TestConnectParameters:
+    @pytest.mark.asyncio
+    async def test_plain_api_does_not_pass_ssl_wrapper(self):
+        """librouteros menggabungkan kwargs dengan DEFAULTS lewat ChainMap;
+        ssl_wrapper=None akan menimpa default callable-nya dan crash saat
+        koneksi dibuka. Untuk API biasa, kwarg ini TIDAK boleh dikirim."""
+        responses = {
+            ("system", "resource"): [{"board-name": "RB750Gr3"}],
+            ("system", "identity"): [{"name": "lab-router"}],
+        }
+        with _mock_connect_success(responses) as mock_connect:
+            result = await execute_system_resource(
+                SystemResourceInput(), _make_ctx(_make_device(connection_type="api"))
+            )
+        assert result.success is True
+        kwargs = mock_connect.call_args.kwargs
+        assert "ssl_wrapper" not in kwargs
+        assert kwargs["host"] == "192.168.88.1"
+        assert kwargs["port"] == 8728
+        assert kwargs["username"] == "admin"
+
+    @pytest.mark.asyncio
+    async def test_api_ssl_passes_callable_ssl_wrapper(self):
+        responses = {
+            ("system", "resource"): [{"board-name": "RB750Gr3"}],
+            ("system", "identity"): [{"name": "lab-router"}],
+        }
+        # Case-insensitive: 'API-SSL' harus diperlakukan sama dengan 'api-ssl'.
+        with _mock_connect_success(responses) as mock_connect:
+            result = await execute_system_resource(
+                SystemResourceInput(), _make_ctx(_make_device(connection_type="API-SSL"))
+            )
+        assert result.success is True
+        assert callable(mock_connect.call_args.kwargs["ssl_wrapper"])
+
+    @pytest.mark.parametrize("executor,input_instance", _ALL_EXECUTORS)
+    @pytest.mark.asyncio
+    async def test_unsupported_connection_type_rejected_with_clear_error(
+        self, executor, input_instance
+    ):
+        """'ssh' adalah DEFAULT connection_type di POST /devices — device
+        MikroTik yang lupa mengisinya harus mendapat pesan jelas, bukan
+        error koneksi menyesatkan dari mencoba protokol API di port 22."""
+        with patch("app.tools.mikrotik.librouteros.connect") as mock_connect:
+            result = await executor(
+                input_instance, _make_ctx(_make_device(connection_type="ssh"))
+            )
+        assert result.success is False
+        assert "connection_type" in result.error
+        assert "api-ssl" in result.error
+        assert "hunter2" not in result.error  # password tidak pernah masuk pesan error
+        mock_connect.assert_not_called()
+
+
+# ============================================================
 # Tool registration / ToolManager wiring sanity checks
 # ============================================================
 

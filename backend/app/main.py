@@ -1,10 +1,10 @@
 """
 N.O.V.A Backend — Entry Point
-Milestone 4: Linux Executor (SSH)
+Milestone 4: Linux Executor (SSH) + Phase 5: MikroTik (diagnostic, READ-only)
 
 Client → FastAPI → Auth → PostgreSQL
                   → AI Gateway (OpenRouter)
-                  → Tool Manager → Executor (ping, linux.*)
+                  → Tool Manager → Executor (ping, linux.*, web.*, mikrotik.*)
 """
 
 import asyncio
@@ -29,6 +29,15 @@ from app.tools.linux import (
     process_status_tool,
     docker_status_tool,
     log_check_tool,
+)
+from app.tools.mikrotik import (
+    system_resource_tool,
+    interface_status_tool,
+    ip_address_tool,
+    route_table_tool,
+    arp_table_tool,
+    dhcp_leases_tool,
+    firewall_rules_tool,
 )
 from app.tools.web import web_search_tool, web_read_page_tool
 from app.security.audit_retention import audit_retention_loop
@@ -66,6 +75,19 @@ tool_manager.register(docker_status_tool)
 tool_manager.register(log_check_tool)
 tool_manager.register(web_search_tool)
 tool_manager.register(web_read_page_tool)
+
+# MikroTik (Phase 5) — diagnostic READ-only, semuanya requires_device=True:
+# request WAJIB menyertakan device_id (device platform 'mikrotik' milik user,
+# didaftarkan lewat POST /devices + POST /credentials). Sengaja TIDAK masuk
+# _CATEGORY_TOOL_ALLOWLIST di app/ai/tool_calling.py — LLM belum boleh
+# memanggil tool berbasis device lewat /chat; hanya lewat POST /tools/execute.
+tool_manager.register(system_resource_tool)
+tool_manager.register(interface_status_tool)
+tool_manager.register(ip_address_tool)
+tool_manager.register(route_table_tool)
+tool_manager.register(arp_table_tool)
+tool_manager.register(dhcp_leases_tool)
+tool_manager.register(firewall_rules_tool)
 
 
 @app.on_event("startup")

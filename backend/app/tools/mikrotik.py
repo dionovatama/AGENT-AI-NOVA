@@ -42,8 +42,7 @@ komentar senada di app/tools/manager.py, blok "4.5 Device Resolution"):
 - credential_plaintext (dari ctx) HANYA dipakai untuk connect, TIDAK
   PERNAH dimasukkan ke output/log/exception message yang di-return.
 
-Dependency baru (tambahkan ke requirements.txt):
-    librouteros==3.4.1
+Dependency: librouteros==3.4.1 (sudah ada di requirements.txt).
 """
 
 from __future__ import annotations
@@ -76,6 +75,9 @@ class MikrotikConnectionError(Exception):
     supaya pesan errornya jelas menunjuk ke masalah konfigurasi device."""
 
 
+_ALLOWED_CONNECTION_TYPES = ("api", "api-ssl")
+
+
 def _connect(device: Device, password: str | None):
     """
     Factory koneksi RouterOS API — SATU tempat kebenaran untuk parameter
@@ -83,15 +85,27 @@ def _connect(device: Device, password: str | None):
     *_sync() (thread terpisah lewat asyncio.to_thread), BUKAN langsung
     di executor async (README section 4).
 
-    device.connection_type menentukan API biasa ("api", default) vs
-    API-SSL ("api-ssl") — lihat CATATAN KEAMANAN di docstring modul ini
+    device.connection_type harus "api" (port 8728, default RouterOS) atau
+    "api-ssl" (port 8729) — lihat CATATAN KEAMANAN di docstring modul ini
     soal verifikasi sertifikat API-SSL yang sengaja dimatikan untuk lab.
+    Nilai lain (mis. "ssh", yang merupakan DEFAULT di POST /devices) DITOLAK
+    dengan pesan jelas — tanpa guard ini device MikroTik yang didaftarkan
+    dengan default akan diam-diam dicoba lewat protokol API di port 22 dan
+    gagal dengan error koneksi yang menyesatkan.
 
     Username WAJIB ada di device.device_metadata (mis.
     {"username": "admin"}) — diisi user saat POST /devices, bukan
     hardcoded, konsisten dengan contoh ExecutionContext di README
     section 3 (`ctx.device.device_metadata.get("username")`).
     """
+    connection_type = (device.connection_type or "api").strip().lower()
+    if connection_type not in _ALLOWED_CONNECTION_TYPES:
+        raise MikrotikConnectionError(
+            f"connection_type {device.connection_type!r} tidak didukung untuk "
+            f"tool mikrotik.* — daftarkan device dengan connection_type 'api' "
+            f"(port 8728) atau 'api-ssl' (port 8729) lewat POST /devices."
+        )
+
     username = (device.device_metadata or {}).get("username")
     if not username:
         raise MikrotikConnectionError(
@@ -106,21 +120,27 @@ def _connect(device: Device, password: str | None):
             "yang bisa dipakai untuk autentikasi RouterOS API."
         )
 
-    ssl_wrapper = None
-    if (device.connection_type or "api").lower() == "api-ssl":
+    connect_kwargs: dict = {
+        "host": device.host,
+        "port": device.port,
+        "username": username,
+        "password": password,
+        "timeout": _CONNECT_TIMEOUT_SECONDS,
+    }
+
+    # ssl_wrapper HANYA dikirim untuk api-ssl. librouteros menggabungkan
+    # kwargs dengan DEFAULTS lewat ChainMap, dan default-nya adalah callable
+    # identitas (`lambda sock: sock`). Mengirim `ssl_wrapper=None` untuk API
+    # biasa akan MENIMPA default itu dengan None -> `None(sock)` ->
+    # TypeError saat koneksi dibuka. Test mocked tidak menangkap ini karena
+    # librouteros.connect di-patch total.
+    if connection_type == "api-ssl":
         context = ssl.create_default_context()
         context.check_hostname = False
         context.verify_mode = ssl.CERT_NONE
-        ssl_wrapper = context.wrap_socket
+        connect_kwargs["ssl_wrapper"] = context.wrap_socket
 
-    return librouteros.connect(
-        host=device.host,
-        port=device.port,
-        username=username,
-        password=password,
-        timeout=_CONNECT_TIMEOUT_SECONDS,
-        ssl_wrapper=ssl_wrapper,
-    )
+    return librouteros.connect(**connect_kwargs)
 
 
 def _to_bool(value) -> bool:

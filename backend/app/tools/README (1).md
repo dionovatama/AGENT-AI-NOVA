@@ -117,17 +117,52 @@ class ExecutionContext:
     device: Device | None = None
     credential_plaintext: str | None = None  # hasil decrypt, hidup di memory doang
 ```
-`credential_plaintext` di-decrypt oleh Tool Manager tepat sebelum
-executor dipanggil, dan TIDAK PERNAH:
+`credential_plaintext` diisi Tool Manager tepat sebelum executor
+dipanggil (dataclass-nya ada di `app/tools/context.py`, field ini
+`repr=False`), dan TIDAK PERNAH:
 - ditulis ke `AuditLog` (sanitization.py sudah redact key `credential`,
   tapi jangan sengaja masukkan ke `request_metadata` juga)
 - dikembalikan lewat `ToolResult.output`
 - dilog dengan `logger.info`/`print` apa pun alasannya
 
+> **Gap yang diketahui — jangan dianggap sudah aman:** saat ini TIDAK ada
+> enkripsi/vault. `POST /credentials` menyimpan nilai secret apa adanya di
+> kolom `secret_reference`, dan Tool Manager membacanya langsung sebagai
+> `credential_plaintext` (lihat komentar di `manager.py`, blok "4.5 Device
+> Resolution"). Migrasi ke secret manager / enkripsi-at-rest adalah pekerjaan
+> terpisah. Untuk MikroTik API-SSL, verifikasi sertifikat juga sengaja
+> dimatikan (`ssl.CERT_NONE`, lab saja) — lihat docstring `mikrotik.py`.
+
 **Tenant isolation:** resolusi `device_id` -> `Device` SELALU difilter
 `owner_id == current_user.id`. Device milik user lain harus terlihat
 sebagai "tidak ditemukan", bukan 403 — supaya tidak membocorkan device
 mana saja yang eksis di sistem (anti user/ID enumeration).
+
+### Mendaftarkan device MikroTik (syarat agar `mikrotik.*` bisa jalan)
+
+Default `POST /devices` adalah `port=22` dan `connection_type="ssh"` —
+itu untuk Linux. Untuk MikroTik, isi eksplisit:
+
+```json
+{
+  "name": "lab-mikrotik-01",
+  "platform": "mikrotik",
+  "host": "192.168.88.1",
+  "port": 8728,
+  "connection_type": "api",
+  "credential_id": "<id dari POST /credentials>",
+  "metadata": {"username": "admin"}
+}
+```
+
+- `connection_type`: `"api"` (port 8728) atau `"api-ssl"` (port 8729). Nilai
+  lain ditolak executor dengan pesan jelas (`success=False`), termasuk
+  `"ssh"` yang merupakan default.
+- `metadata.username` wajib; password diambil dari credential yang terpasang
+  di device (`secret_reference`).
+- Service `api` (atau `api-ssl`) harus aktif di RouterOS: `/ip service`.
+- Panggil lewat `POST /tools/execute` dengan `device_id` di body. Tool
+  `mikrotik.*` sengaja belum ada di allowlist tool-calling `/chat`.
 
 ---
 
@@ -200,7 +235,10 @@ baru masuk `MODIFY`/`HIGH_RISK`.
       baca `.env` langsung.
 - [ ] Tidak ada credential yang masuk ke `logger.*`, `ToolResult.output`,
       atau `AuditLog.request_metadata`.
-- [ ] Terdaftar di `main.py` (`tool_manager.register(...)`).
+- [ ] Terdaftar di `main.py` (`tool_manager.register(...)`) — bukan cuma
+      didefinisikan di file tool-nya; tool yang tidak di-register tidak
+      muncul di `/tools/list` dan selalu 404.
+- [ ] Dependency library baru sudah masuk `requirements.txt`.
 - [ ] Test: minimal 1) parser/fungsi murni tanpa mock koneksi (kalau
       ada parsing), 2) mocked-connection test untuk jalur sukses +
       gagal, 3) kalau ada input bebas dari luar → test injection

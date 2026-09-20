@@ -14,6 +14,7 @@ bukan jalur pintas — konsisten dengan Core Principle PRD bahwa LLM
 tidak pernah mengeksekusi apa pun secara langsung.
 """
 
+import uuid
 from unittest.mock import patch
 
 import pytest
@@ -25,8 +26,20 @@ from app.ai.tool_calling import (
     _to_function_name,
     get_completion_with_tools,
 )
+from app.database.models import User
 from app.main import app  # noqa: F401 — memicu registrasi tool ke tool_manager
 from app.tools.web import WebSearchHit
+
+
+def _fake_user() -> User:
+    """User in-memory untuk jalur tool execution.
+
+    FIX-A: get_completion_with_tools() tidak lagi memakai 'system user'
+    palsu — tool execution tanpa user ditolak ToolManager. Test yang benar-
+    benar mengeksekusi tool harus menyertakan user. Sama polanya dengan
+    fake_user di tests/test_mikrotik.py (tidak menyentuh DB; kalau audit
+    gagal insert karena user tidak ada di DB, audit.py hanya me-log)."""
+    return User(id=uuid.uuid4(), email="toolcalling-test@example.com", hashed_password="x", is_active=True)
 
 
 class TestBuildToolSchemas:
@@ -80,7 +93,9 @@ class TestGetCompletionWithTools:
             "app.tools.web._search_sync",
             return_value=[WebSearchHit(title="Cuaca Jakarta", url="https://x.example", snippet="Cerah")],
         ):
-            result = await get_completion_with_tools("Cuaca Jakarta hari ini?", TaskCategory.GENERAL_CHAT)
+            result = await get_completion_with_tools(
+                "Cuaca Jakarta hari ini?", TaskCategory.GENERAL_CHAT, user=_fake_user()
+            )
 
         assert "cerah" in result.content.lower()
         assert result.tools_used == ["web.search"]
@@ -103,7 +118,9 @@ class TestGetCompletionWithTools:
             "app.tools.web._search_sync",
             side_effect=RuntimeError("network down"),
         ):
-            result = await get_completion_with_tools("cari sesuatu", TaskCategory.GENERAL_CHAT)
+            result = await get_completion_with_tools(
+                "cari sesuatu", TaskCategory.GENERAL_CHAT, user=_fake_user()
+            )
 
         # Tool gagal secara eksplisit (success=False dikirim balik ke model),
         # bukan exception yang bocor sampai menggagalkan seluruh chat.

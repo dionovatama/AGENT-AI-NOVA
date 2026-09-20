@@ -19,7 +19,11 @@ from pydantic import BaseModel
 from app.database.models import User
 from app.database.session import SessionLocal
 from app.main import app
-from app.security.authorization import AuthorizationError, authorize_tool_execution
+from app.security.authorization import (
+    AuthorizationError,
+    authorize_tool_execution,
+    build_approval_context,
+)
 from app.security.hashing import create_access_token
 from app.tools.manager import tool_manager
 from app.tools.schemas import LoggingPolicy, PermissionLevel, RiskLevel, ToolDefinition, ToolRequest
@@ -128,8 +132,35 @@ def test_authorize_high_risk_requires_confirmation():
         authorize_tool_execution(user, "test.high_risk_tool", PermissionLevel.HIGH_RISK, confirmed=False)
     assert "HIGH_RISK" in str(exc_info.value)
 
-    # Allowed when confirmed=True
-    authorize_tool_execution(user, "test.high_risk_tool", PermissionLevel.HIGH_RISK, confirmed=True)
+
+def test_authorize_high_risk_confirmed_alone_is_not_enough():
+    """FIX-G: confirmed=True saja TIDAK cukup untuk HIGH_RISK — wajib disertai
+    ApprovalContext terverifikasi (lihat authorization.py). Test lama
+    mengasumsikan confirmed=True sudah cukup; itu perilaku sebelum FIX-G."""
+    user = User(id=uuid.uuid4(), email="user@test.com", is_active=True)
+    with pytest.raises(AuthorizationError) as exc_info:
+        authorize_tool_execution(user, "test.high_risk_tool", PermissionLevel.HIGH_RISK, confirmed=True)
+    assert "ApprovalContext" in str(exc_info.value)
+
+
+def test_authorize_high_risk_allowed_with_valid_approval_context():
+    user = User(id=uuid.uuid4(), email="user@test.com", is_active=True)
+    approval = build_approval_context(user, "test.high_risk_tool", {})
+    # Tidak boleh raise.
+    authorize_tool_execution(
+        user, "test.high_risk_tool", PermissionLevel.HIGH_RISK,
+        confirmed=True, approval_ctx=approval,
+    )
+
+
+def test_authorize_high_risk_rejects_approval_context_for_other_tool():
+    user = User(id=uuid.uuid4(), email="user@test.com", is_active=True)
+    approval = build_approval_context(user, "test.some_other_tool", {})
+    with pytest.raises(AuthorizationError):
+        authorize_tool_execution(
+            user, "test.high_risk_tool", PermissionLevel.HIGH_RISK,
+            confirmed=True, approval_ctx=approval,
+        )
 
 
 def test_authorize_inactive_user_rejected():
@@ -192,12 +223,16 @@ def test_api_high_risk_tool_without_confirmation_denied(setup_test_tools):
     assert "HIGH_RISK" in response.json()["detail"]
 
 
-def test_api_high_risk_tool_with_confirmation_allowed(setup_test_tools):
+def test_api_high_risk_tool_with_confirmation_only_is_denied(setup_test_tools):
+    """FIX-G: lewat POST /tools/execute, confirmed=True saja tidak cukup untuk
+    HIGH_RISK. Belum ada jalur yang menyuplai ApprovalContext dari API (itu
+    menunggu Configuration Flow), jadi tool HIGH_RISK memang belum bisa
+    dieksekusi lewat endpoint ini — 403, bukan 200."""
     headers, _ = _get_auth_headers()
     response = client.post(
         "/tools/execute",
         headers=headers,
         json={"tool_name": "test.high_risk_tool", "arguments": {"command": "critical"}, "confirmed": True},
     )
-    assert response.status_code == 200
-    assert response.json()["success"] is True
+    assert response.status_code == 403
+    assert "ApprovalContext" in response.json()["detail"]
