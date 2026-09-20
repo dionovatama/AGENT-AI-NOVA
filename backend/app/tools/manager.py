@@ -19,11 +19,17 @@ import time
 from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
-from app.database.models import User
+from app.database.models import Credential, Device, User
+from app.database.session import SessionLocal
 from app.security.audit import log_tool_execution, record_audit_event, update_audit_event
-from app.security.authorization import AuthorizationError, authorize_tool_execution
+from app.security.authorization import (
+    AuthorizationError,
+    authorize_tool_execution,
+    validate_platform_compatibility,
+)
 from app.security.permissions import PermissionDeniedError, check_permission
 from app.security.sanitization import sanitize_error_message, sanitize_metadata
+from app.tools.context import ExecutionContext
 from app.tools.schemas import RiskLevel, ToolDefinition, ToolRequest, ToolResult
 
 logger = logging.getLogger("nova.tools.manager")
@@ -57,6 +63,29 @@ class ToolTimeoutError(ToolManagerError):
 
 class ToolExecutionError(ToolManagerError):
     """Executor melempar exception saat dijalankan."""
+
+
+class ToolDeviceNotFoundError(ToolNotFoundError):
+    """
+    Device (device_id) tidak ada atau bukan milik user yang me-request.
+
+    Sengaja subclass dari ToolNotFoundError (bukan class baru yang lepas)
+    supaya otomatis ikut mapping HTTP 404 yang sudah ada di
+    app/api/tools.py TANPA perlu tambahan except clause di sana — dan
+    supaya perilakunya konsisten dengan anti-enumeration di
+    app/api/devices.py: device milik user lain harus terlihat "tidak
+    ditemukan", bukan 403 (README (1).md section 3).
+    """
+
+
+class ToolCredentialError(ToolManagerError):
+    """
+    Device yang direferensikan butuh credential untuk tool ini, tapi
+    credential tidak ada / tidak ditemukan / tidak bisa diresolusi.
+    Ini masalah konfigurasi device (setup issue), bukan kegagalan
+    eksekusi tool — dipetakan ke HTTP 400 lewat catch-all
+    ToolManagerError di app/api/tools.py.
+    """
 
 
 class ToolManager:
@@ -153,6 +182,112 @@ class ToolManager:
             self._log_failure(tool, request, str(exc), start)
             raise
 
+        # 4.5 Device Resolution — HANYA untuk tool dengan requires_device=True
+        # (README (1).md section 3: "ExecutionContext & device_id"). Tool lama
+        # (ping, linux.*, web.*) melewati blok ini sepenuhnya: ctx tetap None,
+        # dan executor-nya dipanggil dengan signature 1-argumen seperti biasa
+        # (lihat pemanggilan executor di langkah 5 di bawah) — pola lama
+        # dipertahankan apa adanya, tidak dipaksa migrasi.
+        ctx: ExecutionContext | None = None
+        active_db = db
+        opened_db = False
+
+        if tool.requires_device:
+            if active_db is None:
+                active_db = SessionLocal()
+                opened_db = True
+
+            try:
+                if request.device_id is None:
+                    raise ToolValidationError(
+                        f"Tool '{tool.name}' membutuhkan device_id. Daftarkan "
+                        f"device lewat POST /devices lalu sertakan id-nya di "
+                        f"ToolRequest.device_id."
+                    )
+
+                device = (
+                    active_db.query(Device)
+                    .filter(
+                        Device.id == request.device_id,
+                        Device.owner_id == user.id,
+                    )
+                    .first()
+                )
+                if device is None:
+                    # Anti-enumeration (README (1).md section 3): device milik
+                    # user lain HARUS terlihat "tidak ditemukan", bukan 403 —
+                    # supaya request tidak bisa dipakai memeriksa device_id
+                    # siapa saja yang eksis di sistem.
+                    raise ToolDeviceNotFoundError(
+                        "Device tidak ditemukan atau bukan milik pengguna ini."
+                    )
+
+                # FIX-J: tool 'mikrotik.*' hanya boleh menyasar device
+                # platform mikrotik, dst — lihat _TOOL_PLATFORM_MAP.
+                validate_platform_compatibility(tool.name, device.platform)
+
+                credential_plaintext: str | None = None
+                if device.credential_id is not None:
+                    credential = (
+                        active_db.query(Credential)
+                        .filter(
+                            Credential.id == device.credential_id,
+                            Credential.owner_id == user.id,
+                        )
+                        .first()
+                    )
+                    if credential is None:
+                        raise ToolCredentialError(
+                            "Credential yang direferensikan device ini tidak "
+                            "ditemukan atau bukan milik pengguna ini."
+                        )
+                    # CATATAN KEAMANAN — GAP YANG DISENGAJA TETAP TERLIHAT:
+                    # app/database/models.py mendokumentasikan secret_reference
+                    # sebagai "referensi ke secret manager/keystore terkontrol",
+                    # tapi belum ada layer enkripsi/vault sungguhan yang
+                    # menuliskannya di app/api/devices.py — kolom itu saat ini
+                    # menyimpan nilai secret secara langsung. Untuk batch
+                    # mikrotik.* ini, kolom tsb dipakai apa adanya sebagai slot
+                    # plaintext sementara. Migrasi ke secret manager/enkripsi-
+                    # at-rest sungguhan adalah pekerjaan terpisah di luar scope
+                    # batch ini — sengaja TIDAK "diselesaikan" diam-diam di sini
+                    # supaya gap ini tetap eksplisit (sama semangatnya dengan
+                    # known_hosts=None di app/tools/linux.py).
+                    credential_plaintext = credential.secret_reference
+                else:
+                    # Semua tool mikrotik.* pada batch ini butuh autentikasi API
+                    # RouterOS — device tanpa credential tidak bisa dieksekusi.
+                    raise ToolCredentialError(
+                        f"Device '{device.name}' belum memiliki credential "
+                        f"terpasang. Tool ini butuh autentikasi ke device."
+                    )
+
+                ctx = ExecutionContext(
+                    user=user,
+                    db=active_db,
+                    device=device,
+                    credential_plaintext=credential_plaintext,
+                )
+            except (ToolManagerError, AuthorizationError) as exc:
+                duration_ms = (time.perf_counter() - start) * 1000
+                record_audit_event(
+                    action="tool.execute",
+                    result_status="DENIED",
+                    user_id=getattr(user, "id", None),
+                    device_id=request.device_id,
+                    tool_name=tool.name,
+                    permission=tool.permission_level.value,
+                    risk_level=tool.risk_level.value,
+                    request_metadata=request.arguments,
+                    error_message=str(exc),
+                    duration_ms=duration_ms,
+                    db=db,
+                )
+                self._log_failure(tool, request, str(exc), start)
+                if opened_db:
+                    active_db.close()
+                raise
+
         # FIX-L: Concurrency enforcement.
         user_key = str(getattr(user, "id", "anonymous"))
         user_sem = await self._get_user_semaphore(user_key)
@@ -192,6 +327,7 @@ class ToolManager:
                 action="tool.execute",
                 result_status="EXECUTING",
                 user_id=getattr(user, "id", None),
+                device_id=request.device_id,
                 tool_name=tool.name,
                 permission=tool.permission_level.value,
                 risk_level=tool.risk_level.value,
@@ -205,9 +341,18 @@ class ToolManager:
             # audit_id=None dengan diam-diam no-op (lihat docstring-nya),
             # jadi ini tetap aman tanpa exception baru.
             audit_id = getattr(executing_entry, "id", None)
-            output = await asyncio.wait_for(
-                tool.executor(validated_input), timeout=tool.timeout_seconds
-            )
+            if tool.requires_device:
+                # Tool berbasis device (mikrotik.*) menerima ExecutionContext
+                # sebagai argumen kedua (README (1).md section 3).
+                output = await asyncio.wait_for(
+                    tool.executor(validated_input, ctx), timeout=tool.timeout_seconds
+                )
+            else:
+                # Tool lama (ping, linux.*, web.*) — signature 1-argumen,
+                # tidak berubah.
+                output = await asyncio.wait_for(
+                    tool.executor(validated_input), timeout=tool.timeout_seconds
+                )
         except asyncio.TimeoutError as exc:
             error = f"Timeout setelah {tool.timeout_seconds}s"
             duration_ms = (time.perf_counter() - start) * 1000
@@ -266,6 +411,10 @@ class ToolManager:
             # FIX-L: Always release both semaphores.
             user_sem.release()
             _GLOBAL_SEMAPHORE.release()
+            # Tutup sesi DB yang dibuka sendiri untuk device resolution
+            # (kalau caller tidak menyediakan db= sendiri).
+            if opened_db:
+                active_db.close()
 
         # 6. Result — sukses hanya jika executor benar-benar selesai normal.
         duration_ms = (time.perf_counter() - start) * 1000
