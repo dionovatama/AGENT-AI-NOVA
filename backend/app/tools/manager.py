@@ -16,6 +16,8 @@ import asyncio
 import logging
 import time
 
+from typing import Any
+
 from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
@@ -23,6 +25,7 @@ from app.database.models import Credential, Device, User
 from app.database.session import SessionLocal
 from app.security.audit import log_tool_execution, record_audit_event, update_audit_event
 from app.security.authorization import (
+    ApprovalContext,
     AuthorizationError,
     authorize_tool_execution,
     validate_platform_compatibility,
@@ -108,7 +111,7 @@ class ToolManager:
         )
 
     def list_tools(self) -> list[str]:
-        return list(self._registry.keys())
+        return [name for name, tool in self._registry.items() if not tool.internal_only]
 
     def get_tool(self, name: str) -> ToolDefinition | None:
         """Lookup read-only satu ToolDefinition, atau None kalau tidak terdaftar.
@@ -117,7 +120,10 @@ class ToolManager:
         untuk membangun function-calling schema di app/ai/tool_calling.py)
         tanpa perlu mengakses _registry secara langsung.
         """
-        return self._registry.get(name)
+        tool = self._registry.get(name)
+        if tool is not None and tool.internal_only:
+            return None
+        return tool
 
     async def _get_user_semaphore(self, user_key: str) -> asyncio.Semaphore:
         """Lazily create a per-user semaphore (thread-safe via asyncio Lock)."""
@@ -132,16 +138,55 @@ class ToolManager:
         request: ToolRequest,
         user: User | None = None,
         db: Session | None = None,
+        is_internal: bool = False,
+        approval_ctx: Any = None,
     ) -> ToolResult:
         start = time.perf_counter()
 
-        # 1. Allowlist check.
+        # 1. Allowlist check & internal_only gate.
         tool = self._registry.get(request.tool_name)
-        if tool is None:
+        if tool is None or (tool.internal_only and not is_internal):
+            if tool is not None and tool.internal_only:
+                duration_ms = (time.perf_counter() - start) * 1000
+                record_audit_event(
+                    action="tool.execute",
+                    result_status="DENIED",
+                    user_id=getattr(user, "id", None),
+                    device_id=request.device_id,
+                    tool_name=tool.name,
+                    permission=tool.permission_level.value,
+                    risk_level=tool.risk_level.value,
+                    request_metadata=request.arguments,
+                    error_message="DENIED: internal_only tool via HTTP",
+                    duration_ms=duration_ms,
+                    db=db,
+                )
             raise ToolNotFoundError(
                 f"Tool '{request.tool_name}' tidak dikenal atau tidak "
                 f"ada di allowlist."
             )
+
+        # 1.5 Defense in Depth: Kill-switch check untuk tool konfigurasi internal
+        if tool.internal_only:
+            from app.config import settings
+            if not settings.config_apply_enabled:
+                duration_ms = (time.perf_counter() - start) * 1000
+                record_audit_event(
+                    action="tool.execute",
+                    result_status="DENIED",
+                    user_id=getattr(user, "id", None),
+                    device_id=request.device_id,
+                    tool_name=tool.name,
+                    permission=tool.permission_level.value,
+                    risk_level=tool.risk_level.value,
+                    request_metadata=request.arguments,
+                    error_message="DENIED: config_apply_enabled kill-switch is OFF",
+                    duration_ms=duration_ms,
+                    db=db,
+                )
+                raise ToolExecutionError(
+                    "Konfigurasi perangkat ditolak: Kill-switch CONFIG_APPLY_ENABLED sedang mati."
+                )
 
         # 2. Schema Validation.
         try:
@@ -164,7 +209,12 @@ class ToolManager:
                 permission=tool.permission_level,
                 confirmed=request.confirmed,
                 context={"tool": tool, "request": request},
+                approval_ctx=approval_ctx,
             )
+            # Jika tool internal_only, ApprovalContext wajib ada dan divalidasi
+            if tool.internal_only:
+                if approval_ctx is None:
+                    raise AuthorizationError("Tool internal memerlukan ApprovalContext yang terverifikasi.")
         except (AuthorizationError, PermissionDeniedError) as exc:
             duration_ms = (time.perf_counter() - start) * 1000
             record_audit_event(

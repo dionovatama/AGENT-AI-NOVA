@@ -58,11 +58,15 @@ class ApprovalContext:
     Fields:
         user_id: ID pengguna yang memberikan persetujuan.
         tool_name: Nama tool yang disetujui.
-        device_id: ID device target (None jika tidak relevan).
         arguments_hash: SHA-256 hex digest dari JSON-serialized arguments.
             Memastikan approval hanya berlaku untuk argumen yang persis sama.
         created_at: Waktu persetujuan diberikan (UTC).
         expires_at: Waktu kadaluarsa persetujuan (UTC).
+        device_id: ID device target (None jika tidak relevan).
+        configuration_id: ID proposal konfigurasi jika terkait ChangeSet.
+        plan_hash: Hash SHA-256 kanonik dari plan konfigurasi.
+        state_fingerprint: Hash SHA-256 kanonik dari state perangkat saat approval.
+        used: Flag pencegah replay attack (sekali pakai).
     """
     user_id: str
     tool_name: str
@@ -70,6 +74,10 @@ class ApprovalContext:
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     expires_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     device_id: str | None = None
+    configuration_id: str | None = None
+    plan_hash: str | None = None
+    state_fingerprint: str | None = None
+    used: bool = False
 
     @property
     def is_expired(self) -> bool:
@@ -82,6 +90,9 @@ def build_approval_context(
     arguments: dict[str, Any],
     device_id: str | None = None,
     ttl_seconds: int = 300,
+    configuration_id: str | None = None,
+    plan_hash: str | None = None,
+    state_fingerprint: str | None = None,
 ) -> ApprovalContext:
     """
     Factory untuk membuat ApprovalContext dari sebuah request.
@@ -92,7 +103,6 @@ def build_approval_context(
     args_hash = hashlib.sha256(args_canonical.encode()).hexdigest()
 
     now = datetime.now(timezone.utc)
-    # Avoid circular import: import timedelta inline
     from datetime import timedelta
     return ApprovalContext(
         user_id=str(user.id),
@@ -101,6 +111,10 @@ def build_approval_context(
         device_id=str(device_id) if device_id else None,
         created_at=now,
         expires_at=now + timedelta(seconds=ttl_seconds),
+        configuration_id=str(configuration_id) if configuration_id else None,
+        plan_hash=str(plan_hash) if plan_hash else None,
+        state_fingerprint=str(state_fingerprint) if state_fingerprint else None,
+        used=False,
     )
 
 
@@ -115,14 +129,22 @@ def validate_approval_context(
     Memvalidasi ApprovalContext untuk sebuah request eksekusi.
 
     Memeriksa:
+    - Belum pernah digunakan (anti replay attack)
+    - Belum kadaluarsa (TTL check)
     - Sama user (user_id match)
     - Sama tool (tool_name match)
-    - Sama argumen (SHA-256 hash match — mencegah argument tampering)
-    - Sama device (device_id match, jika relevan)
-    - Belum kadaluarsa
+    - Sama device (device_id match)
+    - Sama plan_hash & state_fingerprint (jika terikat configuration plan)
+    - Sama argumen (SHA-256 hash match)
 
     Melempar AuthorizationError jika validasi gagal.
     """
+    if ctx.used:
+        raise AuthorizationError(
+            "Approval context sudah pernah digunakan (cegah replay attack). "
+            "Minta persetujuan user ulang."
+        )
+
     if ctx.is_expired:
         raise AuthorizationError(
             "Approval context sudah kadaluarsa. Minta persetujuan user ulang."
@@ -139,19 +161,39 @@ def validate_approval_context(
             f"tidak cocok dengan tool yang diminta '{tool_name}'."
         )
 
-    args_canonical = json.dumps(arguments, sort_keys=True, ensure_ascii=True)
-    args_hash = hashlib.sha256(args_canonical.encode()).hexdigest()
-    if ctx.arguments_hash != args_hash:
-        raise AuthorizationError(
-            "Argumen request tidak cocok dengan yang telah disetujui user. "
-            "Approval tidak berlaku untuk argumen yang berbeda."
-        )
-
     if (ctx.device_id or None) != (str(device_id) if device_id else None):
         raise AuthorizationError(
             "Approval context untuk device yang berbeda. "
             "Approval tidak dapat ditransfer antar device."
         )
+
+    # Validasi plan_hash jika ada dalam approval
+    if ctx.plan_hash is not None:
+        req_plan_hash = arguments.get("plan_hash")
+        if req_plan_hash and ctx.plan_hash != req_plan_hash:
+            raise AuthorizationError(
+                "Plan hash tidak cocok dengan yang telah disetujui user. "
+                "Plan telah berubah sejak approval."
+            )
+
+    # Validasi state_fingerprint jika ada dalam approval (anti drift)
+    if ctx.state_fingerprint is not None:
+        req_fingerprint = arguments.get("state_fingerprint")
+        if req_fingerprint and ctx.state_fingerprint != req_fingerprint:
+            raise AuthorizationError(
+                "State fingerprint tidak cocok dengan yang disetujui user. "
+                "Terjadi perubahan state perangkat (drift) sejak approval."
+            )
+
+    # Validasi argumen umum jika bukan mode plan_hash
+    if ctx.plan_hash is None:
+        args_canonical = json.dumps(arguments, sort_keys=True, ensure_ascii=True)
+        args_hash = hashlib.sha256(args_canonical.encode()).hexdigest()
+        if ctx.arguments_hash != args_hash:
+            raise AuthorizationError(
+                "Argumen request tidak cocok dengan yang telah disetujui user. "
+                "Approval tidak berlaku untuk argumen yang berbeda."
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -229,6 +271,10 @@ def authorize_tool_execution(
         # READ: user terautentikasi diizinkan menjalankan tool allowlist
         return
 
+    request_obj = (context or {}).get("request")
+    args = getattr(request_obj, "arguments", {}) if request_obj else {}
+    dev_id = getattr(request_obj, "device_id", None)
+
     if permission == PermissionLevel.MODIFY:
         if not confirmed:
             raise AuthorizationError(
@@ -240,7 +286,8 @@ def authorize_tool_execution(
         if approval_ctx is not None:
             validate_approval_context(
                 approval_ctx, user, tool_name,
-                (context or {}).get("request", {}).arguments if hasattr((context or {}).get("request", {}), "arguments") else {},
+                args,
+                device_id=dev_id,
             )
         return
 
@@ -260,10 +307,9 @@ def authorize_tool_execution(
             )
         validate_approval_context(
             approval_ctx, user, tool_name,
-            (context or {}).get("request", {}).arguments if hasattr((context or {}).get("request", {}), "arguments") else {},
+            args,
+            device_id=dev_id,
         )
-        # Boundary tambahan: HIGH_RISK tidak pernah dieksekusi hanya karena
-        # tool ada di allowlist — konfirmasi eksplisit + ApprovalContext wajib ada.
         return
 
     raise AuthorizationError(f"Permission level tidak dikenal: {permission}")

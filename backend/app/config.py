@@ -118,14 +118,11 @@ class Settings(BaseSettings):
     linux_ssh_host_key_checking: bool = False
     linux_ssh_known_hosts_path: str | None = None
 
-    # --- Audit Log Retention (PRD section 32/33) ---
-    # Baris audit_logs lebih tua dari ini dihapus otomatis lewat
-    # background task (app/security/audit_retention.py) -- SENGAJA bukan
-    # tombol hapus manual di UI/API: audit trail tidak boleh gampang
-    # dihapus oleh user biasa (siapa pun bisa menutupi jejak tindakannya
-    # sendiri), tapi tabelnya tetap butuh batas supaya tidak tumbuh tanpa
-    # henti. 90 hari = default umum retensi audit; sesuaikan lewat .env
-    # kalau kebutuhan kamu beda.
+    # --- Configuration Engine Kill-Switch (PRD section 39) ---
+    # Default False: memblokir seluruh eksekusi perubahan konfigurasi ke perangkat jaringan.
+    # Wajib bernilai True jika ingin menerapkan perubahan ke perangkat lab.
+    config_apply_enabled: bool = False
+
     audit_log_retention_days: int = 90
 
     model_config = SettingsConfigDict(

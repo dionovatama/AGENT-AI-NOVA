@@ -166,3 +166,121 @@ class AuditLog(Base):
 
     def __repr__(self) -> str:
         return f"<AuditLog id={self.id} action={self.action} tool={self.tool_name} status={self.result_status}>"
+
+
+class Configuration(Base):
+    """
+    Model database untuk proposal dan lifecycle konfigurasi perangkat jaringan
+    (PRD section 19-23, 33: Network Configuration Engine & Rollback).
+    Mendukung tenant isolation (owner_id).
+    """
+    __tablename__ = "configurations"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        PG_UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+
+    owner_id: Mapped[uuid.UUID] = mapped_column(
+        PG_UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+
+    device_id: Mapped[uuid.UUID] = mapped_column(
+        PG_UUID(as_uuid=True), ForeignKey("devices.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+
+    status: Mapped[str] = mapped_column(
+        String(50), nullable=False, index=True, default="DRAFT"
+    )
+
+    risk_level: Mapped[str] = mapped_column(String(50), nullable=False, default="LOW")
+
+    change_set: Mapped[dict] = mapped_column(JSON, nullable=False)
+
+    plan_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+
+    state_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+
+    approved_by: Mapped[uuid.UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+
+    approved_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+    expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+    applied_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        nullable=False,
+        index=True,
+    )
+
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )
+
+    def __repr__(self) -> str:
+        return f"<Configuration id={self.id} device_id={self.device_id} status={self.status} risk={self.risk_level}>"
+
+
+class ConfigurationVersion(Base):
+    """
+    Riwayat eksekusi, backup fisik/native, snapshot state, dan bukti verifikasi
+    per configuration plan (PRD section 22, 33).
+    """
+    __tablename__ = "configuration_versions"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        PG_UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+
+    configuration_id: Mapped[uuid.UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("configurations.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    owner_id: Mapped[uuid.UUID] = mapped_column(
+        PG_UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+
+    device_id: Mapped[uuid.UUID] = mapped_column(
+        PG_UUID(as_uuid=True), ForeignKey("devices.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+
+    version_number: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+
+    # backup_ref: {"path": str, "sha256": str, "size_bytes": int, "backup_type": str}
+    backup_ref: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+
+    # State nyata sebelum dan setelah perubahan (ter-sanitasi, zero secret exposure)
+    state_before: Mapped[dict] = mapped_column(JSON, nullable=False)
+    state_after: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+
+    # Hasil per operasi (termasuk ID objek di RouterOS untuk rollback terbalik)
+    operation_results: Mapped[list | None] = mapped_column(JSON, nullable=True)
+
+    # Hasil verifikasi paska-apply/paska-rollback dari state nyata perangkat
+    verification_results: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        nullable=False,
+        index=True,
+    )
+
+    def __repr__(self) -> str:
+        return f"<ConfigurationVersion id={self.id} config_id={self.configuration_id} version={self.version_number}>"

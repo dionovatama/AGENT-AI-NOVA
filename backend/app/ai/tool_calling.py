@@ -107,7 +107,7 @@ def _build_tool_schemas(category: TaskCategory) -> list[dict]:
 
     for name in allowed_names:
         tool = tool_manager.get_tool(name)
-        if tool is None:
+        if tool is None or getattr(tool, "internal_only", False):
             continue
         if tool.permission_level != PermissionLevel.READ:
             logger.warning(

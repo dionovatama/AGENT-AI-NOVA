@@ -48,6 +48,11 @@ class ToolDefinition(BaseModel):
     # False supaya tool lama (ping, linux.*, web.*) tidak berubah perilaku.
     requires_device: bool = False
 
+    # Tool internal (mis. tool penulis konfigurasi jaringan) TIDAK BOLEH dipanggil
+    # langsung dari POST /tools/execute maupun lewat chat LLM. Hanya orkestrator
+    # backend internal yang boleh memanggilnya dengan menyertakan is_internal=True.
+    internal_only: bool = False
+
     model_config = {"arbitrary_types_allowed": True}
 
 class ToolRequest(BaseModel):

@@ -17,7 +17,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
-from app.api import auth, chat, devices, tools
+from app.api import auth, chat, configurations, devices, tools
 from app.tools.manager import tool_manager
 from app.tools.network import ping_tool
 from app.tools.linux import (
@@ -63,6 +63,7 @@ app.include_router(auth.router)
 app.include_router(chat.router)
 app.include_router(tools.router)
 app.include_router(devices.router)
+app.include_router(configurations.router)
 
 tool_manager.register(ping_tool)
 tool_manager.register(system_info_tool)
@@ -88,6 +89,10 @@ tool_manager.register(route_table_tool)
 tool_manager.register(arp_table_tool)
 tool_manager.register(dhcp_leases_tool)
 tool_manager.register(firewall_rules_tool)
+
+# Tool Konfigurasi MikroTik (internal_only=True) — dieksekusi hanya oleh Orchestrator
+from app.tools.mikrotik_config import mikrotik_config_apply_tool
+tool_manager.register(mikrotik_config_apply_tool)
 
 
 @app.on_event("startup")
