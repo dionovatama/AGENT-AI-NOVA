@@ -23,6 +23,9 @@ import type { DiagramAttachment } from "@/lib/types";
 
 const MERMAID_CONFIG = {
   startOnLoad: false,
+  // Jangan biarkan Mermaid mencoba menulis error UI sendiri ke DOM.
+  // NOVA menangani error melalui React state agar lifecycle DOM tetap terkendali.
+  suppressErrorRendering: true,
   securityLevel: "strict",
   theme: "base",
   fontFamily: "IBM Plex Sans, system-ui, sans-serif",
@@ -70,7 +73,12 @@ async function renderMermaidSerialized(
   id: string,
   code: string,
 ) {
-  const task = renderQueue.then(() => mermaid.render(id, code));
+  const task = renderQueue.then(async () => {
+    // Parse terlebih dahulu supaya syntax error gagal sebelum render membuat
+    // elemen DOM sementara. Ini juga membuat jalur error deterministik.
+    await mermaid.parse(code);
+    return mermaid.render(id, code);
+  });
   renderQueue = task.then(
     () => undefined,
     () => undefined,
@@ -119,9 +127,6 @@ export function MermaidDiagram({ diagram }: { diagram: DiagramAttachment }) {
           status: "error",
           message: err instanceof Error ? err.message : "Diagram tidak dapat dirender.",
         });
-      } finally {
-        // Mermaid kadang meninggalkan elemen sementara di <body> saat gagal.
-        document.getElementById(`d${renderId}`)?.remove();
       }
     })();
 
