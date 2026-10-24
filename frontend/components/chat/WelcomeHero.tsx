@@ -53,19 +53,19 @@ export function WelcomeHero({
   onQuickAction: (category: TaskCategory, prompt: string, useTools?: boolean) => void;
 }) {
   return (
-    <div className="relative flex flex-col items-center pb-10 pt-10 text-center">
+    <div className="relative flex flex-col items-center pb-5 pt-5 text-center">
       <div className="hero-glow" aria-hidden="true" />
 
-      <HudRing size={96} />
+      <HudRing size={84} />
 
-      <h1 className="mt-5 text-[30px] font-medium leading-snug tracking-tight text-ink-100 md:text-[34px]">
+      <h1 className="mt-3 text-[27px] font-medium leading-snug tracking-tight text-ink-100 md:text-[30px]">
         Ready to operate?
       </h1>
-      <p className="mt-1.5 max-w-md text-sm text-ink-500">
+      <p className="mt-1 max-w-md text-[13px] text-ink-500">
         NOVA — Nexus Operation Virtual Assistant
       </p>
 
-      <div className="mt-5 flex max-w-2xl flex-wrap items-center justify-center gap-2">
+      <div className="mt-3.5 flex max-w-2xl flex-wrap items-center justify-center gap-1.5">
         {QUICK_ACTIONS.map((action) => (
           <button
             key={action.label}
