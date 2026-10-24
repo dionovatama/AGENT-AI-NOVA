@@ -88,13 +88,13 @@ export default function ChatPage() {
   }
 
   return (
-    <div className="mx-auto flex h-full min-h-0 w-full max-w-[900px] flex-col px-3 sm:px-5 lg:px-7">
+    <div className="mx-auto flex h-full min-h-0 w-full max-w-[1080px] flex-col px-4 sm:px-6 lg:px-8">
       {messages.length === 0 ? (
-        <div className="min-h-0 flex-1 overflow-y-auto pb-2">
+        <div className="min-h-0 flex-1 overflow-hidden pb-2">
           <ChatWindow messages={messages} onQuickAction={handleQuickAction} />
         </div>
       ) : (
-        <div className="nova-chat-scroll min-h-0 flex-1 overflow-y-auto pb-3 pt-1">
+        <div className="nova-chat-scroll min-h-0 flex-1 overflow-y-auto pb-3 pt-1 pr-1">
           <ChatWindow messages={messages} onQuickAction={handleQuickAction} />
           {sending && (
             <div className="mx-auto mt-5 w-full max-w-[820px] px-2 sm:px-4">
@@ -104,10 +104,10 @@ export default function ChatPage() {
         </div>
       )}
 
-      <div className="group relative mt-2">
+      <div className="group relative mt-1.5">
         <div className="pointer-events-none absolute -inset-1 rounded-2xl bg-gradient-to-r from-orb-glow/20 via-[#4C8EF7]/10 to-signal-teal/15 opacity-25 blur-xl transition-opacity duration-300 group-focus-within:opacity-70" />
 
-        <form onSubmit={handleSend} className="glass-composer relative flex min-h-[116px] flex-col justify-between p-3.5 sm:p-4">
+        <form onSubmit={handleSend} className="glass-composer relative flex min-h-[108px] flex-col justify-between p-3.5 sm:p-4">
           <div className="flex w-full items-start gap-2.5">
             <span className="mt-0.5 select-none font-mono text-[15px] text-orb-core drop-shadow-[0_0_8px_rgba(192,132,252,0.6)]">
               ✦
@@ -166,7 +166,7 @@ export default function ChatPage() {
       </div>
 
       {messages.length === 0 && (
-        <div className="mt-5 mb-1">
+        <div className="mt-4 mb-1">
           <CapabilityShortcuts />
         </div>
       )}
