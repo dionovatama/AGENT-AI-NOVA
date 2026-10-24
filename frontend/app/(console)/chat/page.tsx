@@ -18,10 +18,6 @@ export default function ChatPage() {
   const [useTools, setUseTools] = useState(false);
   const [sending, setSending] = useState(false);
   const [processingStage, setProcessingStage] = useState<ProcessingStage>("understand");
-  // Latency BENERAN diukur dari waktu tempuh request terakhir -- BUKAN
-  // angka statis seperti "42ms" di referensi desain. Null sebelum ada
-  // request yang selesai sama sekali (tidak ada nilai untuk ditampilkan,
-  // bukan 0 yang menyesatkan seolah sudah pernah diukur).
   const [lastLatencyMs, setLastLatencyMs] = useState<number | null>(null);
 
   const searchParams = useSearchParams();
@@ -37,9 +33,6 @@ export default function ChatPage() {
 
   const toolsSupported = TOOL_CALLING_CATEGORIES.includes(category);
 
-  // Dipanggil dari quick-action pill di WelcomeHero -- isi composer +
-  // ganti kategori (+ nyalain tools kalau shortcut-nya butuh), TIDAK
-  // auto-kirim. User tetap yang menekan Kirim.
   function handleQuickAction(cat: TaskCategory, prompt: string, wantsTools?: boolean) {
     setCategory(cat);
     setInput(prompt);
@@ -95,38 +88,31 @@ export default function ChatPage() {
   }
 
   return (
-    <div className="mx-auto flex h-full min-h-0 max-w-3xl flex-col">
+    <div className="mx-auto flex h-full min-h-0 w-full max-w-[900px] flex-col px-3 sm:px-5 lg:px-7">
       {messages.length === 0 ? (
-        // Empty state: TIDAK dibungkus overflow-y-auto sendiri --
-        // biarkan halaman (main, sudah overflow-y-auto di layout.tsx)
-        // yang scroll kalau kontennya (hero + kartu) lebih tinggi dari
-        // viewport, bukan bikin "kotak" kecil dengan scrollbar sendiri
-        // di tengah halaman.
-        <>
+        <div className="min-h-0 flex-1">
           <ChatWindow messages={messages} onQuickAction={handleQuickAction} />
-          <div className="mb-6 mt-8">
+          <div className="mb-5 mt-6">
             <CapabilityShortcuts />
           </div>
-        </>
+        </div>
       ) : (
-        <div className="min-h-0 flex-1 overflow-y-auto pb-4">
+        <div className="nova-chat-scroll min-h-0 flex-1 overflow-y-auto pb-3 pt-1">
           <ChatWindow messages={messages} onQuickAction={handleQuickAction} />
           {sending && (
-            <div className="mx-auto mt-7 w-full max-w-[720px]">
+            <div className="mx-auto mt-5 w-full max-w-[820px] px-2 sm:px-4">
               <NovaActivity stage={processingStage} toolsEnabled={toolsSupported && useTools} />
             </div>
           )}
         </div>
       )}
 
-      {/* Ambient back-glow di belakang composer, nyala lebih terang saat
-          fokus -- sesuai DESIGN.md komponen #1. */}
-      <div className="group relative">
-        <div className="pointer-events-none absolute -inset-1 rounded-2xl bg-gradient-to-r from-orb-glow/25 via-[#4C8EF7]/15 to-signal-teal/20 opacity-30 blur-xl transition-opacity duration-300 group-focus-within:opacity-80" />
+      <div className="group relative mt-2">
+        <div className="pointer-events-none absolute -inset-1 rounded-2xl bg-gradient-to-r from-orb-glow/20 via-[#4C8EF7]/10 to-signal-teal/15 opacity-25 blur-xl transition-opacity duration-300 group-focus-within:opacity-70" />
 
-        <form onSubmit={handleSend} className="glass-composer relative flex min-h-[148px] flex-col justify-between p-4">
+        <form onSubmit={handleSend} className="glass-composer relative flex min-h-[116px] flex-col justify-between p-3.5 sm:p-4">
           <div className="flex w-full items-start gap-2.5">
-            <span className="mt-0.5 select-none font-mono text-[16px] text-orb-core drop-shadow-[0_0_8px_rgba(192,132,252,0.6)]">
+            <span className="mt-0.5 select-none font-mono text-[15px] text-orb-core drop-shadow-[0_0_8px_rgba(192,132,252,0.6)]">
               ✦
             </span>
             <textarea
@@ -144,7 +130,7 @@ export default function ChatPage() {
             />
           </div>
 
-          <div className="mt-2 flex flex-wrap items-center justify-between gap-2 border-t border-white/[0.05] pt-3">
+          <div className="mt-2 flex flex-wrap items-center justify-between gap-2 border-t border-white/[0.05] pt-2.5">
             <div className="flex flex-wrap items-center gap-1.5">
               <CategoryPicker value={category} onChange={setCategory} />
 
@@ -165,10 +151,6 @@ export default function ChatPage() {
                 </button>
               )}
 
-              {/* READ (AUTO) -- BUKAN dekorasi, ini fakta nyata: chat
-                  hanya pernah bisa memanggil tool permission READ (lihat
-                  _CATEGORY_TOOL_ALLOWLIST di backend/app/ai/tool_calling.py).
-                  MODIFY/HIGH_RISK tidak pernah bisa lewat sini. */}
               <span className="badge-read">
                 <span className="h-1.5 w-1.5 rounded-full bg-signal-green shadow-[0_0_6px_rgba(63,203,124,0.9)]" />
                 READ (AUTO)
@@ -178,8 +160,7 @@ export default function ChatPage() {
             <button
               type="submit"
               disabled={sending}
-              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-tr from-[#842BD2] to-orb-glow text-white
-                shadow-[0_0_16px_rgba(168,85,247,0.5)] transition-all hover:brightness-110 active:scale-95 disabled:opacity-50"
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-tr from-[#842BD2] to-orb-glow text-white shadow-[0_0_16px_rgba(168,85,247,0.5)] transition-all hover:brightness-110 active:scale-95 disabled:opacity-50"
             >
               <ArrowUp size={16} strokeWidth={2.5} />
             </button>
@@ -187,22 +168,21 @@ export default function ChatPage() {
         </form>
       </div>
 
-      <div className="flex items-center justify-between px-1 pt-2 text-ink-500">
-        <span className="font-sans text-[11px] text-ink-500/80">
-          Press <kbd className="rounded bg-white/[0.06] px-1 py-0.5 font-mono text-[10px] text-ink-300">Enter</kbd> to send{" "}
-          <kbd className="rounded bg-white/[0.06] px-1 py-0.5 font-mono text-[10px] text-ink-300">Shift+Enter</kbd> for newline
+      <div className="flex items-center justify-between px-1 pt-1.5 text-ink-500">
+        <span className="font-sans text-[10px] text-ink-500/80">
+          <kbd className="rounded bg-white/[0.06] px-1 py-0.5 font-mono text-[9px] text-ink-300">Enter</kbd> send ·{" "}
+          <kbd className="rounded bg-white/[0.06] px-1 py-0.5 font-mono text-[9px] text-ink-300">Shift+Enter</kbd> newline
         </span>
         {lastLatencyMs !== null && (
-          <span className="flex items-center gap-1.5 font-mono text-[11px] text-ink-500/80">
+          <span className="flex items-center gap-1.5 font-mono text-[10px] text-ink-500/80">
             <span className="h-1.5 w-1.5 rounded-full bg-signal-teal" />
-            Latency: {lastLatencyMs}ms
+            {lastLatencyMs}ms
           </span>
         )}
       </div>
 
-      <p className="mt-2 text-center text-[11px] text-ink-500">
-        Endpoint ini murni reasoning (Milestone 2). Untuk eksekusi command nyata,
-        gunakan halaman Tools.
+      <p className="mb-2 mt-1 text-center text-[10px] text-ink-500/80">
+        Endpoint ini murni reasoning (Milestone 2). Untuk eksekusi command nyata, gunakan halaman Tools.
       </p>
     </div>
   );
