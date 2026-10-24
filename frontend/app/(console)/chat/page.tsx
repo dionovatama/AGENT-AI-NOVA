@@ -6,6 +6,7 @@ import { ArrowUp } from "lucide-react";
 import { ChatWindow } from "@/components/chat/ChatWindow";
 import { CategoryPicker } from "@/components/chat/CategoryPicker";
 import { CapabilityShortcuts } from "@/components/chat/CapabilityShortcuts";
+import { NovaActivity, type ProcessingStage } from "@/components/chat/NovaActivity";
 import { novaApi, NovaApiError } from "@/lib/api";
 import type { ChatMessage, TaskCategory } from "@/lib/types";
 import { TOOL_CALLING_CATEGORIES } from "@/lib/types";
@@ -16,6 +17,7 @@ export default function ChatPage() {
   const [category, setCategory] = useState<TaskCategory>("general_chat");
   const [useTools, setUseTools] = useState(false);
   const [sending, setSending] = useState(false);
+  const [processingStage, setProcessingStage] = useState<ProcessingStage>("understand");
   // Latency BENERAN diukur dari waktu tempuh request terakhir -- BUKAN
   // angka statis seperti "42ms" di referensi desain. Null sebelum ada
   // request yang selesai sama sekali (tidak ada nilai untuk ditampilkan,
@@ -52,12 +54,16 @@ export default function ChatPage() {
     setMessages((prev) => [...prev, { role: "user", content: text }]);
     setInput("");
     setSending(true);
+    setProcessingStage("understand");
+    const stageTimer = window.setTimeout(() => setProcessingStage("process"), 350);
     const startedAt = performance.now();
 
     try {
       const toolsRequested = toolsSupported && useTools;
+      setProcessingStage("process");
       const result = await novaApi.chatCompletion(text, category, toolsRequested);
       setLastLatencyMs(Math.round(performance.now() - startedAt));
+      setProcessingStage("respond");
       setMessages((prev) => [
         ...prev,
         {
@@ -83,6 +89,7 @@ export default function ChatPage() {
         },
       ]);
     } finally {
+      window.clearTimeout(stageTimer);
       setSending(false);
     }
   }
@@ -104,6 +111,11 @@ export default function ChatPage() {
       ) : (
         <div className="min-h-0 flex-1 overflow-y-auto pb-4">
           <ChatWindow messages={messages} onQuickAction={handleQuickAction} />
+          {sending && (
+            <div className="mx-auto mt-7 w-full max-w-[720px]">
+              <NovaActivity stage={processingStage} toolsEnabled={toolsSupported && useTools} />
+            </div>
+          )}
         </div>
       )}
 
