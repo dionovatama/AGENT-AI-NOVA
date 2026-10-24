@@ -51,7 +51,7 @@ export default function ConsoleLayout({
             <span>Configuration</span>
           </Link>
         </header>
-        <main className="flex-1 overflow-y-auto p-6">{children}</main>
+        <main className="min-h-0 flex-1 overflow-hidden">{children}</main>
       </div>
     </div>
   );
