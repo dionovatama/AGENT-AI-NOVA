@@ -53,19 +53,25 @@ export function WelcomeHero({
   onQuickAction: (category: TaskCategory, prompt: string, useTools?: boolean) => void;
 }) {
   return (
-    <div className="relative flex flex-col items-center pb-5 pt-5 text-center">
+    <div className="relative flex flex-col items-center pt-6 text-center [@media(max-height:719px)]:pt-0">
       <div className="hero-glow" aria-hidden="true" />
 
-      <HudRing size={84} />
+      {/* Orb 96px (inti) seperti referensi => HudRing 144 (inti = 2/3 dari size).
+          Di layar pendek ukurannya dikecilkan lewat transform; margin negatif
+          mengembalikan ruang yang dilepas, dan di layar sangat pendek orb
+          disembunyikan supaya composer + kartu tidak pernah terpotong. */}
+      <div className="[@media(max-height:719px)]:-my-5 [@media(max-height:719px)]:scale-[0.7] [@media(max-height:619px)]:hidden">
+        <HudRing size={144} />
+      </div>
 
-      <h1 className="mt-3 text-[27px] font-medium leading-snug tracking-tight text-ink-100 md:text-[30px]">
+      <h1 className="mt-4 text-[30px] font-medium leading-[41px] tracking-tight text-ink-100">
         Ready to operate?
       </h1>
-      <p className="mt-1 max-w-md text-[13px] text-ink-500">
+      <p className="mt-1 max-w-md text-sm text-ink-500">
         NOVA — Nexus Operation Virtual Assistant
       </p>
 
-      <div className="mt-3.5 flex max-w-2xl flex-wrap items-center justify-center gap-1.5">
+      <div className="mt-5 flex max-w-2xl flex-wrap items-center justify-center gap-2">
         {QUICK_ACTIONS.map((action) => (
           <button
             key={action.label}

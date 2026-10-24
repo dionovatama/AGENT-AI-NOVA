@@ -32,6 +32,7 @@ export default function ChatPage() {
   }, [resetKey]);
 
   const toolsSupported = TOOL_CALLING_CATEGORIES.includes(category);
+  const isEmpty = messages.length === 0;
 
   function handleQuickAction(cat: TaskCategory, prompt: string, wantsTools?: boolean) {
     setCategory(cat);
@@ -88,47 +89,47 @@ export default function ChatPage() {
   }
 
   return (
-    <div className="mx-auto flex h-full min-h-0 w-full max-w-[820px] flex-col px-4 sm:px-6 lg:px-8">
-      {messages.length === 0 ? (
-        <div className="min-h-0 flex-1 overflow-hidden pb-2">
+    <div className="mx-auto flex h-full min-h-0 w-full max-w-[944px] flex-col px-6 pb-[18px]">
+      {isEmpty ? (
+        <div className="flex min-h-0 flex-1 items-center justify-center overflow-hidden">
           <ChatWindow messages={messages} onQuickAction={handleQuickAction} />
         </div>
       ) : (
         <div className="nova-chat-scroll min-h-0 flex-1 overflow-y-auto pb-3 pt-1 pr-1">
           <ChatWindow messages={messages} onQuickAction={handleQuickAction} />
           {sending && (
-            <div className="mx-auto mt-5 w-full max-w-[820px] px-2 sm:px-4">
+            <div className="mx-auto mt-5 w-full max-w-4xl px-1">
               <NovaActivity stage={processingStage} toolsEnabled={toolsSupported && useTools} />
             </div>
           )}
         </div>
       )}
 
-      <div className="group relative mt-1.5">
+      <div className="group relative">
         <div className="pointer-events-none absolute -inset-1 rounded-2xl bg-gradient-to-r from-orb-glow/20 via-[#4C8EF7]/10 to-signal-teal/15 opacity-25 blur-xl transition-opacity duration-300 group-focus-within:opacity-70" />
 
-        <form onSubmit={handleSend} className="glass-composer relative flex min-h-[108px] flex-col justify-between p-3.5 sm:p-4">
-          <div className="flex w-full items-start gap-2.5">
-            <span className="mt-0.5 select-none font-mono text-[15px] text-orb-core drop-shadow-[0_0_8px_rgba(192,132,252,0.6)]">
-              ✦
-            </span>
-            <textarea
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.shiftKey) {
-                  e.preventDefault();
-                  handleSend(e);
-                }
-              }}
-              rows={2}
-              placeholder="Ask NOVA anything, or ask it to check something on the lab server…"
-              className="w-full resize-none bg-transparent text-[14px] leading-relaxed text-ink-100 placeholder:text-ink-500/80 focus:outline-none"
-            />
-          </div>
+        <form
+          onSubmit={handleSend}
+          className={`glass-composer relative flex flex-col ${isEmpty ? "p-6" : "p-4"}`}
+        >
+          <textarea
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                handleSend(e);
+              }
+            }}
+            rows={isEmpty ? 3 : 2}
+            placeholder="Ask NOVA anything, or ask it to check something on the lab server…"
+            className={`block w-full resize-none bg-transparent text-[14px] leading-relaxed text-ink-100 placeholder:text-ink-500/80 focus:outline-none ${
+              isEmpty ? "h-[82px]" : "h-[48px]"
+            }`}
+          />
 
-          <div className="mt-2 flex flex-wrap items-center justify-between gap-2 border-t border-white/[0.05] pt-2.5">
-            <div className="flex flex-wrap items-center gap-1.5">
+          <div className={`flex flex-wrap items-center justify-between gap-2 ${isEmpty ? "mt-5" : "mt-3"}`}>
+            <div className="flex flex-wrap items-center gap-2">
               <CategoryPicker value={category} onChange={setCategory} />
 
               {toolsSupported && (
@@ -137,7 +138,7 @@ export default function ChatPage() {
                   onClick={() => setUseTools((v) => !v)}
                   aria-pressed={useTools}
                   title="Aktifkan tools READ: web.search, web.read_page, diagram.create"
-                  className={`flex shrink-0 items-center gap-1.5 rounded-lg border px-2.5 py-1 text-[12px] font-medium transition-colors ${
+                  className={`flex h-9 shrink-0 items-center gap-1.5 rounded-lg border px-3.5 text-[12px] font-medium transition-colors ${
                     useTools
                       ? "border-signal-teal/40 bg-signal-teal/10 text-signal-teal"
                       : "border-transparent bg-white/[0.04] text-ink-500 hover:bg-white/[0.08] hover:text-ink-100"
@@ -157,7 +158,7 @@ export default function ChatPage() {
             <button
               type="submit"
               disabled={sending}
-              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-tr from-[#842BD2] to-orb-glow text-white shadow-[0_0_16px_rgba(168,85,247,0.5)] transition-all hover:brightness-110 active:scale-95 disabled:opacity-50"
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-tr from-[#842BD2] to-orb-glow text-white shadow-[0_0_16px_rgba(168,85,247,0.5)] transition-all hover:brightness-110 active:scale-95 disabled:opacity-50"
             >
               <ArrowUp size={16} strokeWidth={2.5} />
             </button>
@@ -165,8 +166,8 @@ export default function ChatPage() {
         </form>
       </div>
 
-      {messages.length === 0 && (
-        <div className="mt-4 mb-1">
+      {isEmpty && (
+        <div className="mt-[18px]">
           <CapabilityShortcuts />
         </div>
       )}

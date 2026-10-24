@@ -2,255 +2,77 @@
 @tailwind components;
 @tailwind utilities;
 
-@layer base {
-  * {
-    @apply border-base-700;
-  }
-  ::selection {
-    background-color: theme("colors.signal.teal");
-    color: theme("colors.base.950");
-  }
-  :focus-visible {
-    outline: 2px solid theme("colors.signal.teal");
-    outline-offset: 2px;
-  }
+:root {
+  /* NOVA Color System */
+  --nova-bg-primary: #0a0a0f;
+  --nova-bg-secondary: #0f0f1a;
+  --nova-bg-tertiary: #141425;
 
-  /* Dipakai HudRing.tsx — didefinisikan manual (bukan andalkan
-     animate-spin bawaan Tailwind) karena arbitrary-value duration
-     (animate-[nova-hud-spin_10s_linear_infinite]) butuh nama keyframe
-     yang benar-benar ter-generate, bukan cuma dirujuk namanya. */
-  @keyframes nova-hud-spin {
-    from {
-      transform: rotate(0deg);
-    }
-    to {
-      transform: rotate(360deg);
-    }
-  }
+  --nova-accent-purple: #7c3aed;
+  --nova-accent-cyan: #06b6d4;
+  --nova-accent-blue: #3b82f6;
 
-  /* Quantum Sphere orb (WelcomeHero) — 3 layer motion independen,
-     nama disamakan dengan istilah di DESIGN.md/code.html supaya
-     mudah ditelusuri balik ke spesifikasinya. */
-  @keyframes nova-orb-slow-spin {
-    from { transform: rotate(0deg); }
-    to { transform: rotate(360deg); }
-  }
-  @keyframes nova-orb-reverse-spin {
-    from { transform: rotate(360deg); }
-    to { transform: rotate(0deg); }
-  }
-  @keyframes nova-orb-pulse {
-    0%, 100% { opacity: 0.85; transform: scale(1); }
-    50% { opacity: 1; transform: scale(1.03); }
-  }
+  --nova-text-primary: #e2e8f0;
+  --nova-text-secondary: #94a3b8;
+  --nova-text-muted: #475569;
+
+  --nova-border: rgba(255, 255, 255, 0.06);
+  --nova-glow-purple: rgba(124, 58, 237, 0.15);
+  --nova-glow-cyan: rgba(6, 182, 212, 0.15);
 }
 
-@layer components {
-  /* Panel: satuan visual utama console. Radius kecil (6px), bukan
-     rounded-2xl generik — ini alat kerja, bukan kartu marketing. */
-  .panel {
-    @apply bg-base-800 border border-base-700 rounded-md;
-  }
+/* Global resets */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
 
-  /* Panel glass — dipakai KHUSUS untuk composer & capability shortcuts
-     di chat (bukan .panel biasa di seluruh app), scope sengaja dibatasi
-     supaya efek ini tidak diam-diam menyebar ke ToolCard/panel lain dan
-     mengubah identitas operator console jadi "SaaS kaca" di semua
-     tempat. Butuh sesuatu di belakangnya untuk di-blur — lihat
-     .ambient-glow di bawah, dipasang di container chat.
-     bg base-800/40 (bukan solid) + backdrop-blur = transparansi kaca.
-     border putih redup (bukan border-base-700 biasa) = pinggiran kaca
-     yang kena cahaya. inset shadow tipis di atas = highlight cahaya
-     natural di tepi atas kaca. */
-  .panel-glass {
-    @apply relative rounded-md border border-white/10 bg-base-800/40 backdrop-blur-xl;
-    box-shadow:
-      inset 0 1px 0 0 rgba(255, 255, 255, 0.06),
-      0 8px 30px -12px rgba(0, 0, 0, 0.55);
-  }
+html,
+body {
+  height: 100%;
+  overflow: hidden;
+  background-color: var(--nova-bg-primary);
+  color: var(--nova-text-primary);
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+}
 
-  .panel-header {
-    @apply flex items-center justify-between px-4 py-3 border-b border-base-700;
-  }
+/* Scrollbar Styling — subtle thin scrollbar */
+::-webkit-scrollbar {
+  width: 5px;
+}
 
-  .btn-primary {
-    @apply inline-flex items-center gap-2 rounded-sm bg-signal-teal px-3.5 py-2
-      text-sm font-medium text-base-950 transition-colors
-      hover:bg-signal-teal/90 disabled:opacity-40 disabled:pointer-events-none;
-  }
+::-webkit-scrollbar-track {
+  background: transparent;
+}
 
-  .btn-secondary {
-    @apply inline-flex items-center gap-2 rounded-sm border border-base-600
-      bg-base-800 px-3.5 py-2 text-sm font-medium text-ink-100 transition-colors
-      hover:border-signal-teal/60 disabled:opacity-40 disabled:pointer-events-none;
-  }
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 999px;
+}
 
-  .btn-danger {
-    @apply inline-flex items-center gap-2 rounded-sm bg-signal-rose px-3.5 py-2
-      text-sm font-medium text-base-950 transition-colors hover:bg-signal-rose/90;
-  }
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.15);
+}
 
-  .field-input {
-    @apply w-full rounded-sm border border-base-600 bg-base-900 px-3 py-2 text-sm
-      text-ink-100 placeholder:text-ink-500
-      focus:border-signal-teal focus:outline-none;
-  }
+/* Firefox scrollbar */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.08) transparent;
+}
 
-  .field-label {
-    @apply mb-1.5 block text-[13px] text-ink-300;
-  }
+/* Selection */
+::selection {
+  background: var(--nova-accent-purple);
+  color: white;
+}
 
-  /* Ambient glow — blob blur lembut di belakang panel-glass, supaya ada
-     "sesuatu" untuk di-blur (tanpa ini, backdrop-blur di atas bg flat
-     polos hampir tidak kelihatan bedanya). Dipasang absolute di
-     belakang konten (z-0), pointer-events-none supaya tidak mengganggu
-     klik. */
-  .ambient-glow {
-    @apply pointer-events-none absolute inset-0 -z-10 overflow-hidden;
-  }
-  .ambient-glow::before,
-  .ambient-glow::after {
-    content: "";
-    position: absolute;
-    border-radius: 9999px;
-    filter: blur(120px);
-    background: theme("colors.signal.blue");
-  }
-  .ambient-glow::before {
-    top: -15%;
-    left: 5%;
-    width: 520px;
-    height: 520px;
-    opacity: 0.24;
-  }
-  .ambient-glow::after {
-    bottom: -20%;
-    right: 0%;
-    width: 480px;
-    height: 480px;
-    opacity: 0.18;
-  }
-
-  /* Chrome glass — sidebar & header bar, supaya seluruh shell (bukan
-     cuma panel di dalam halaman) ikut duduk di atas ambient-glow
-     sebagai kaca, bukan blok solid base-950 seperti sebelumnya. */
-  .chrome-glass {
-    @apply border-white/10 bg-base-950/50 backdrop-blur-xl;
-  }
-
-  /* ============================================================
-     Obsidian Violet Operator — kelas baru, dipakai area Chat saja
-     (lihat catatan di tailwind.config.ts). Nama & nilai disalin dari
-     DESIGN.md/code.html yang diberikan Tuan, bukan dikarang ulang.
-     ============================================================ */
-
-  /* Composer utama — panel kaca terapung. Fokus dikasih ring violet
-     supaya jelas kapan input aktif menerima ketikan. */
-  .glass-composer {
-    @apply relative w-full rounded-2xl border border-white/[0.09] bg-[rgba(22,17,33,0.72)] backdrop-blur-2xl transition-shadow;
-    box-shadow:
-      0 20px 48px -10px rgba(0, 0, 0, 0.7),
-      inset 0 1px 0 rgba(255, 255, 255, 0.12);
-  }
-  .glass-composer:focus-within {
-    box-shadow:
-      0 0 0 1px #a855f7,
-      0 0 24px rgba(168, 85, 247, 0.25),
-      0 20px 48px -10px rgba(0, 0, 0, 0.7),
-      inset 0 1px 0 rgba(255, 255, 255, 0.12);
-  }
-
-  /* Card shortcut (Verified Automations) — elevasi lebih ringan dari
-     composer, hover naik dikit + border teal (bukan violet, supaya
-     beda kegunaan: violet = fokus input, teal = tool/aksi). */
-  .glass-card {
-    @apply relative rounded-xl border border-white/[0.06] bg-[rgba(21,16,34,0.6)] backdrop-blur-xl
-      transition-all duration-200 hover:-translate-y-0.5 hover:border-signal-teal/30;
-  }
-  .glass-card:hover {
-    background: rgba(29, 22, 46, 0.85);
-  }
-
-  /* Suggestion / quick-action pill — dipakai untuk shortcut yang
-     ngisi composer, BUKAN tombol navigasi. */
-  .pill {
-    @apply inline-flex items-center gap-1.5 rounded-full border border-white/[0.06] bg-surface-panel
-      px-3 py-1.5 text-[12px] font-medium text-ink-300 transition-all
-      hover:border-border-glow/40 hover:text-ink-100;
-  }
-
-  /* Ambient glow di belakang hero saja (BUKAN seluruh shell — beda
-     dari .ambient-glow lama yang dipasang di layout.tsx). Sesuai
-     DESIGN.md "Level 0: ambient radial wash positioned behind the
-     hero element" — posisinya relatif ke container hero, bukan
-     seluruh halaman. */
-  .hero-glow {
-    @apply pointer-events-none absolute inset-x-0 top-0 -z-10 overflow-visible;
-  }
-  .hero-glow::before,
-  .hero-glow::after {
-    content: "";
-    position: absolute;
-    left: 50%;
-    transform: translateX(-50%);
-    border-radius: 9999px;
-  }
-  .hero-glow::before {
-    top: -64px;
-    width: 680px;
-    height: 360px;
-    filter: blur(110px);
-    background: linear-gradient(
-      to bottom,
-      rgba(140, 70, 220, 0.18),
-      rgba(76, 142, 247, 0.08),
-      transparent
-    );
-  }
-  .hero-glow::after {
-    top: 140px;
-    width: 420px;
-    height: 220px;
-    filter: blur(90px);
-    background: radial-gradient(circle, rgba(168, 85, 247, 0.14), transparent 70%);
-  }
-
-
-  /* Chat scroll: deliberately quiet so long conversations do not create
-     a bright browser-default scrollbar inside the console. */
-  .nova-chat-scroll {
-    scrollbar-width: thin;
-    scrollbar-color: rgba(168, 85, 247, 0.28) transparent;
-    overscroll-behavior: contain;
-    scroll-behavior: smooth;
-  }
-  .nova-chat-scroll::-webkit-scrollbar {
-    width: 5px;
-  }
-  .nova-chat-scroll::-webkit-scrollbar-track {
-    background: transparent;
-  }
-  .nova-chat-scroll::-webkit-scrollbar-thumb {
-    border-radius: 9999px;
-    background: rgba(168, 85, 247, 0.28);
-  }
-  .nova-chat-scroll::-webkit-scrollbar-thumb:hover {
-    background: rgba(168, 85, 247, 0.48);
-  }
-
-  /* Badge permission — mono, pulse dot kecil. Warnanya SEMANTIK
-     (PRD section 23), sama seperti sistem lama, cuma bentuknya pill
-     mono sesuai DESIGN.md komponen #4. */
-  .badge-read {
-    @apply inline-flex items-center gap-1.5 rounded-md border border-signal-green/30
-      bg-signal-green/10 px-2 py-1 font-mono text-[10px] font-medium tracking-wide text-signal-green;
-  }
-  .badge-modify {
-    @apply inline-flex items-center gap-1.5 rounded-md border border-signal-amber/30
-      bg-signal-amber/10 px-2 py-1 font-mono text-[10px] font-medium tracking-wide text-signal-amber;
-  }
-  .badge-high-risk {
-    @apply inline-flex items-center gap-1.5 rounded-md border border-signal-rose/[0.35]
-      bg-signal-rose/[0.12] px-2 py-1 font-mono text-[10px] font-medium tracking-wide text-signal-rose;
-  }
+/* Markdown nested list indentation */
+.nova-markdown ul ul,
+.nova-markdown ol ul,
+.nova-markdown ul ol,
+.nova-markdown ol ol {
+  margin-left: 1rem;
+  margin-top: 0.25rem;
+  margin-bottom: 0;
 }
