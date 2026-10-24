@@ -16,6 +16,7 @@ import httpx
 from pydantic import BaseModel
 
 from app.config import settings
+from app.ai.attachments import DiagramAttachment
 from app.ai.model_router import TaskCategory, get_primary_model, get_fallback_model
 
 logger = logging.getLogger("nova.ai.openrouter")
@@ -72,6 +73,10 @@ class ChatCompletionResult(BaseModel):
     # additive dengan default aman untuk backward compatibility -- client
     # lama yang belum tahu field ini cukup mengabaikannya.
     tools_used: list[str] = []
+    # Additive, default [] — diisi hanya oleh jalur tool-calling bila model
+    # memanggil diagram.create dan hasilnya lolos validasi. Frontend
+    # merendernya di bawah teks jawaban.
+    diagrams: list[DiagramAttachment] = []
 
     # 'model_used' bentrok dengan reserved prefix Pydantic v2 (model_dump,
     # model_validate, dst). protected_namespaces=() menonaktifkan proteksi

@@ -43,10 +43,10 @@ def _fake_user() -> User:
 
 
 class TestBuildToolSchemas:
-    def test_general_chat_exposes_web_tools_only(self):
+    def test_general_chat_exposes_web_and_diagram_tools_only(self):
         schemas = _build_tool_schemas(TaskCategory.GENERAL_CHAT)
         names = {s["function"]["name"] for s in schemas}
-        assert names == {"web__search", "web__read_page"}
+        assert names == {"web__search", "web__read_page", "diagram__create"}
 
     def test_category_without_allowlist_gets_no_tools(self):
         schemas = _build_tool_schemas(TaskCategory.CODING)
@@ -163,6 +163,102 @@ class TestGetCompletionWithTools:
         # tools kwarg yang dikirim ke _call_openrouter_raw harus None/kosong.
         _, kwargs = mock_raw.call_args
         assert not kwargs.get("tools")
+
+
+class TestDiagramToolCalling:
+    """diagram.create lewat jalur tool-calling: diagram dilampirkan sebagai
+    attachment, kode TIDAK dikirim balik ke model, dan input berbahaya
+    ditolak oleh validasi tool (bukan oleh prompt)."""
+
+    _CODE = "flowchart TD\n  A[Client] --> B[Router]\n  B --> C[Internet]"
+
+    @pytest.mark.asyncio
+    async def test_valid_diagram_is_attached_and_code_not_echoed_to_model(self):
+        first = RawAssistantMessage(
+            content=None,
+            tool_calls=[
+                ToolCallRequest(
+                    id="call_1",
+                    name="diagram.create",
+                    arguments={"title": "Alur koneksi", "code": self._CODE},
+                )
+            ],
+        )
+        second = RawAssistantMessage(content="Ini alur koneksinya.", tool_calls=[])
+
+        with patch(
+            "app.ai.tool_calling._call_openrouter_raw", side_effect=[first, second]
+        ) as mock_raw:
+            result = await get_completion_with_tools(
+                "Jelaskan alur koneksi", TaskCategory.GENERAL_CHAT, user=_fake_user()
+            )
+
+        assert result.tools_used == ["diagram.create"]
+        assert len(result.diagrams) == 1
+        assert result.diagrams[0].kind == "mermaid"
+        assert result.diagrams[0].title == "Alur koneksi"
+        assert result.diagrams[0].code == self._CODE
+
+        # Pesan role=tool yang dikirim ke model tidak boleh memuat kode diagram.
+        sent_messages = mock_raw.call_args_list[1].args[0]
+        tool_msgs = [m for m in sent_messages if m.role == "tool"]
+        assert len(tool_msgs) == 1
+        assert "flowchart" not in tool_msgs[0].content
+        assert "Client" not in tool_msgs[0].content
+
+    @pytest.mark.asyncio
+    async def test_malicious_diagram_rejected_and_not_attached(self):
+        first = RawAssistantMessage(
+            content=None,
+            tool_calls=[
+                ToolCallRequest(
+                    id="call_1",
+                    name="diagram.create",
+                    arguments={
+                        "title": "x",
+                        "code": "flowchart TD\n  A[<script>alert(1)</script>] --> B",
+                    },
+                )
+            ],
+        )
+        second = RawAssistantMessage(content="Maaf, diagram gagal dibuat.", tool_calls=[])
+
+        with patch(
+            "app.ai.tool_calling._call_openrouter_raw", side_effect=[first, second]
+        ) as mock_raw:
+            result = await get_completion_with_tools(
+                "buat diagram", TaskCategory.GENERAL_CHAT, user=_fake_user()
+            )
+
+        assert result.diagrams == []
+        sent_messages = mock_raw.call_args_list[1].args[0]
+        tool_msg = next(m for m in sent_messages if m.role == "tool")
+        assert '"success": false' in tool_msg.content.lower()
+
+    @pytest.mark.asyncio
+    async def test_diagram_limit_per_turn_enforced(self):
+        from app.ai.tool_calling import MAX_DIAGRAMS_PER_TURN
+
+        calls = [
+            ToolCallRequest(
+                id=f"call_{i}",
+                name="diagram.create",
+                arguments={"title": f"D{i}", "code": self._CODE},
+            )
+            for i in range(MAX_DIAGRAMS_PER_TURN + 1)
+        ]
+        first = RawAssistantMessage(content=None, tool_calls=calls)
+        second = RawAssistantMessage(content="Selesai.", tool_calls=[])
+
+        with patch("app.ai.tool_calling._call_openrouter_raw", side_effect=[first, second]):
+            result = await get_completion_with_tools(
+                "buat banyak diagram", TaskCategory.GENERAL_CHAT, user=_fake_user()
+            )
+
+        assert len(result.diagrams) == MAX_DIAGRAMS_PER_TURN
+
+    def test_diagram_not_exposed_to_other_categories(self):
+        assert _build_tool_schemas(TaskCategory.TROUBLESHOOTING) == []
 
 
 class TestFunctionNameConversion:

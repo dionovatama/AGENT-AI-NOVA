@@ -63,6 +63,7 @@ export default function ChatPage() {
         {
           role: "assistant",
           content: result.content,
+          diagrams: result.diagrams,
           meta: {
             model_used: result.model_used,
             used_fallback: result.used_fallback,
@@ -140,6 +141,7 @@ export default function ChatPage() {
                   type="button"
                   onClick={() => setUseTools((v) => !v)}
                   aria-pressed={useTools}
+                  title="Aktifkan tools READ: web.search, web.read_page, diagram.create"
                   className={`flex shrink-0 items-center gap-1.5 rounded-lg border px-2.5 py-1 text-[12px] font-medium transition-colors ${
                     useTools
                       ? "border-signal-teal/40 bg-signal-teal/10 text-signal-teal"
@@ -147,7 +149,7 @@ export default function ChatPage() {
                   }`}
                 >
                   <span className={`h-1.5 w-1.5 rounded-full ${useTools ? "bg-signal-teal" : "bg-base-600"}`} />
-                  web.search
+                  tools
                 </button>
               )}
 

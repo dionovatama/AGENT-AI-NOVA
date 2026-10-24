@@ -40,6 +40,7 @@ from app.tools.mikrotik import (
     firewall_rules_tool,
 )
 from app.tools.web import web_search_tool, web_read_page_tool
+from app.tools.diagram import diagram_create_tool
 from app.security.audit_retention import audit_retention_loop
 
 app = FastAPI(
@@ -76,6 +77,7 @@ tool_manager.register(docker_status_tool)
 tool_manager.register(log_check_tool)
 tool_manager.register(web_search_tool)
 tool_manager.register(web_read_page_tool)
+tool_manager.register(diagram_create_tool)
 
 # MikroTik (Phase 5) — diagnostic READ-only, semuanya requires_device=True:
 # request WAJIB menyertakan device_id (device platform 'mikrotik' milik user,

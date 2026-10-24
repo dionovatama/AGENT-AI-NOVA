@@ -46,6 +46,7 @@ import logging
 
 from pydantic import BaseModel
 
+from app.ai.attachments import DiagramAttachment
 from app.ai.model_router import TaskCategory
 from app.config import settings
 from app.database.models import User
@@ -60,11 +61,31 @@ logger = logging.getLogger("nova.ai.tool_calling")
 # itu. Hanya tool READ yang boleh masuk sini (ditegakkan ulang secara
 # runtime di _build_tool_schemas, bukan cuma diasumsikan dari daftar ini).
 _CATEGORY_TOOL_ALLOWLIST: dict[TaskCategory, list[str]] = {
-    TaskCategory.GENERAL_CHAT: ["web.search", "web.read_page"],
+    TaskCategory.GENERAL_CHAT: ["web.search", "web.read_page", "diagram.create"],
 }
 
 MAX_TOOL_ITERATIONS = 3
 MAX_TOOL_CALLS_PER_TURN = 5
+# Batas diagram yang dilampirkan per jawaban (anti-spam & anti-boros render).
+MAX_DIAGRAMS_PER_TURN = 2
+
+_DIAGRAM_TOOL_NAME = "diagram.create"
+
+# System prompt untuk jalur tool-calling. Memberi tahu model KAPAN memakai
+# diagram.create. Ini hanya panduan perilaku — penegakan keamanan tetap di
+# validasi tool (app/tools/diagram.py) dan di frontend, bukan di prompt.
+NOVA_SYSTEM_PROMPT = (
+    "Kamu adalah NOVA, asisten teknis untuk Linux, Windows, jaringan "
+    "(MikroTik/Cisco), dan infrastruktur. Jawab dalam bahasa yang dipakai user.\n"
+    "Kalau penjelasan melibatkan topologi jaringan, alur proses atau "
+    "troubleshooting, urutan interaksi antar komponen, atau relasi antar "
+    "entitas, panggil tool diagram.create dengan kode Mermaid yang valid "
+    "(flowchart TD/LR, sequenceDiagram, stateDiagram-v2, erDiagram, atau "
+    "classDiagram). Maksimal 1-2 diagram per jawaban; jangan buat diagram "
+    "untuk pertanyaan sederhana. Label node harus pendek, tanpa HTML, tanpa "
+    "URL. Jangan menulis kode Mermaid di teks jawaban — cukup panggil tool, "
+    "lalu jelaskan diagramnya secara singkat dengan kata-katamu sendiri."
+)
 
 # Nama tool NOVA memakai titik ("web.search"), tapi banyak provider
 # function-calling mewajibkan nama function match ^[a-zA-Z0-9_-]+$ (tanpa
@@ -87,6 +108,7 @@ class ChatWithToolsResult(BaseModel):
     category: TaskCategory
     used_fallback: bool
     tools_used: list[str] = []
+    diagrams: list[DiagramAttachment] = []
 
     model_config = {"protected_namespaces": ()}
 
@@ -185,26 +207,68 @@ async def _execute_tool_call(
     return result.model_dump()
 
 
+def _handle_diagram_output(output: dict, diagrams: list[DiagramAttachment]) -> dict:
+    """
+    Ambil diagram dari hasil tool diagram.create dan simpan sebagai
+    attachment (dikirim ke frontend, BUKAN lewat teks model). Yang
+    dikembalikan ke model hanya ack singkat tanpa kode — supaya model
+    tidak menyalin ulang kode Mermaid ke jawaban.
+
+    Kegagalan (validasi ditolak, tool error) diteruskan apa adanya ke model
+    sebagai error terstruktur agar model bisa memperbaiki atau menjelaskan.
+    """
+    inner = output.get("output") if isinstance(output, dict) else None
+    if not (output.get("success") and isinstance(inner, dict) and inner.get("success")):
+        return output  # error dari validasi/tool — biar model tahu & bisa retry
+
+    if len(diagrams) >= MAX_DIAGRAMS_PER_TURN:
+        return {
+            "success": False,
+            "error": f"Batas {MAX_DIAGRAMS_PER_TURN} diagram per jawaban tercapai.",
+        }
+
+    try:
+        diagrams.append(
+            DiagramAttachment(
+                kind=inner.get("kind") or "mermaid",
+                title=inner.get("title") or "Diagram",
+                code=inner["code"],
+            )
+        )
+    except (KeyError, ValueError) as exc:
+        logger.warning("Output diagram.create tidak sesuai bentuk yang diharapkan: %s", exc)
+        return {"success": False, "error": "Diagram tidak dapat dilampirkan."}
+
+    return {
+        "success": True,
+        "message": (
+            "Diagram sudah ditampilkan ke user di bawah jawabanmu. Jangan "
+            "ulangi kode diagram; cukup jelaskan singkat."
+        ),
+    }
+
+
 async def _run_with_model(
     messages: list[ChatMessage],
     model: str,
     tool_schemas: list[dict],
     category: TaskCategory,
     user: User | None = None,
-) -> tuple[str, list[str]]:
+) -> tuple[str, list[str], list[DiagramAttachment]]:
     """
     Loop tool-calling untuk SATU model tertentu (tidak menangani
     fallback — itu tanggung jawab caller). Melempar OpenRouterError
     kalau model ini gagal di iterasi mana pun.
     """
     tools_used: list[str] = []
+    diagrams: list[DiagramAttachment] = []
     total_calls = 0
 
     for _ in range(MAX_TOOL_ITERATIONS):
         raw = await _call_openrouter_raw(messages, model, tools=tool_schemas or None)
 
         if not raw.tool_calls:
-            return raw.content or "", tools_used
+            return raw.content or "", tools_used, diagrams
 
         # Simpan giliran assistant (termasuk tool_calls mentah, format
         # OpenAI) sebelum menambahkan hasil eksekusi masing-masing tool.
@@ -243,19 +307,24 @@ async def _run_with_model(
 
             output = await _execute_tool_call(call.name, call.arguments, category=category, user=user)
             tools_used.append(call.name)
+            tool_content = output
+
+            if _from_function_name(call.name) == _DIAGRAM_TOOL_NAME:
+                tool_content = _handle_diagram_output(output, diagrams)
+
             messages.append(
                 ChatMessage(
                     role="tool",
                     tool_call_id=call.id,
                     name=_to_function_name(call.name),
-                    content=json.dumps(output),
+                    content=json.dumps(tool_content),
                 )
             )
 
     # Iterasi habis tapi model masih belum memberi jawaban akhir —
     # paksa satu panggilan terakhir TANPA tools supaya model wajib menjawab.
     raw = await _call_openrouter_raw(messages, model, tools=None)
-    return raw.content or "", tools_used
+    return raw.content or "", tools_used, diagrams
 
 
 async def get_completion_with_tools(
@@ -300,7 +369,7 @@ async def get_completion_with_tools(
 
     primary_model = settings.tool_calling_model
     try:
-        content, tools_used = await _run_with_model(
+        content, tools_used, diagrams = await _run_with_model(
             list(messages), primary_model, tool_schemas, category=category, user=user
         )
         return ChatWithToolsResult(
@@ -309,6 +378,7 @@ async def get_completion_with_tools(
             category=category,
             used_fallback=False,
             tools_used=tools_used,
+            diagrams=diagrams,
         )
     except OpenRouterError as primary_error:
         logger.warning(
@@ -324,7 +394,7 @@ async def get_completion_with_tools(
         )
 
     try:
-        content, tools_used = await _run_with_model(
+        content, tools_used, diagrams = await _run_with_model(
             list(messages), fallback_model, tool_schemas, category=category, user=user
         )
         return ChatWithToolsResult(
@@ -333,6 +403,7 @@ async def get_completion_with_tools(
             category=category,
             used_fallback=True,
             tools_used=tools_used,
+            diagrams=diagrams,
         )
     except OpenRouterError as fallback_error:
         logger.error(

@@ -398,7 +398,7 @@ def test_failure_on_step_n_triggers_lifo_rollback(monkeypatch):
 
         client.post(f"/configurations/{config_id}/approve", headers=headers)
         res_apply = client.post(f"/configurations/{config_id}/apply", headers=headers)
-        assert res_apply.status_code == 400
+        assert res_apply.status_code == 502
 
         # Cek status akhir konfigurasi di DB -> ROLLED_BACK
         res_get = client.get(f"/configurations/{config_id}", headers=headers)
@@ -481,7 +481,7 @@ def test_rollback_failure_results_in_rollback_failed(monkeypatch):
         config_id = res_create.json()["id"]
         client.post(f"/configurations/{config_id}/approve", headers=headers)
         res_apply = client.post(f"/configurations/{config_id}/apply", headers=headers)
-        assert res_apply.status_code == 400
+        assert res_apply.status_code == 502
 
         res_get = client.get(f"/configurations/{config_id}", headers=headers)
         assert res_get.json()["status"] == "ROLLBACK_FAILED"

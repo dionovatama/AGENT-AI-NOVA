@@ -2,7 +2,7 @@
   "name": "nova-console",
   "version": "0.1.0",
   "private": true,
-  "description": "N.O.V.A — Nexus Operation Virtual Assistant. Operator console (frontend awal, Milestone 4).",
+  "description": "N.O.V.A \u2014 Nexus Operation Virtual Assistant. Operator console (frontend awal, Milestone 4).",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "lucide-react": "^0.441.0",
+    "mermaid": "^11.4.0",
     "next": "14.2.35",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"

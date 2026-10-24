@@ -16,7 +16,7 @@ from app.database.models import User
 from app.security.dependencies import get_current_user
 from app.ai.model_router import TaskCategory
 from app.ai.openrouter import ChatMessage, ChatCompletionResult, OpenRouterError, get_completion
-from app.ai.tool_calling import ChatWithToolsResult, get_completion_with_tools
+from app.ai.tool_calling import NOVA_SYSTEM_PROMPT, ChatWithToolsResult, get_completion_with_tools
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
@@ -47,7 +47,10 @@ async def chat_completions(
     if payload.use_tools:
         try:
             tools_result = await get_completion_with_tools(
-                payload.message, payload.category, user=current_user
+                payload.message,
+                payload.category,
+                system_prompt=NOVA_SYSTEM_PROMPT,
+                user=current_user,
             )
         except OpenRouterError as exc:
             raise HTTPException(
@@ -64,6 +67,7 @@ async def chat_completions(
             category=tools_result.category,
             used_fallback=tools_result.used_fallback,
             tools_used=tools_result.tools_used,
+            diagrams=tools_result.diagrams,
         )
 
     messages = [ChatMessage(role="user", content=payload.message)]

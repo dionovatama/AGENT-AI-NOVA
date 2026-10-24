@@ -42,6 +42,15 @@ export const TASK_CATEGORIES: { value: TaskCategory; label: string }[] = [
 // bukan ditampilkan untuk semua kategori lalu diam-diam tidak berefek.
 export const TOOL_CALLING_CATEGORIES: TaskCategory[] = ["general_chat"];
 
+// Diagram yang dilampirkan backend bersama jawaban (tool diagram.create).
+// `code` sudah divalidasi backend, tapi tetap diperlakukan untrusted —
+// lihat components/chat/MermaidDiagram.tsx.
+export interface DiagramAttachment {
+  kind: "mermaid";
+  title: string;
+  code: string;
+}
+
 export interface ChatCompletionResult {
   content: string;
   model_used: string;
@@ -54,11 +63,14 @@ export interface ChatCompletionResult {
   // penting karena model kadang menjawab dari memori sendiri meski
   // use_tools=true (lihat catatan di ChatWindow.tsx).
   tools_used: string[];
+  // Additive -- kosong bila model tidak membuat diagram.
+  diagrams?: DiagramAttachment[];
 }
 
 export interface ChatMessage {
   role: "user" | "assistant";
   content: string;
+  diagrams?: DiagramAttachment[];
   meta?: {
     model_used?: string;
     used_fallback?: boolean;

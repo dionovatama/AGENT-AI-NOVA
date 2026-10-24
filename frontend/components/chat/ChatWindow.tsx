@@ -3,6 +3,7 @@
 import { useState } from "react";
 import type { ChatMessage, TaskCategory } from "@/lib/types";
 import { WelcomeHero } from "@/components/chat/WelcomeHero";
+import { MermaidDiagram } from "@/components/chat/MermaidDiagram";
 
 /**
  * Evidence metadata (model_used / tools_used) BUKAN dekorasi -- ini satu-
@@ -87,6 +88,13 @@ export function ChatWindow({
             <p className="whitespace-pre-wrap text-[14px] leading-[1.7] text-ink-100">
               {msg.content}
             </p>
+            {msg.diagrams && msg.diagrams.length > 0 && (
+              <div className="mt-3 flex flex-col gap-3">
+                {msg.diagrams.map((d, j) => (
+                  <MermaidDiagram key={j} diagram={d} />
+                ))}
+              </div>
+            )}
             {msg.meta && <MessageMeta meta={msg.meta} />}
           </div>
         )
