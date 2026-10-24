@@ -57,6 +57,27 @@ const MERMAID_CONFIG = {
 let initialized = false;
 let idCounter = 0;
 
+// Mermaid.render() temporarily mutates document.body. Multiple diagram
+// components can mount at the same time (e.g. 2 diagrams in one response),
+// so concurrent renders can race with Mermaid's temporary DOM cleanup and
+// produce errors such as "Cannot read properties of null (reading 'firstChild')".
+// Serialize all Mermaid renders in this browser tab while keeping React
+// rendering itself fully asynchronous.
+let renderQueue: Promise<unknown> = Promise.resolve();
+
+async function renderMermaidSerialized(
+  mermaid: Awaited<ReturnType<typeof getMermaid>>,
+  id: string,
+  code: string,
+) {
+  const task = renderQueue.then(() => mermaid.render(id, code));
+  renderQueue = task.then(
+    () => undefined,
+    () => undefined,
+  );
+  return task;
+}
+
 async function getMermaid() {
   const mod = await import("mermaid");
   const mermaid = mod.default;
@@ -84,7 +105,7 @@ export function MermaidDiagram({ diagram }: { diagram: DiagramAttachment }) {
     (async () => {
       try {
         const mermaid = await getMermaid();
-        const { svg } = await mermaid.render(renderId, diagram.code);
+        const { svg } = await renderMermaidSerialized(mermaid, renderId, diagram.code);
         if (cancelled) return;
         // <br> tanpa penutup bukan XML valid -> <img> gagal memuat SVG.
         const xmlSafe = svg.replace(/<br\s*>/gi, "<br/>");
