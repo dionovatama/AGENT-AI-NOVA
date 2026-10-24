@@ -88,7 +88,7 @@ export default function ChatPage() {
   }
 
   return (
-    <div className="mx-auto flex h-full min-h-0 w-full max-w-[1080px] flex-col px-4 sm:px-6 lg:px-8">
+    <div className="mx-auto flex h-full min-h-0 w-full max-w-[980px] flex-col px-4 sm:px-6 lg:px-8">
       {messages.length === 0 ? (
         <div className="min-h-0 flex-1 overflow-hidden pb-2">
           <ChatWindow messages={messages} onQuickAction={handleQuickAction} />
@@ -171,7 +171,7 @@ export default function ChatPage() {
         </div>
       )}
 
-      <div className="flex items-center justify-between px-1 pt-1.5 text-ink-500">
+      <div className={`flex items-center justify-between px-1 pt-1.5 text-ink-500 ${messages.length === 0 ? "hidden" : ""}`}>
         <span className="font-sans text-[10px] text-ink-500/80">
           <kbd className="rounded bg-white/[0.06] px-1 py-0.5 font-mono text-[9px] text-ink-300">Enter</kbd> send ·{" "}
           <kbd className="rounded bg-white/[0.06] px-1 py-0.5 font-mono text-[9px] text-ink-300">Shift+Enter</kbd> newline
@@ -184,7 +184,7 @@ export default function ChatPage() {
         )}
       </div>
 
-      <p className="mb-2 mt-1 text-center text-[10px] text-ink-500/80">
+      <p className={`mb-2 mt-1 text-center text-[10px] text-ink-500/80 ${messages.length === 0 ? "hidden" : ""}`}>
         Endpoint ini murni reasoning (Milestone 2). Untuk eksekusi command nyata, gunakan halaman Tools.
       </p>
     </div>
