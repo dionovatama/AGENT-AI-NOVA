@@ -56,13 +56,13 @@ export function NovaActivity({
 
               <div className="min-w-0">
                 <p
-                  className={\`text-[12px] \${
+                  className={`text-[12px] ${
                     done
                       ? "text-ink-500"
                       : active
                         ? "text-ink-100"
                         : "text-ink-600"
-                  }\`}
+                  }`}
                 >
                   {item.label}
                 </p>
