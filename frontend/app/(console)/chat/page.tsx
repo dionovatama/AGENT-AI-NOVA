@@ -90,11 +90,8 @@ export default function ChatPage() {
   return (
     <div className="mx-auto flex h-full min-h-0 w-full max-w-[900px] flex-col px-3 sm:px-5 lg:px-7">
       {messages.length === 0 ? (
-        <div className="min-h-0 flex-1">
+        <div className="min-h-0 flex-1 overflow-y-auto pb-2">
           <ChatWindow messages={messages} onQuickAction={handleQuickAction} />
-          <div className="mb-5 mt-6">
-            <CapabilityShortcuts />
-          </div>
         </div>
       ) : (
         <div className="nova-chat-scroll min-h-0 flex-1 overflow-y-auto pb-3 pt-1">
@@ -167,6 +164,12 @@ export default function ChatPage() {
           </div>
         </form>
       </div>
+
+      {messages.length === 0 && (
+        <div className="mt-5 mb-1">
+          <CapabilityShortcuts />
+        </div>
+      )}
 
       <div className="flex items-center justify-between px-1 pt-1.5 text-ink-500">
         <span className="font-sans text-[10px] text-ink-500/80">
