@@ -215,6 +215,29 @@
     background: radial-gradient(circle, rgba(168, 85, 247, 0.14), transparent 70%);
   }
 
+
+  /* Chat scroll: deliberately quiet so long conversations do not create
+     a bright browser-default scrollbar inside the console. */
+  .nova-chat-scroll {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(168, 85, 247, 0.28) transparent;
+    overscroll-behavior: contain;
+    scroll-behavior: smooth;
+  }
+  .nova-chat-scroll::-webkit-scrollbar {
+    width: 5px;
+  }
+  .nova-chat-scroll::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .nova-chat-scroll::-webkit-scrollbar-thumb {
+    border-radius: 9999px;
+    background: rgba(168, 85, 247, 0.28);
+  }
+  .nova-chat-scroll::-webkit-scrollbar-thumb:hover {
+    background: rgba(168, 85, 247, 0.48);
+  }
+
   /* Badge permission — mono, pulse dot kecil. Warnanya SEMANTIK
      (PRD section 23), sama seperti sistem lama, cuma bentuknya pill
      mono sesuai DESIGN.md komponen #4. */
