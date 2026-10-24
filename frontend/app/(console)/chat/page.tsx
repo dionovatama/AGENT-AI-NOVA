@@ -88,7 +88,7 @@ export default function ChatPage() {
   }
 
   return (
-    <div className="mx-auto flex h-full min-h-0 w-full max-w-[980px] flex-col px-4 sm:px-6 lg:px-8">
+    <div className="mx-auto flex h-full min-h-0 w-full max-w-[820px] flex-col px-4 sm:px-6 lg:px-8">
       {messages.length === 0 ? (
         <div className="min-h-0 flex-1 overflow-hidden pb-2">
           <ChatWindow messages={messages} onQuickAction={handleQuickAction} />
