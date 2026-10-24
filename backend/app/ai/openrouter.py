@@ -122,6 +122,12 @@ async def _post_chat_completion(
     }
     if tools:
         payload["tools"] = tools
+        # Tool-calling path: make the provider contract explicit and avoid
+        # parallel calls while NOVA's local tool loop is handling one result
+        # per tool_call_id. OpenRouter documents auto as the default, but
+        # sending it explicitly makes behavior consistent across providers.
+        payload["tool_choice"] = "auto"
+        payload["parallel_tool_calls"] = False
 
     try:
         async with httpx.AsyncClient(timeout=settings.openrouter_request_timeout_seconds) as client:
