@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Search, SlidersHorizontal, Wrench } from "lucide-react";
+import { ArrowRight, FileCode2, Search, SlidersHorizontal, Wrench, X } from "lucide-react";
 import { HudLoader } from "@/components/HudLoader";
 import { PlaceholderPanel } from "@/components/PlaceholderPanel";
 import { ToolCard } from "@/components/tools/ToolCard";
@@ -34,6 +34,7 @@ export default function ToolsPage() {
   const [query, setQuery] = useState("");
   const [platformFilter, setPlatformFilter] = useState<PlatformFilter>("all");
   const [permissionFilter, setPermissionFilter] = useState<PermissionFilter>("all");
+  const [generatorOpen, setGeneratorOpen] = useState(false);
 
   useEffect(() => {
     let mounted = true;
@@ -70,6 +71,11 @@ export default function ToolsPage() {
   }, [known, query, platformFilter, permissionFilter]);
 
   const isFiltering = query.trim().length > 0 || platformFilter !== "all" || permissionFilter !== "all";
+  const normalizedQuery = query.trim().toLowerCase();
+  const showGeneratorCard =
+    (platformFilter === "all" || platformFilter === "network") &&
+    permissionFilter === "all" &&
+    (!normalizedQuery || "mikrotik configuration generator configuration routeros".includes(normalizedQuery));
 
   return (
     <div className="mx-auto w-full max-w-6xl">
@@ -96,8 +102,6 @@ export default function ToolsPage() {
           {loadError}
         </div>
       )}
-
-      <MikrotikConfigGenerator />
 
       <section aria-label="Search and filter tools" className="mb-5 rounded-lg border border-base-700/80 bg-base-800/45 p-3 sm:p-3.5">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
@@ -175,13 +179,40 @@ export default function ToolsPage() {
         </div>
       )}
 
-      {toolNames !== null && !loadError && filteredTools.length > 0 && (
+      {toolNames !== null && !loadError && (filteredTools.length > 0 || showGeneratorCard) && (
         <section aria-label="Available tools">
           <div className="mb-2.5 flex items-center justify-between">
             <h2 className="text-[12px] font-medium text-ink-300">Available capabilities</h2>
             <span className="font-mono text-[10px] uppercase tracking-wider text-ink-500">Select a tool to configure</span>
           </div>
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+            {showGeneratorCard && (
+              <button
+                type="button"
+                onClick={() => setGeneratorOpen(true)}
+                className="group relative flex min-h-[174px] flex-col justify-between overflow-hidden rounded-lg border border-white/[0.07] bg-[linear-gradient(145deg,rgba(18,24,35,0.96),rgba(12,15,24,0.98))] p-4 text-left transition duration-200 hover:-translate-y-0.5 hover:border-signal-blue/40 hover:shadow-[0_12px_32px_-20px_rgba(76,142,247,0.55)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal-blue/50 motion-reduce:transform-none motion-reduce:transition-none"
+              >
+                <div>
+                  <div className="mb-3 flex items-start justify-between gap-3">
+                    <div className="flex min-w-0 items-center gap-2.5">
+                      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-signal-blue/20 bg-signal-blue/[0.08] text-signal-blue group-hover:bg-signal-blue/[0.12]">
+                        <FileCode2 size={15} strokeWidth={1.8} />
+                      </span>
+                      <div className="min-w-0">
+                        <h3 className="text-[13px] font-semibold text-ink-100">MikroTik Configuration Generator</h3>
+                        <p className="mt-0.5 font-mono text-[10px] text-ink-500">RouterOS v6 / v7</p>
+                      </div>
+                    </div>
+                    <span className="shrink-0 rounded-md border border-signal-blue/20 bg-signal-blue/[0.06] px-2 py-1 text-[10px] text-signal-blue">Offline</span>
+                  </div>
+                  <p className="text-[12px] leading-[1.65] text-ink-300">Generate dan preview konfigurasi IP, DHCP, NAT, serta firewall. Tidak menerapkan konfigurasi ke router.</p>
+                </div>
+                <div className="mt-4 flex items-center justify-between border-t border-white/[0.06] pt-3">
+                  <span className="text-[10px] text-ink-500">.rsc · .json · .txt</span>
+                  <span className="inline-flex items-center gap-1 rounded-md px-2 py-1.5 text-[11px] font-medium text-ink-300 transition-colors group-hover:text-ink-100">Open tool <ArrowRight size={12} className="transition-transform group-hover:translate-x-0.5" /></span>
+                </div>
+              </button>
+            )}
             {filteredTools.map((tool) => (
               <ToolCard key={tool.name} tool={tool} onRun={setActiveTool} />
             ))}
@@ -189,7 +220,7 @@ export default function ToolsPage() {
         </section>
       )}
 
-      {toolNames !== null && !loadError && filteredTools.length === 0 && (
+      {toolNames !== null && !loadError && filteredTools.length === 0 && !showGeneratorCard && (
         <div className="flex flex-col items-center rounded-lg border border-dashed border-base-700 px-5 py-12 text-center">
           <Search size={19} className="mb-3 text-ink-500" />
           <p className="text-sm font-medium text-ink-300">No matching tools</p>
@@ -245,6 +276,18 @@ export default function ToolsPage() {
       </section>
 
       {activeTool && <ToolRunModal tool={activeTool} onClose={() => setActiveTool(null)} />}
+
+      {generatorOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-3 backdrop-blur-sm sm:p-6" onMouseDown={(event) => { if (event.target === event.currentTarget) setGeneratorOpen(false); }}>
+          <section role="dialog" aria-modal="true" aria-labelledby="mikrotik-generator-title" className="max-h-[92vh] w-full max-w-6xl overflow-y-auto rounded-xl border border-base-700 bg-base-900 shadow-2xl">
+            <div className="sticky top-0 z-10 flex items-center justify-between border-b border-base-700 bg-base-900/95 px-4 py-3 backdrop-blur sm:px-5">
+              <div className="flex items-center gap-2 text-sm font-semibold text-ink-100"><FileCode2 size={16} className="text-signal-blue" /><h2 id="mikrotik-generator-title">MikroTik Configuration Generator</h2></div>
+              <button type="button" onClick={() => setGeneratorOpen(false)} aria-label="Close configuration generator" className="rounded-md border border-base-700 p-2 text-ink-400 transition hover:bg-white/[0.05] hover:text-ink-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal-blue/50"><X size={15} /></button>
+            </div>
+            <div className="p-2 sm:p-3"><MikrotikConfigGenerator /></div>
+          </section>
+        </div>
+      )}
     </div>
   );
 }
