@@ -87,6 +87,35 @@ export default function ChatPage() {
     }
   }
 
+  async function handleImageGeneration(prompt: string) {
+    if (sending) return;
+    const cleanPrompt = prompt.trim();
+    if (!cleanPrompt) return;
+    setSending(true);
+    setProcessingStage("process");
+    const startedAt = performance.now();
+    try {
+      const imageUrl = await generatePuterImage(cleanPrompt);
+      setProcessingStage("respond");
+      setMessages((prev) => [...prev, {
+        role: "assistant",
+        content: "",
+        image_url: imageUrl,
+        image_prompt: cleanPrompt,
+        meta: { model_used: "Puter.js Image Generation" },
+      }]);
+      setLastLatencyMs(Math.round(performance.now() - startedAt));
+    } catch (err) {
+      setMessages((prev) => [...prev, {
+        role: "assistant",
+        content: "Gagal membuat gambar. Periksa koneksi atau akun Puter.js, lalu coba lagi.",
+        meta: { error: err instanceof Error ? err.message : "Unknown error" },
+      }]);
+    } finally {
+      setSending(false);
+    }
+  }
+
   async function handleSend(e: React.FormEvent) {
     e.preventDefault();
     const text = input.trim();
@@ -100,16 +129,20 @@ export default function ChatPage() {
     const startedAt = performance.now();
 
     try {
-      // Image requests use Puter.js directly; ordinary chat stays on the existing AI Gateway.
-      const wantsImage = /\\b(generate|create|draw|make|render)\\b.{0,80}\\b(image|picture|illustration|artwork)\\b|\\b(buatkan|buat|gambar|ilustrasikan|lukiskan|hasilkan)\\b.{0,80}\\b(gambar|ilustrasi|poster|logo|wallpaper|foto)\\b|\\b(gambar|ilustrasi|poster|logo|wallpaper)\\b.{0,60}\\b(buatkan|buat|generate|bikin)\\b/i.test(text);
+      // Match clear image-generation intent; normal chat stays on the existing AI Gateway.
+      const wantsImage = /\b(generate|create|draw|make|render)\b.{0,100}\b(image|picture|illustration|artwork|poster|logo|wallpaper)\b|\b(buatkan|buat|gambar|ilustrasikan|lukiskan|hasilkan|bikin)\b.{0,100}\b(gambar|ilustrasi|poster|logo|wallpaper|foto|ilustrasi)\b|\b(gambar|ilustrasi|poster|logo|wallpaper)\b.{0,80}\b(buatkan|buat|generate|bikin|desain|gambarkan)\b/i.test(text);
       if (wantsImage) {
-        setProcessingStage("process");
-        const imageUrl = await generatePuterImage(text);
+        const imagePrompt = text
+          .replace(/^(tolong\s+)?(buatkan|buat|bikin|gambarkan|hasilkan|generate|create|draw|make|render)\s+(saya\s+)?(sebuah\s+)?(gambar|image|picture|ilustrasi|illustration|poster|logo|wallpaper|foto)\s*/i, "")
+          .trim();
+        const prompt = imagePrompt || text;
+        const imageUrl = await generatePuterImage(prompt);
         setProcessingStage("respond");
         setMessages((prev) => [...prev, {
           role: "assistant",
-          content: "Gambar berhasil dibuat melalui Puter.js.",
+          content: "",
           image_url: imageUrl,
+          image_prompt: prompt,
           meta: { model_used: "Puter.js Image Generation" },
         }]);
         setLastLatencyMs(Math.round(performance.now() - startedAt));
@@ -158,7 +191,7 @@ export default function ChatPage() {
     <div className="mx-auto flex h-full min-h-0 w-full max-w-[944px] flex-col px-6 pb-[18px]">
       {isEmpty ? (
         <div className="flex min-h-0 flex-1 items-center justify-center overflow-hidden">
-          <ChatWindow messages={messages} onQuickAction={handleQuickAction} onConfigurationChoice={handleConfigurationChoice} />
+          <ChatWindow messages={messages} onQuickAction={handleQuickAction} onConfigurationChoice={handleConfigurationChoice} onRegenerateImage={handleImageGeneration} />
         </div>
       ) : (
         <div className="nova-chat-scroll min-h-0 flex-1 overflow-y-auto pb-3 pt-1 pr-1">
