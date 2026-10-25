@@ -1,12 +1,13 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { ArrowRight, FileCode2, Search, SlidersHorizontal, Wrench, X } from "lucide-react";
+import { ArrowRight, FileCode2, ImagePlus, Search, SlidersHorizontal, Wrench, X } from "lucide-react";
 import { HudLoader } from "@/components/HudLoader";
 import { PlaceholderPanel } from "@/components/PlaceholderPanel";
 import { ToolCard } from "@/components/tools/ToolCard";
 import { ToolRunModal } from "@/components/tools/ToolRunModal";
 import { MikrotikConfigGenerator } from "@/components/tools/MikrotikConfigGenerator";
+import { PuterImageStudio } from "@/components/tools/PuterImageStudio";
 import { novaApi, NovaApiError } from "@/lib/api";
 import { KNOWN_TOOLS, type KnownToolSpec, type PermissionLevel } from "@/lib/types";
 
@@ -35,6 +36,7 @@ export default function ToolsPage() {
   const [platformFilter, setPlatformFilter] = useState<PlatformFilter>("all");
   const [permissionFilter, setPermissionFilter] = useState<PermissionFilter>("all");
   const [generatorOpen, setGeneratorOpen] = useState(false);
+  const [imageStudioOpen, setImageStudioOpen] = useState(false);
 
   useEffect(() => {
     let mounted = true;
@@ -186,6 +188,23 @@ export default function ToolsPage() {
             <span className="font-mono text-[10px] uppercase tracking-wider text-ink-500">Select a tool to configure</span>
           </div>
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+            <button
+              type="button"
+              onClick={() => setImageStudioOpen(true)}
+              className="group relative flex min-h-[174px] flex-col justify-between overflow-hidden rounded-lg border border-white/[0.07] bg-[linear-gradient(145deg,rgba(27,18,40,0.96),rgba(12,15,24,0.98))] p-4 text-left transition duration-200 hover:-translate-y-0.5 hover:border-orb-glow/40 hover:shadow-[0_12px_32px_-20px_rgba(168,85,247,0.5)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orb-glow/50 motion-reduce:transform-none motion-reduce:transition-none"
+            >
+              <div>
+                <div className="mb-3 flex items-start justify-between gap-3">
+                  <div className="flex min-w-0 items-center gap-2.5">
+                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-orb-glow/20 bg-orb-glow/[0.08] text-orb-core"><ImagePlus size={15} strokeWidth={1.8} /></span>
+                    <div className="min-w-0"><h3 className="text-[13px] font-semibold text-ink-100">NOVA Image Studio</h3><p className="mt-0.5 font-mono text-[10px] text-ink-500">Puter.js · Text to image</p></div>
+                  </div>
+                  <span className="shrink-0 rounded-md border border-orb-glow/20 bg-orb-glow/[0.06] px-2 py-1 text-[10px] text-orb-core">Image AI</span>
+                </div>
+                <p className="text-[12px] leading-[1.65] text-ink-300">Buat gambar dari prompt, lihat pratinjau, lalu buka atau simpan hasilnya. Memerlukan koneksi internet.</p>
+              </div>
+              <div className="mt-4 flex items-center justify-between border-t border-white/[0.06] pt-3"><span className="text-[10px] text-ink-500">User account / quota</span><span className="inline-flex items-center gap-1 rounded-md px-2 py-1.5 text-[11px] font-medium text-ink-300 transition-colors group-hover:text-ink-100">Open studio <ArrowRight size={12} className="transition-transform group-hover:translate-x-0.5" /></span></div>
+            </button>
             {showGeneratorCard && (
               <button
                 type="button"
@@ -276,6 +295,15 @@ export default function ToolsPage() {
       </section>
 
       {activeTool && <ToolRunModal tool={activeTool} onClose={() => setActiveTool(null)} />}
+
+      {imageStudioOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-3 backdrop-blur-sm sm:p-6" onMouseDown={(event) => { if (event.target === event.currentTarget) setImageStudioOpen(false); }}>
+          <section role="dialog" aria-modal="true" aria-labelledby="puter-image-studio-title" className="max-h-[92vh] w-full max-w-6xl overflow-y-auto rounded-xl border border-base-700 bg-base-900 shadow-2xl">
+            <div className="sticky top-0 z-10 flex items-center justify-between border-b border-base-700 bg-base-900/95 px-4 py-3 backdrop-blur sm:px-5"><div className="flex items-center gap-2 text-sm font-semibold text-ink-100"><ImagePlus size={16} className="text-orb-core" /><h2 id="puter-image-studio-title">NOVA Image Studio</h2></div><button type="button" onClick={() => setImageStudioOpen(false)} aria-label="Close Image Studio" className="rounded-md border border-base-700 p-2 text-ink-400 transition hover:bg-white/[0.05] hover:text-ink-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orb-glow/50"><X size={15} /></button></div>
+            <div className="p-2 sm:p-3"><PuterImageStudio /></div>
+          </section>
+        </div>
+      )}
 
       {generatorOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-3 backdrop-blur-sm sm:p-6" onMouseDown={(event) => { if (event.target === event.currentTarget) setGeneratorOpen(false); }}>
