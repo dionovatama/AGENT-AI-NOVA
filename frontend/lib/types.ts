@@ -65,13 +65,13 @@ export interface ChatCompletionResult {
   tools_used: string[];
   // Additive -- kosong bila model tidak membuat diagram.
   diagrams?: DiagramAttachment[];
+  generated_files?: GeneratedFileAttachment[];
 }
 
-export interface ChatMessage {
+export interface GeneratedFileAttachment {\n  filename: string;\n  mime_type: string;\n  content: string;\n}\n\nexport interface ChatMessage {
   role: "user" | "assistant";
   content: string;
-  diagrams?: DiagramAttachment[];
-  meta?: {
+  diagrams?: DiagramAttachment[];\n  generated_files?: GeneratedFileAttachment[];\n  meta?: {
     model_used?: string;
     used_fallback?: boolean;
     tools_used?: string[];
