@@ -61,6 +61,32 @@ export interface HealthResponse {
   environment: string;
 }
 
+export type MikrotikGeneratorModule = "ip" | "dhcp" | "nat" | "firewall";
+
+export interface MikrotikGeneratorRequest {
+  routeros_version: "6" | "7";
+  modules: MikrotikGeneratorModule[];
+  lan_interface: string;
+  wan_interface: string;
+  ip_cidr: string;
+  dhcp_pool_start: string;
+  dhcp_pool_end: string;
+  dns_servers: string;
+}
+
+export interface MikrotikGeneratedFile {
+  filename: string;
+  mime_type: string;
+  content: string;
+}
+
+export interface MikrotikGeneratorResponse {
+  routeros_version: string;
+  modules: string[];
+  files: MikrotikGeneratedFile[];
+  warnings: string[];
+}
+
 export const novaApi = {
   health: () => request<HealthResponse>("/health", {}, false),
 
@@ -93,7 +119,7 @@ export const novaApi = {
       body: JSON.stringify({ message, category, use_tools: useTools }),
     }),
 
-  listTools: () => request<string[]>("/tools/list"),
+  listTools: () => request<string[]>("/tools/list"),\n\n  generateMikrotikConfig: (payload: MikrotikGeneratorRequest) =>\n    request<MikrotikGeneratorResponse>("/mikrotik-config-generator/generate", {\n      method: "POST",\n      body: JSON.stringify(payload),\n    }),
 
   executeTool: (
     toolName: string,
