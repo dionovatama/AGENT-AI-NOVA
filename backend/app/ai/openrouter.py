@@ -77,6 +77,8 @@ class ChatCompletionResult(BaseModel):
     # memanggil diagram.create dan hasilnya lolos validasi. Frontend
     # merendernya di bawah teks jawaban.
     diagrams: list[DiagramAttachment] = []
+    # Generated files are inert text artifacts; chat clients may preview/download them.
+    generated_files: list[dict] = []
 
     # 'model_used' bentrok dengan reserved prefix Pydantic v2 (model_dump,
     # model_validate, dst). protected_namespaces=() menonaktifkan proteksi
