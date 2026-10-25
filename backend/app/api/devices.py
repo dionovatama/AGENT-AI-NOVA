@@ -22,6 +22,7 @@ from app.schemas.devices import (
     CredentialResponse,
     DeviceCreateRequest,
     DeviceResponse,
+    DeviceUpdateRequest,
 )
 from app.security.dependencies import get_current_user
 
@@ -98,6 +99,60 @@ def get_device(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Device not found.",
         )
+    return device
+
+
+@router.patch("/devices/{device_id}", response_model=DeviceResponse)
+def update_device(
+    device_id: uuid.UUID,
+    payload: DeviceUpdateRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> Device:
+    """Memperbarui field device secara parsial, dengan isolasi owner."""
+    device = (
+        db.query(Device)
+        .filter(Device.id == device_id, Device.owner_id == current_user.id)
+        .first()
+    )
+    if device is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Device not found.",
+        )
+
+    changes = payload.model_dump(exclude_unset=True)
+    if not changes:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="No device fields supplied for update.",
+        )
+
+    if "credential_id" in changes and changes["credential_id"] is not None:
+        credential = (
+            db.query(Credential)
+            .filter(
+                Credential.id == changes["credential_id"],
+                Credential.owner_id == current_user.id,
+            )
+            .first()
+        )
+        if credential is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Credential not found or does not belong to the authenticated user.",
+            )
+
+    for field, value in changes.items():
+        if field == "platform" and value is not None:
+            value = value.lower()
+        if field == "metadata":
+            device.device_metadata = value
+        else:
+            setattr(device, field, value)
+
+    db.commit()
+    db.refresh(device)
     return device
 
 
