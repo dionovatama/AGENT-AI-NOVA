@@ -33,7 +33,7 @@ def _configuration_intent(message: str) -> bool:
         text,
     )
     mentions_config = re.search(
-        r"\b(mikrotik|routeros|router\s+os|firewall|dhcp|nat|masquerade|filter|rule|router)\b",
+        r"\b(mikrotik|routeros|router\s+os|firewall|dhcp|nat|masquerade|filter|rule|router|ip|alamat\s+ip|lan|bridge(?:-lan)?|vlan|gateway|ether\d+|sfp\d*)\b",
         text,
     )
     asks_for_explanation = re.search(
