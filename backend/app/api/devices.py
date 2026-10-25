@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy.orm import Session
 
 from app.database.models import AuditLog, Credential, Device, User
@@ -102,12 +102,12 @@ def get_device(
     return device
 
 
-@router.delete("/devices/{device_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/devices/{device_id}", status_code=status.HTTP_204_NO_CONTENT, response_class=Response)
 def delete_device(
     device_id: uuid.UUID,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
-) -> None:
+) -> Response:
     """Menghapus device milik pengguna yang sedang login."""
     device = (
         db.query(Device)
@@ -119,6 +119,7 @@ def delete_device(
 
     db.delete(device)
     db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.patch("/devices/{device_id}", response_model=DeviceResponse)
@@ -230,12 +231,12 @@ def get_credential(
     return credential
 
 
-@router.delete("/credentials/{credential_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/credentials/{credential_id}", status_code=status.HTTP_204_NO_CONTENT, response_class=Response)
 def delete_credential(
     credential_id: uuid.UUID,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
-) -> None:
+) -> Response:
     """Menghapus credential milik pengguna; FK device akan di-set NULL."""
     credential = (
         db.query(Credential)
@@ -247,6 +248,7 @@ def delete_credential(
 
     db.delete(credential)
     db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 # ============================================================
