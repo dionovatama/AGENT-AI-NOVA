@@ -1,10 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { HudLoader } from "@/components/HudLoader";
 import { PermissionBadge } from "@/components/StatusBadge";
 import { novaApi, NovaApiError } from "@/lib/api";
-import type { KnownToolSpec, ToolResult } from "@/lib/types";
+import type { Device, KnownToolSpec, ToolResult } from "@/lib/types";
 
 export function ToolRunModal({
   tool,
@@ -21,6 +21,20 @@ export function ToolRunModal({
     return initial;
   });
   const [confirmed, setConfirmed] = useState(false);
+  const [devices, setDevices] = useState<Device[]>([]);
+  const [deviceId, setDeviceId] = useState("");
+  const needsDevice = tool.name.startsWith("mikrotik.");
+
+  useEffect(() => {
+    if (!needsDevice) return;
+    novaApi.listDevices().then((items) => {
+      const mikrotikDevices = items.filter((item) => item.platform.toLowerCase() === "mikrotik");
+      setDevices(mikrotikDevices);
+      if (mikrotikDevices.length === 1) setDeviceId(mikrotikDevices[0].id);
+    }).catch((err) => {
+      setError(err instanceof NovaApiError ? err.message : "Gagal memuat perangkat.");
+    });
+  }, [needsDevice]);
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState<ToolResult | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -40,7 +54,7 @@ export function ToolRunModal({
     }
 
     try {
-      const res = await novaApi.executeTool(tool.name, args, confirmed);
+      const res = await novaApi.executeTool(tool.name, args, confirmed, deviceId || undefined);
       setResult(res);
     } catch (err) {
       setError(err instanceof NovaApiError ? err.message : "Tool execution gagal.");
@@ -63,6 +77,16 @@ export function ToolRunModal({
         </div>
 
         <div className="max-h-[70vh] overflow-y-auto p-4">
+          {needsDevice && (
+            <div className="mb-4">
+              <label className="field-label">Perangkat MikroTik *</label>
+              <select value={deviceId} onChange={(e) => setDeviceId(e.target.value)} required className="field-input">
+                <option value="">Pilih perangkat terdaftar</option>
+                {devices.map((device) => <option key={device.id} value={device.id}>{device.name} — {device.host}</option>)}
+              </select>
+              {devices.length === 0 && <p className="mt-1 text-[11px] text-ink-500">Belum ada perangkat MikroTik. Daftarkan perangkat terlebih dahulu di menu Devices.</p>}
+            </div>
+          )}
           {tool.fields.length === 0 && (
             <p className="text-[13px] text-ink-500">Tool ini tidak membutuhkan argumen.</p>
           )}
@@ -139,7 +163,7 @@ export function ToolRunModal({
           </button>
           <button
             onClick={handleRun}
-            disabled={running || (needsConfirmation && !confirmed)}
+            disabled={running || (needsConfirmation && !confirmed) || (needsDevice && !deviceId)}
             className="btn-primary"
           >
             {running ? "Menjalankan…" : "Jalankan"}
