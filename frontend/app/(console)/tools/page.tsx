@@ -6,6 +6,7 @@ import { HudLoader } from "@/components/HudLoader";
 import { PlaceholderPanel } from "@/components/PlaceholderPanel";
 import { ToolCard } from "@/components/tools/ToolCard";
 import { ToolRunModal } from "@/components/tools/ToolRunModal";
+import { MikrotikConfigGenerator } from "@/components/tools/MikrotikConfigGenerator";
 import { novaApi, NovaApiError } from "@/lib/api";
 import { KNOWN_TOOLS, type KnownToolSpec, type PermissionLevel } from "@/lib/types";
 
@@ -95,6 +96,8 @@ export default function ToolsPage() {
           {loadError}
         </div>
       )}
+
+      <MikrotikConfigGenerator />
 
       <section aria-label="Search and filter tools" className="mb-5 rounded-lg border border-base-700/80 bg-base-800/45 p-3 sm:p-3.5">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
