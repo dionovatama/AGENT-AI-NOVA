@@ -28,12 +28,17 @@ class ChatRequest(BaseModel):
 def _configuration_intent(message: str) -> bool:
     text = message.lower()
     asks_to_create = re.search(
-        r"\b(buatkan|buat|generate|bikinkan|hasilkan|siapkan|konfigurasikan|generatekan)\b",
+        r"\b(buatkan|buat|generate|bikinkan|hasilkan|siapkan|konfigurasikan|generatekan|butuh|perlu|ingin|minta)\b",
         text,
     )
     mentions_mikrotik = re.search(r"\b(mikrotik|routeros|router os)\b", text)
     mentions_config = re.search(r"\b(konfigurasi|config|firewall|dhcp|nat|rsc)\b", text)
-    return bool(asks_to_create and mentions_mikrotik and mentions_config)
+    # Generic "file konfigurasi firewall" requests are treated as MikroTik
+    # only because that is the generator currently integrated into chat.
+    generic_config_file = re.search(r"\\b(file\\s+)?konfigurasi\\b", text) and re.search(
+        r"\\b(firewall|dhcp|nat|router)\\b", text
+    )
+    return bool(asks_to_create and mentions_config and (mentions_mikrotik or generic_config_file))
 
 
 def _configuration_from_message(message: str) -> GeneratorRequest:
