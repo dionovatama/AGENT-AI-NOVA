@@ -109,7 +109,7 @@ export default function DevicesPage() {
 
       {(loadError || deleteError) && (
         <p className="mb-4 rounded-sm border border-signal-rose/30 bg-signal-rose/10 px-3 py-2 text-[13px] text-signal-rose">
-          {loadError}
+          {loadError || deleteError}
         </p>
       )}
 
@@ -159,6 +159,11 @@ export default function DevicesPage() {
                     <td className="px-4 py-2 font-mono">{c.name}</td>
                     <td className="px-4 py-2">{c.type}</td>
                     <td className="px-4 py-2 text-ink-500">{new Date(c.created_at).toLocaleString("id-ID")}</td>
+                    <td className="px-4 py-2">
+                      <button type="button" disabled={deletingId === c.id} onClick={() => handleDeleteCredential(c)} className="rounded-sm border border-signal-rose/30 px-2 py-1 text-[11px] text-signal-rose disabled:opacity-50">
+                        {deletingId === c.id ? "Menghapus…" : "Hapus"}
+                      </button>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -262,6 +267,9 @@ export default function DevicesPage() {
                       ) : (
                         <span className="text-[11px] text-ink-500">Belum tersedia</span>
                       )}
+                      <button type="button" disabled={deletingId === d.id} onClick={() => handleDeleteDevice(d)} className="mt-1 rounded-sm border border-signal-rose/30 px-2 py-1 text-[11px] text-signal-rose disabled:opacity-50">
+                        {deletingId === d.id ? "Menghapus…" : "Hapus Device"}
+                      </button>
                     </td>
                   </tr>
                 ))}
