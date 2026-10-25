@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import { HudLoader } from "@/components/HudLoader";
-import { PlaceholderPanel } from "@/components/PlaceholderPanel";
 import { novaApi, NovaApiError } from "@/lib/api";
 import type { Credential, Device, DevicePlatform, ToolResult } from "@/lib/types";
 
@@ -162,7 +161,8 @@ export default function DevicesPage() {
                   <th className="px-4 py-2 font-normal">Host</th>
                   <th className="px-4 py-2 font-normal">Connection</th>
                   <th className="px-4 py-2 font-normal">Credential</th>
-                  <th className="px-4 py-2 font-normal">Status</th>\n                  <th className="px-4 py-2 font-normal">Aksi</th>
+                  <th className="px-4 py-2 font-normal">Status</th>
+                  <th className="px-4 py-2 font-normal">Aksi</th>
                 </tr>
               </thead>
               <tbody>
