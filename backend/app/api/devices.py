@@ -102,6 +102,25 @@ def get_device(
     return device
 
 
+@router.delete("/devices/{device_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_device(
+    device_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> None:
+    """Menghapus device milik pengguna yang sedang login."""
+    device = (
+        db.query(Device)
+        .filter(Device.id == device_id, Device.owner_id == current_user.id)
+        .first()
+    )
+    if device is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Device not found.")
+
+    db.delete(device)
+    db.commit()
+
+
 @router.patch("/devices/{device_id}", response_model=DeviceResponse)
 def update_device(
     device_id: uuid.UUID,
@@ -209,6 +228,25 @@ def get_credential(
             detail="Credential not found.",
         )
     return credential
+
+
+@router.delete("/credentials/{credential_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_credential(
+    credential_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> None:
+    """Menghapus credential milik pengguna; FK device akan di-set NULL."""
+    credential = (
+        db.query(Credential)
+        .filter(Credential.id == credential_id, Credential.owner_id == current_user.id)
+        .first()
+    )
+    if credential is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Credential not found.")
+
+    db.delete(credential)
+    db.commit()
 
 
 # ============================================================
