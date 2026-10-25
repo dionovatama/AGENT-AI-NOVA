@@ -27,6 +27,7 @@ class GeneratorRequest(BaseModel):
     modules: list[Literal["ip", "dhcp", "nat", "firewall"]] = Field(min_length=1)
     lan_interface: str = Field(default="bridge-lan", min_length=1, max_length=32)
     wan_interface: str = Field(default="ether1", min_length=1, max_length=32)
+    wan_interfaces: list[str] | None = Field(default=None, max_length=8)
     ip_cidr: str = Field(default="192.168.88.1/24", max_length=43)
     dhcp_pool_start: str = Field(default="192.168.88.10", max_length=15)
     dhcp_pool_end: str = Field(default="192.168.88.254", max_length=15)
@@ -54,7 +55,13 @@ def _safe_interface(value: str, field_name: str) -> str:
 
 def _validated_values(payload: GeneratorRequest) -> tuple[ipaddress.IPv4Interface, list[str]]:
     _safe_interface(payload.lan_interface, "lan_interface")
-    _safe_interface(payload.wan_interface, "wan_interface")
+    wan_interfaces = payload.wan_interfaces or [payload.wan_interface]
+    if not wan_interfaces:
+        raise HTTPException(status_code=422, detail="Minimal satu interface WAN diperlukan untuk NAT.")
+    for interface_name in wan_interfaces:
+        _safe_interface(interface_name, "wan_interfaces")
+    if len(set(wan_interfaces)) != len(wan_interfaces):
+        raise HTTPException(status_code=422, detail="Interface WAN tidak boleh duplikat.")
     if "dhcp" in payload.modules and "ip" not in payload.modules:
         raise HTTPException(status_code=422, detail="Modul DHCP membutuhkan modul IP agar gateway LAN ikut dikonfigurasi.")
     if len(set(payload.modules)) != len(payload.modules):
@@ -124,10 +131,12 @@ def _build_rsc(payload: GeneratorRequest, interface: ipaddress.IPv4Interface, dn
             "",
         ]
     if "nat" in payload.modules:
+        wan_interfaces = payload.wan_interfaces or [payload.wan_interface]
         commands += [
-            f"/ip firewall nat add chain=srcnat out-interface={payload.wan_interface} action=masquerade comment=\"NOVA generated NAT\"",
-            "",
+            f"/ip firewall nat add chain=srcnat out-interface={wan_name} action=masquerade comment=\"NOVA generated NAT {wan_name}\""
+            for wan_name in wan_interfaces
         ]
+        commands += [""]
     if "firewall" in payload.modules:
         # Conservative additions only; no blanket input drop that could lock out management.
         commands += [
@@ -173,6 +182,7 @@ def generate_configuration(
         "parameters": {
             "lan_interface": payload.lan_interface,
             "wan_interface": payload.wan_interface,
+            "wan_interfaces": payload.wan_interfaces or [payload.wan_interface],
             "ip_cidr": str(interface),
             "network": str(interface.network),
             "dhcp_pool_start": payload.dhcp_pool_start if "dhcp" in modules else None,
