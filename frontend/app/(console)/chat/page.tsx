@@ -207,7 +207,7 @@ export default function ChatPage() {
       </div>
 
       <p className={`mb-2 mt-1 text-center text-[10px] text-ink-500/80 ${messages.length === 0 ? "hidden" : ""}`}>
-        Endpoint ini murni reasoning (Milestone 2). Untuk eksekusi command nyata, gunakan halaman Tools.
+        Chat mendukung pembuatan file konfigurasi MikroTik secara offline. File harus ditinjau sebelum diimpor; NOVA tidak menerapkannya ke router.
       </p>
     </div>
   );
