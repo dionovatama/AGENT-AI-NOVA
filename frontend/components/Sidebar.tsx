@@ -11,10 +11,12 @@ import {
   ScrollText,
   Settings as SettingsIcon,
   LogOut,
+  PanelLeftClose,
 } from "lucide-react";
 import { clearToken } from "@/lib/auth";
 import { novaApi } from "@/lib/api";
 import { NovaOrb } from "@/components/NovaOrb";
+import { SystemPulse } from "@/components/SystemPulse";
 
 // Nav item nyata -- setiap href beneran punya route. TIDAK ada item
 // dekoratif seperti "Archived"/"Library" dari referensi desain, karena
@@ -28,7 +30,13 @@ const NAV_ITEMS = [
   { href: "/settings", label: "Settings", icon: SettingsIcon, live: false },
 ];
 
-export function Sidebar() {
+export function Sidebar({
+  onHide,
+  onNavigate,
+}: {
+  onHide: () => void;
+  onNavigate?: () => void;
+}) {
   const pathname = usePathname();
   const router = useRouter();
   const [email, setEmail] = useState<string | null>(null);
@@ -46,10 +54,11 @@ export function Sidebar() {
 
   function handleNewChat() {
     router.push(`/chat?new=${Date.now()}`);
+    onNavigate?.();
   }
 
   return (
-    <aside className="chrome-glass flex h-screen w-[228px] shrink-0 flex-col border-r">
+    <aside className="chrome-glass flex w-[228px] shrink-0 flex-col border-r">
       {/* Brand — gradient ring dari DESIGN.md (violet -> teal), ukuran
           kecil supaya identitas tetap jelas walau ring-nya detail. */}
       <div className="flex items-center gap-2.5 px-[18px] pt-2.5">
@@ -60,6 +69,15 @@ export function Sidebar() {
             operator console
           </p>
         </div>
+        <button
+          type="button"
+          onClick={onHide}
+          aria-label="Hide sidebar"
+          title="Hide sidebar"
+          className="-mr-1 ml-auto flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-ink-500 transition-colors hover:bg-white/[0.06] hover:text-ink-100"
+        >
+          <PanelLeftClose size={16} />
+        </button>
       </div>
 
       {/* New Chat — pill capsule sesuai DESIGN.md #Shapes (action
@@ -85,6 +103,7 @@ export function Sidebar() {
             <Link
               key={item.href}
               href={item.href}
+              onClick={onNavigate}
               className={`relative flex h-9 items-center gap-2 rounded-lg px-3 text-[13px] transition-all ${
                 active
                   ? "border border-border-glow/25 bg-border-glow/[0.15] font-medium text-ink-100 shadow-[inset_0_0_12px_rgba(168,85,247,0.12)]"
@@ -105,6 +124,10 @@ export function Sidebar() {
       </nav>
 
       <div className="border-t border-white/[0.06] bg-black/20 p-3">
+        {/* Status backend dipindah ke sini dari header atas yang dihapus. */}
+        <div className="mb-2.5 px-1">
+          <SystemPulse compact />
+        </div>
         {email && (
           <div className="mb-1.5 flex items-center gap-2.5 rounded-xl border border-white/[0.05] bg-white/[0.03] px-2.5 py-2">
             <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-gradient-to-tr from-orb-glow to-orb-core text-[12px] font-bold text-white">

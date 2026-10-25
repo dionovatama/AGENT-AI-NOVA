@@ -5,7 +5,7 @@ import { novaApi } from "@/lib/api";
 
 type Status = "checking" | "online" | "offline";
 
-export function SystemPulse() {
+export function SystemPulse({ compact = false }: { compact?: boolean }) {
   const [status, setStatus] = useState<Status>("checking");
   const [env, setEnv] = useState<string | null>(null);
 
@@ -52,6 +52,20 @@ export function SystemPulse() {
       : status === "offline"
       ? "border-signal-rose/20 bg-signal-rose/10 text-signal-rose"
       : "border-base-600 bg-base-800 text-ink-500";
+
+  if (compact) {
+    return (
+      <div className="flex items-center gap-2 font-mono text-[10px] text-ink-500" title={label}>
+        <span className="relative flex h-1.5 w-1.5 shrink-0">
+          {status === "online" && (
+            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-signal-green opacity-60 motion-reduce:animate-none" />
+          )}
+          <span className={`relative inline-flex h-1.5 w-1.5 rounded-full ${dotColor}`} />
+        </span>
+        <span className="truncate">{label}</span>
+      </div>
+    );
+  }
 
   return (
     <div className={`flex h-[34px] items-center gap-2 rounded-full border px-3.5 font-mono text-[10px] font-medium uppercase tracking-wider ${pillClasses}`}>
