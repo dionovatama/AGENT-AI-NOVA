@@ -63,12 +63,18 @@ def _configuration_from_message(message: str) -> GeneratorRequest:
     cidr_match = re.search(r"\b((?:\d{1,3}\.){3}\d{1,3}/\d{1,2})\b", message)
     lan_match = re.search(r"(?:lan_interface|interface\s+lan)\s*[:=]\s*([A-Za-z][A-Za-z0-9_.-]{0,31})", message, re.I)
     wan_match = re.search(r"(?:wan_interface|interface\s+wan)\s*[:=]\s*([A-Za-z][A-Za-z0-9_.-]{0,31})", message, re.I)
+    # Extract common interface names mentioned naturally, e.g. "ether1 dan ether5".
+    mentioned_wans = list(dict.fromkeys(re.findall(
+        r"\b(?:ether\d+|sfp\d+(?:-\d+)?|pppoe-out\d*|wan\d+)\b", text
+    )))
+    wan_interfaces = mentioned_wans or ([wan_match.group(1)] if wan_match else ["ether1"])
 
     return GeneratorRequest(
         routeros_version=version,
         modules=modules,
         lan_interface=lan_match.group(1) if lan_match else "bridge-lan",
-        wan_interface=wan_match.group(1) if wan_match else "ether1",
+        wan_interface=wan_interfaces[0],
+        wan_interfaces=wan_interfaces,
         ip_cidr=cidr_match.group(1) if cidr_match else "192.168.88.1/24",
     )
 
