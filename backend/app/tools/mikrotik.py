@@ -50,6 +50,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import ssl
+from contextlib import contextmanager
 
 import librouteros
 import librouteros.exceptions
@@ -143,6 +144,16 @@ def _connect(device: Device, password: str | None):
     return librouteros.connect(**connect_kwargs)
 
 
+@contextmanager
+def _api_session(device: Device, password: str | None):
+    """Kelola lifecycle koneksi librouteros; Api sendiri bukan context manager."""
+    api = _connect(device, password)
+    try:
+        yield api
+    finally:
+        api.close()
+
+
 def _to_bool(value) -> bool:
     """RouterOS API mengembalikan boolean sebagai string 'true'/'false'
     tergantung versi library — normalisasi supaya output tool konsisten."""
@@ -193,7 +204,7 @@ class SystemResourceOutput(BaseModel):
 
 
 def _system_resource_sync(device: Device, password: str | None) -> dict:
-    with _connect(device, password) as api:
+    with _api_session(device, password) as api:
         resource_rows = list(api.path("system", "resource"))
         identity_rows = list(api.path("system", "identity"))
     return {
@@ -273,7 +284,7 @@ class InterfaceStatusOutput(BaseModel):
 
 
 def _interface_status_sync(device: Device, password: str | None) -> list[dict]:
-    with _connect(device, password) as api:
+    with _api_session(device, password) as api:
         return list(api.path("interface"))
 
 
@@ -342,7 +353,7 @@ class IpAddressOutput(BaseModel):
 
 
 def _ip_address_sync(device: Device, password: str | None) -> list[dict]:
-    with _connect(device, password) as api:
+    with _api_session(device, password) as api:
         return list(api.path("ip", "address"))
 
 
@@ -413,7 +424,7 @@ class RouteTableOutput(BaseModel):
 
 
 def _route_table_sync(device: Device, password: str | None) -> list[dict]:
-    with _connect(device, password) as api:
+    with _api_session(device, password) as api:
         return list(api.path("ip", "route"))
 
 
@@ -489,7 +500,7 @@ class ArpTableOutput(BaseModel):
 
 
 def _arp_table_sync(device: Device, password: str | None) -> list[dict]:
-    with _connect(device, password) as api:
+    with _api_session(device, password) as api:
         return list(api.path("ip", "arp"))
 
 
@@ -564,7 +575,7 @@ class DhcpLeasesOutput(BaseModel):
 
 
 def _dhcp_leases_sync(device: Device, password: str | None) -> list[dict]:
-    with _connect(device, password) as api:
+    with _api_session(device, password) as api:
         return list(api.path("ip", "dhcp-server", "lease"))
 
 
@@ -656,7 +667,7 @@ class FirewallRulesOutput(BaseModel):
 
 
 def _firewall_rules_sync(device: Device, password: str | None) -> list[dict]:
-    with _connect(device, password) as api:
+    with _api_session(device, password) as api:
         return list(api.path("ip", "firewall", "filter"))
 
 
