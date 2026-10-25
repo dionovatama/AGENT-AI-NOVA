@@ -217,6 +217,31 @@ export function ChatWindow({
 
             <MarkdownContent content={msg.content} />
 
+            {msg.generated_files && msg.generated_files.length > 0 && (
+              <div className="mt-4 space-y-2">
+                <p className="text-[11px] font-medium uppercase tracking-wider text-ink-500">File konfigurasi</p>
+                {msg.generated_files.map((file) => (
+                  <details key={file.filename} className="overflow-hidden rounded-xl border border-white/[0.08] bg-white/[0.025]">
+                    <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-3 py-3">
+                      <span className="min-w-0">
+                        <span className="block truncate font-mono text-[12px] text-ink-100">{file.filename}</span>
+                        <span className="text-[10px] text-ink-500">{file.mime_type} · preview</span>
+                      </span>
+                      <a
+                        href={`data:${file.mime_type};charset=utf-8,${encodeURIComponent(file.content)}`}
+                        download={file.filename}
+                        onClick={(event) => event.stopPropagation()}
+                        className="shrink-0 rounded-lg border border-orb-glow/30 bg-orb-glow/10 px-3 py-1.5 text-[11px] font-medium text-orb-core hover:bg-orb-glow/20"
+                      >
+                        Unduh
+                      </a>
+                    </summary>
+                    <pre className="max-h-72 overflow-auto border-t border-white/[0.06] bg-[#0A0B10] p-3 font-mono text-[11px] leading-5 text-ink-200">{file.content}</pre>
+                  </details>
+                ))}
+              </div>
+            )}
+
             {msg.diagrams && msg.diagrams.length > 0 && (
               <div className="mt-3 flex flex-col gap-3">
                 {msg.diagrams.map((d, j) => <MermaidDiagram key={j} diagram={d} />)}
