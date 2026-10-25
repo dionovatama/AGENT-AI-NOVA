@@ -79,6 +79,7 @@ class ChatCompletionResult(BaseModel):
     diagrams: list[DiagramAttachment] = []
     # Generated files are inert text artifacts; chat clients may preview/download them.
     generated_files: list[dict] = []
+    configuration_choice: bool = False
 
     # 'model_used' bentrok dengan reserved prefix Pydantic v2 (model_dump,
     # model_validate, dst). protected_namespaces=() menonaktifkan proteksi
