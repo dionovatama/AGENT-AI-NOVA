@@ -191,9 +191,11 @@ function MessageMeta({ meta }: { meta: NonNullable<ChatMessage["meta"]> }) {
 export function ChatWindow({
   messages,
   onQuickAction,
+  onConfigurationChoice,
 }: {
   messages: ChatMessage[];
   onQuickAction: (category: TaskCategory, prompt: string, useTools?: boolean) => void;
+  onConfigurationChoice: (requestText: string, choice: "file" | "direct") => void;
 }) {
   if (messages.length === 0) {
     return <WelcomeHero onQuickAction={onQuickAction} />;
@@ -216,6 +218,19 @@ export function ChatWindow({
             </div>
 
             <MarkdownContent content={msg.content} />
+
+            {msg.show_configuration_choices && msg.configuration_request && (
+              <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                <button type="button" onClick={() => onConfigurationChoice(msg.configuration_request!, "file")} className="flex items-center gap-3 rounded-xl border border-orb-glow/30 bg-orb-glow/10 p-3 text-left transition-colors hover:bg-orb-glow/20">
+                  <span className="text-orb-core">↓</span>
+                  <span><span className="block text-[13px] font-medium text-ink-100">Buat file konfigurasi</span><span className="block text-[11px] text-ink-400">Unduh .rsc, .json, dan .txt</span></span>
+                </button>
+                <button type="button" onClick={() => onConfigurationChoice(msg.configuration_request!, "direct")} className="flex items-center gap-3 rounded-xl border border-white/10 bg-white/[0.04] p-3 text-left transition-colors hover:bg-white/[0.08]">
+                  <span className="text-signal-teal">↗</span>
+                  <span><span className="block text-[13px] font-medium text-ink-100">Konfigurasi langsung</span><span className="block text-[11px] text-ink-400">Periksa koneksi dan dukungan router</span></span>
+                </button>
+              </div>
+            )}
 
             {msg.generated_files && msg.generated_files.length > 0 && (
               <div className="mt-4 space-y-2">
