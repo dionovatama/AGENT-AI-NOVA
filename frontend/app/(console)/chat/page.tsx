@@ -60,6 +60,32 @@ export default function ChatPage() {
     if (wantsTools && TOOL_CALLING_CATEGORIES.includes(cat)) setUseTools(true);
   }
 
+  async function handleConfigurationChoice(requestText: string, choice: "file" | "direct") {
+    if (sending) return;
+    setMessages((prev) => [...prev, { role: "user", content: choice === "file" ? "Pilih: buatkan file konfigurasi." : "Pilih: konfigurasi langsung ke router." }]);
+    setSending(true);
+    setProcessingStage("process");
+    const startedAt = performance.now();
+    try {
+      const result = await novaApi.chatCompletion(requestText, "configuration_generation", false, choice);
+      setLastLatencyMs(Math.round(performance.now() - startedAt));
+      setMessages((prev) => [...prev, {
+        role: "assistant",
+        content: result.content,
+        generated_files: result.generated_files,
+        meta: { model_used: result.model_used, used_fallback: result.used_fallback, tools_used: result.tools_used },
+      }]);
+    } catch (err) {
+      setMessages((prev) => [...prev, {
+        role: "assistant",
+        content: "Permintaan konfigurasi gagal diproses.",
+        meta: { error: err instanceof NovaApiError ? err.message : "Unknown error" },
+      }]);
+    } finally {
+      setSending(false);
+    }
+  }
+
   async function handleSend(e: React.FormEvent) {
     e.preventDefault();
     const text = input.trim();
@@ -85,6 +111,8 @@ export default function ChatPage() {
           content: result.content,
           diagrams: result.diagrams,
           generated_files: result.generated_files,
+          show_configuration_choices: result.configuration_choice,
+          configuration_request: result.configuration_choice ? text : undefined,
           meta: {
             model_used: result.model_used,
             used_fallback: result.used_fallback,
@@ -113,7 +141,7 @@ export default function ChatPage() {
     <div className="mx-auto flex h-full min-h-0 w-full max-w-[944px] flex-col px-6 pb-[18px]">
       {isEmpty ? (
         <div className="flex min-h-0 flex-1 items-center justify-center overflow-hidden">
-          <ChatWindow messages={messages} onQuickAction={handleQuickAction} />
+          <ChatWindow messages={messages} onQuickAction={handleQuickAction} onConfigurationChoice={handleConfigurationChoice} />
         </div>
       ) : (
         <div className="nova-chat-scroll min-h-0 flex-1 overflow-y-auto pb-3 pt-1 pr-1">
