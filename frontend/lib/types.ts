@@ -66,6 +66,7 @@ export interface ChatCompletionResult {
   // Additive -- kosong bila model tidak membuat diagram.
   diagrams?: DiagramAttachment[];
   generated_files?: GeneratedFileAttachment[];
+  configuration_choice?: boolean;
 }
 
 export interface GeneratedFileAttachment {
@@ -79,6 +80,8 @@ export interface ChatMessage {
   content: string;
   diagrams?: DiagramAttachment[];
   generated_files?: GeneratedFileAttachment[];
+  show_configuration_choices?: boolean;
+  configuration_request?: string;
   meta?: {
     model_used?: string;
     used_fallback?: boolean;
