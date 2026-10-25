@@ -68,10 +68,18 @@ export interface ChatCompletionResult {
   generated_files?: GeneratedFileAttachment[];
 }
 
-export interface GeneratedFileAttachment {\n  filename: string;\n  mime_type: string;\n  content: string;\n}\n\nexport interface ChatMessage {
+export interface GeneratedFileAttachment {
+  filename: string;
+  mime_type: string;
+  content: string;
+}
+
+export interface ChatMessage {
   role: "user" | "assistant";
   content: string;
-  diagrams?: DiagramAttachment[];\n  generated_files?: GeneratedFileAttachment[];\n  meta?: {
+  diagrams?: DiagramAttachment[];
+  generated_files?: GeneratedFileAttachment[];
+  meta?: {
     model_used?: string;
     used_fallback?: boolean;
     tools_used?: string[];
