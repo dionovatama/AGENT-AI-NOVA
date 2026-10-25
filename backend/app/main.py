@@ -17,7 +17,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
-from app.api import auth, chat, configurations, devices, tools
+from app.api import auth, chat, configurations, devices, tools, mikrotik_generator
 from app.tools.manager import tool_manager
 from app.tools.network import ping_tool
 from app.tools.linux import (
@@ -65,6 +65,7 @@ app.include_router(chat.router)
 app.include_router(tools.router)
 app.include_router(devices.router)
 app.include_router(configurations.router)
+app.include_router(mikrotik_generator.router)
 
 tool_manager.register(ping_tool)
 tool_manager.register(system_info_tool)
