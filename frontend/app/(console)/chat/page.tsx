@@ -195,7 +195,7 @@ export default function ChatPage() {
         </div>
       ) : (
         <div className="nova-chat-scroll min-h-0 flex-1 overflow-y-auto pb-3 pt-1 pr-1">
-          <ChatWindow messages={messages} onQuickAction={handleQuickAction} onConfigurationChoice={handleConfigurationChoice} />
+          <ChatWindow messages={messages} onQuickAction={handleQuickAction} onConfigurationChoice={handleConfigurationChoice} onRegenerateImage={handleImageGeneration} />
           {sending && (
             <div className="mx-auto mt-5 w-full max-w-4xl px-1">
               <NovaActivity activity="NOVA Operation" steps={toActivitySteps(processingStage)} />
