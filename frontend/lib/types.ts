@@ -117,6 +117,62 @@ export interface KnownToolSpec {
 }
 
 export const KNOWN_TOOLS: Record<string, KnownToolSpec> = {
+  "mikrotik.system_resource": {
+    name: "mikrotik.system_resource",
+    label: "System Resource",
+    platform: "network",
+    permission_level: "read",
+    risk_level: "low",
+    fields: [],
+  },
+  "mikrotik.interface_status": {
+    name: "mikrotik.interface_status",
+    label: "Interface Status",
+    platform: "network",
+    permission_level: "read",
+    risk_level: "low",
+    fields: [],
+  },
+  "mikrotik.ip_address": {
+    name: "mikrotik.ip_address",
+    label: "IP Address List",
+    platform: "network",
+    permission_level: "read",
+    risk_level: "low",
+    fields: [],
+  },
+  "mikrotik.route_table": {
+    name: "mikrotik.route_table",
+    label: "Route Table",
+    platform: "network",
+    permission_level: "read",
+    risk_level: "low",
+    fields: [],
+  },
+  "mikrotik.arp_table": {
+    name: "mikrotik.arp_table",
+    label: "ARP Table",
+    platform: "network",
+    permission_level: "read",
+    risk_level: "low",
+    fields: [],
+  },
+  "mikrotik.dhcp_leases": {
+    name: "mikrotik.dhcp_leases",
+    label: "DHCP Leases",
+    platform: "network",
+    permission_level: "read",
+    risk_level: "medium",
+    fields: [],
+  },
+  "mikrotik.firewall_rules": {
+    name: "mikrotik.firewall_rules",
+    label: "Firewall Rules",
+    platform: "network",
+    permission_level: "read",
+    risk_level: "medium",
+    fields: [],
+  },
   ping: {
     name: "ping",
     label: "Ping",
