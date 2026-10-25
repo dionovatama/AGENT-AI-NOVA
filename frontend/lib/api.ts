@@ -113,6 +113,22 @@ export const novaApi = {
   // web.search/web.read_page). Default false supaya perilaku chat lama
   // (murni reasoning, tanpa tool) tidak berubah kalau caller tidak
   // secara eksplisit minta ini.
+  chatWithDocument: async (file: File, message: string): Promise<ChatCompletionResult> => {
+    const form = new FormData();
+    form.append("file", file);
+    form.append("message", message);
+    const headers: Record<string, string> = {};
+    const token = getToken();
+    if (token) headers.Authorization = `Bearer ${token}`;
+    const response = await fetch(`${BASE_URL}/chat/documents/completions`, { method: "POST", headers, body: form });
+    if (!response.ok) {
+      let detail = response.statusText;
+      try { const body = await response.json(); detail = body.detail ?? JSON.stringify(body); } catch { /* non-JSON error */ }
+      throw new NovaApiError(response.status, detail);
+    }
+    return await response.json() as ChatCompletionResult;
+  },
+
   chatCompletion: (message: string, category: TaskCategory, useTools = false, configurationMode?: "file" | "direct") =>
     request<ChatCompletionResult>("/chat/completions", {
       method: "POST",

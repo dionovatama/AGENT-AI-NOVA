@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { Paperclip } from "lucide-react";
 import type { ChatMessage, TaskCategory } from "@/lib/types";
 import { WelcomeHero } from "@/components/chat/WelcomeHero";
 import { MermaidDiagram } from "@/components/chat/MermaidDiagram";
@@ -210,6 +211,7 @@ export function ChatWindow({
           <div key={i} className="flex justify-end">
             <div className="max-w-[78%] rounded-2xl rounded-br-md border border-white/[0.06] bg-white/[0.065] px-4 py-2.5 text-[13px] leading-6 text-ink-100 shadow-[0_6px_20px_-12px_rgba(0,0,0,0.8)]">
               <p className="whitespace-pre-wrap break-words">{msg.content}</p>
+              {msg.attachment_name && <p className="mt-2 border-t border-white/10 pt-2 text-[11px] text-ink-400"><span className="inline-flex items-center gap-1"><Paperclip size={12} /> {msg.attachment_name}</span></p>}
             </div>
           </div>
         ) : (

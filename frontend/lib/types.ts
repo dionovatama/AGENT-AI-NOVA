@@ -78,6 +78,7 @@ export interface GeneratedFileAttachment {
 export interface ChatMessage {
   role: "user" | "assistant";
   content: string;
+  attachment_name?: string;
   image_url?: string;
   image_prompt?: string;
   diagrams?: DiagramAttachment[];

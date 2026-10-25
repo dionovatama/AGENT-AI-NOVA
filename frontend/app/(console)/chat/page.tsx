@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { ArrowUp } from "lucide-react";
+import { ArrowUp, Paperclip, X } from "lucide-react";
 import { ChatWindow } from "@/components/chat/ChatWindow";
 import { CategoryPicker } from "@/components/chat/CategoryPicker";
 import { CapabilityShortcuts } from "@/components/chat/CapabilityShortcuts";
@@ -35,6 +35,7 @@ function toActivitySteps(stage: ProcessingStage) {
 export default function ChatPage() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [category, setCategory] = useState<TaskCategory>("general_chat");
   const [useTools, setUseTools] = useState(false);
   const [sending, setSending] = useState(false);
@@ -48,6 +49,7 @@ export default function ChatPage() {
     if (resetKey) {
       setMessages([]);
       setInput("");
+      setSelectedFile(null);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [resetKey]);
@@ -119,16 +121,30 @@ export default function ChatPage() {
   async function handleSend(e: React.FormEvent) {
     e.preventDefault();
     const text = input.trim();
-    if (!text || sending) return;
+    if ((!text && !selectedFile) || sending) return;
+    const fileToUpload = selectedFile;
 
-    setMessages((prev) => [...prev, { role: "user", content: text }]);
+    setMessages((prev) => [...prev, { role: "user", content: text || "Tolong analisis dokumen ini.", attachment_name: fileToUpload?.name }]);
     setInput("");
+    setSelectedFile(null);
     setSending(true);
     setProcessingStage("understand");
     const stageTimer = window.setTimeout(() => setProcessingStage("process"), 350);
     const startedAt = performance.now();
 
     try {
+      if (fileToUpload) {
+        setProcessingStage("process");
+        const result = await novaApi.chatWithDocument(fileToUpload, text || "Baca dan pahami dokumen ini. Berikan ringkasan isi dan poin pentingnya.");
+        setLastLatencyMs(Math.round(performance.now() - startedAt));
+        setProcessingStage("respond");
+        setMessages((prev) => [...prev, {
+          role: "assistant", content: result.content,
+          meta: { model_used: result.model_used, used_fallback: result.used_fallback },
+        }]);
+        return;
+      }
+
       // Match clear image-generation intent; normal chat stays on the existing AI Gateway.
       const wantsImage = /\b(generate|create|draw|make|render)\b.{0,100}\b(image|picture|illustration|artwork|poster|logo|wallpaper)\b|\b(buatkan|buat|gambar|ilustrasikan|lukiskan|hasilkan|bikin)\b.{0,100}\b(gambar|ilustrasi|poster|logo|wallpaper|foto|ilustrasi)\b|\b(gambar|ilustrasi|poster|logo|wallpaper)\b.{0,80}\b(buatkan|buat|generate|bikin|desain|gambarkan)\b/i.test(text);
       if (wantsImage) {
@@ -227,8 +243,19 @@ export default function ChatPage() {
             }`}
           />
 
+          {selectedFile && (
+            <div className="mt-3 flex items-center justify-between gap-3 rounded-lg border border-orb-glow/25 bg-orb-glow/[0.07] px-3 py-2 text-[12px] text-ink-200">
+              <span className="min-w-0 truncate"><span className="text-orb-core">Dokumen:</span> {selectedFile.name} · {(selectedFile.size / 1024 / 1024).toFixed(2)} MB</span>
+              <button type="button" onClick={() => setSelectedFile(null)} aria-label="Hapus lampiran" className="shrink-0 text-ink-400 hover:text-white"><X size={15} /></button>
+            </div>
+          )}
+
           <div className={`flex flex-wrap items-center justify-between gap-2 ${isEmpty ? "mt-5" : "mt-3"}`}>
             <div className="flex flex-wrap items-center gap-2">
+              <input id="nova-document-upload" type="file" accept=".pdf,.docx,.txt,.md,text/plain,text/markdown,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document" className="hidden" disabled={sending} onChange={(event) => { const file = event.target.files?.[0]; if (file) setSelectedFile(file); event.currentTarget.value = ""; }} />
+              <label htmlFor="nova-document-upload" title="Lampirkan PDF, DOCX, TXT, atau Markdown" className={`flex h-9 cursor-pointer items-center gap-1.5 rounded-lg border px-3 text-[12px] transition-colors ${sending ? "pointer-events-none opacity-50" : "border-white/10 bg-white/[0.04] text-ink-300 hover:bg-white/[0.08]"}`}>
+                <Paperclip size={14} /> Lampirkan file
+              </label>
               <CategoryPicker value={category} onChange={setCategory} />
 
               {toolsSupported && (
