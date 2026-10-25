@@ -175,20 +175,33 @@ def generate_configuration(
     else:
         rsc = _build_rsc_v7(payload, interface, dns)
 
+    # Include only parameters used by the selected modules. This keeps JSON and TXT
+    # previews focused and avoids implying that unrelated settings will be applied.
+    parameters: dict[str, object] = {}
+    if "ip" in modules or "dhcp" in modules:
+        parameters.update({
+            "lan_interface": payload.lan_interface,
+            "ip_cidr": str(interface),
+            "network": str(interface.network),
+        })
+    if "dhcp" in modules:
+        parameters.update({
+            "dhcp_pool_start": payload.dhcp_pool_start,
+            "dhcp_pool_end": payload.dhcp_pool_end,
+            "dns_servers": dns,
+        })
+    if "nat" in modules:
+        wan_interfaces = payload.wan_interfaces or [payload.wan_interface]
+        parameters.update({
+            "wan_interface": wan_interfaces[0],
+            "wan_interfaces": wan_interfaces,
+        })
+
     data = {
         "generator": "NOVA MikroTik Configuration Generator",
         "routeros_version": payload.routeros_version,
         "modules": modules,
-        "parameters": {
-            "lan_interface": payload.lan_interface,
-            "wan_interface": payload.wan_interface,
-            "wan_interfaces": payload.wan_interfaces or [payload.wan_interface],
-            "ip_cidr": str(interface),
-            "network": str(interface.network),
-            "dhcp_pool_start": payload.dhcp_pool_start if "dhcp" in modules else None,
-            "dhcp_pool_end": payload.dhcp_pool_end if "dhcp" in modules else None,
-            "dns_servers": dns,
-        },
+        "parameters": parameters,
         "apply_automatically": False,
     }
     docs = [
