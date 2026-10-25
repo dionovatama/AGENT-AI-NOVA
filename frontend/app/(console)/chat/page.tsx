@@ -84,6 +84,7 @@ export default function ChatPage() {
           role: "assistant",
           content: result.content,
           diagrams: result.diagrams,
+          generated_files: result.generated_files,
           meta: {
             model_used: result.model_used,
             used_fallback: result.used_fallback,
