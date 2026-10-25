@@ -171,6 +171,9 @@ export const novaApi = {
 
   listDevices: () => request<Device[]>("/devices"),
 
+  deleteDevice: (deviceId: string) =>
+    request<void>(`/devices/${deviceId}`, { method: "DELETE" }),
+
   createDevice: (payload: DeviceCreateInput) =>
     request<Device>("/devices", {
       method: "POST",
@@ -178,6 +181,9 @@ export const novaApi = {
     }),
 
   listCredentials: () => request<Credential[]>("/credentials"),
+
+  deleteCredential: (credentialId: string) =>
+    request<void>(`/credentials/${credentialId}`, { method: "DELETE" }),
 
   createCredential: (payload: CredentialCreateInput) =>
     request<Credential>("/credentials", {
