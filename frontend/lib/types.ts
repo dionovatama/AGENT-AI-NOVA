@@ -79,6 +79,7 @@ export interface ChatMessage {
   role: "user" | "assistant";
   content: string;
   image_url?: string;
+  image_prompt?: string;
   diagrams?: DiagramAttachment[];
   generated_files?: GeneratedFileAttachment[];
   show_configuration_choices?: boolean;
