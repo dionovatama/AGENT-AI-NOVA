@@ -227,12 +227,6 @@ export default function ToolsPage() {
             prdReference="PRD §16 Windows Executor"
           />
           <PlaceholderPanel
-            title="MikroTik Engine"
-            milestone="Phase 5"
-            description="Diagnostic & configuration RouterOS lewat API-SSL/SSH — interfaces, DHCP, firewall, VLAN."
-            prdReference="PRD §17 MikroTik Engine"
-          />
-          <PlaceholderPanel
             title="Cisco Engine"
             milestone="Phase 6"
             description="Diagnostic & configuration lewat SSH/NETCONF/RESTCONF — VLAN, routing, ACL."
