@@ -35,8 +35,8 @@ def _configuration_intent(message: str) -> bool:
     mentions_config = re.search(r"\b(konfigurasi|config|firewall|dhcp|nat|rsc)\b", text)
     # Generic "file konfigurasi firewall" requests are treated as MikroTik
     # only because that is the generator currently integrated into chat.
-    generic_config_file = re.search(r"\\b(file\\s+)?konfigurasi\\b", text) and re.search(
-        r"\\b(firewall|dhcp|nat|router)\\b", text
+    generic_config_file = re.search(r"\b(file\s+)?konfigurasi\b", text) and re.search(
+        r"\b(firewall|dhcp|nat|router)\b", text
     )
     return bool(asks_to_create and mentions_config and (mentions_mikrotik or generic_config_file))
 
