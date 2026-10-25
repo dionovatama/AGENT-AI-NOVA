@@ -10,6 +10,7 @@ import NovaActivity from "@/components/chat/NovaActivity";
 import { novaApi, NovaApiError } from "@/lib/api";
 import type { ChatMessage, TaskCategory } from "@/lib/types";
 import { TOOL_CALLING_CATEGORIES } from "@/lib/types";
+import { generatePuterImage } from "@/lib/puter-image";
 
 type ProcessingStage = "understand" | "process" | "respond";
 
@@ -99,6 +100,22 @@ export default function ChatPage() {
     const startedAt = performance.now();
 
     try {
+      // Image requests use Puter.js directly; ordinary chat stays on the existing AI Gateway.
+      const wantsImage = /\\b(generate|create|draw|make|render)\\b.{0,80}\\b(image|picture|illustration|artwork)\\b|\\b(buatkan|buat|gambar|ilustrasikan|lukiskan|hasilkan)\\b.{0,80}\\b(gambar|ilustrasi|poster|logo|wallpaper|foto)\\b|\\b(gambar|ilustrasi|poster|logo|wallpaper)\\b.{0,60}\\b(buatkan|buat|generate|bikin)\\b/i.test(text);
+      if (wantsImage) {
+        setProcessingStage("process");
+        const imageUrl = await generatePuterImage(text);
+        setProcessingStage("respond");
+        setMessages((prev) => [...prev, {
+          role: "assistant",
+          content: "Gambar berhasil dibuat melalui Puter.js.",
+          image_url: imageUrl,
+          meta: { model_used: "Puter.js Image Generation" },
+        }]);
+        setLastLatencyMs(Math.round(performance.now() - startedAt));
+        return;
+      }
+
       const toolsRequested = toolsSupported && useTools;
       setProcessingStage("process");
       const result = await novaApi.chatCompletion(text, category, toolsRequested);
