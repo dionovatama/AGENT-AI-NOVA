@@ -34,7 +34,7 @@ export function CategoryPicker({
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="flex items-center gap-1.5 rounded-lg bg-white/[0.04] px-2.5 py-1 text-[12px] font-medium text-ink-300 transition-colors hover:bg-white/[0.08] hover:text-ink-100"
+        className="flex h-9 items-center gap-1.5 rounded-lg bg-white/[0.04] px-3.5 text-[12px] font-medium text-ink-300 transition-colors hover:bg-white/[0.08] hover:text-ink-100"
       >
         {current?.label}
         <span className={`text-ink-500 transition-transform ${open ? "rotate-180" : ""}`}>⌄</span>

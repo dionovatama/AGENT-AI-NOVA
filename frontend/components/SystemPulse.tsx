@@ -54,7 +54,7 @@ export function SystemPulse() {
       : "border-base-600 bg-base-800 text-ink-500";
 
   return (
-    <div className={`flex items-center gap-2 rounded-full border px-3 py-1 font-mono text-[10px] font-medium uppercase tracking-wider ${pillClasses}`}>
+    <div className={`flex h-[34px] items-center gap-2 rounded-full border px-3.5 font-mono text-[10px] font-medium uppercase tracking-wider ${pillClasses}`}>
       <span className="relative flex h-2 w-2">
         {status === "online" && (
           <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-signal-green opacity-60" />

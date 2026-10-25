@@ -6,10 +6,30 @@ import { ArrowUp } from "lucide-react";
 import { ChatWindow } from "@/components/chat/ChatWindow";
 import { CategoryPicker } from "@/components/chat/CategoryPicker";
 import { CapabilityShortcuts } from "@/components/chat/CapabilityShortcuts";
-import { NovaActivity, type ProcessingStage } from "@/components/chat/NovaActivity";
+import NovaActivity from "@/components/chat/NovaActivity";
 import { novaApi, NovaApiError } from "@/lib/api";
 import type { ChatMessage, TaskCategory } from "@/lib/types";
 import { TOOL_CALLING_CATEGORIES } from "@/lib/types";
+
+type ProcessingStage = "understand" | "process" | "respond";
+
+const ACTIVITY_STAGES: { id: ProcessingStage; label: string }[] = [
+  { id: "understand", label: "Memahami permintaan" },
+  { id: "process", label: "Memproses permintaan" },
+  { id: "respond", label: "Menyiapkan respons" },
+];
+
+// NovaActivity di repo ini menerima daftar langkah + status, bukan "stage".
+function toActivitySteps(stage: ProcessingStage) {
+  const current = ACTIVITY_STAGES.findIndex((item) => item.id === stage);
+  return ACTIVITY_STAGES.map((item, index) => ({
+    label: item.label,
+    status: (index < current ? "done" : index === current ? "active" : "pending") as
+      | "done"
+      | "active"
+      | "pending",
+  }));
+}
 
 export default function ChatPage() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -99,7 +119,7 @@ export default function ChatPage() {
           <ChatWindow messages={messages} onQuickAction={handleQuickAction} />
           {sending && (
             <div className="mx-auto mt-5 w-full max-w-4xl px-1">
-              <NovaActivity stage={processingStage} toolsEnabled={toolsSupported && useTools} />
+              <NovaActivity activity="NOVA Operation" steps={toActivitySteps(processingStage)} />
             </div>
           )}
         </div>

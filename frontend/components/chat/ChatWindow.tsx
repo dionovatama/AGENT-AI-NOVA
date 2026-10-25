@@ -200,7 +200,7 @@ export function ChatWindow({
   }
 
   return (
-    <div className="mx-auto flex w-full max-w-[820px] flex-col gap-5 px-2 sm:px-4">
+    <div className="mx-auto flex w-full max-w-4xl flex-col gap-5 px-1">
       {messages.map((msg, i) =>
         msg.role === "user" ? (
           <div key={i} className="flex justify-end">

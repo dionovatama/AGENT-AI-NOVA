@@ -1,105 +1,213 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
-import { BootSplash } from "@/components/BootSplash";
+import { useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { ArrowUp } from "lucide-react";
+import { ChatWindow } from "@/components/chat/ChatWindow";
+import { CategoryPicker } from "@/components/chat/CategoryPicker";
+import { CapabilityShortcuts } from "@/components/chat/CapabilityShortcuts";
+import NovaActivity from "@/components/chat/NovaActivity";
 import { novaApi, NovaApiError } from "@/lib/api";
-import { setToken } from "@/lib/auth";
+import type { ChatMessage, TaskCategory } from "@/lib/types";
+import { TOOL_CALLING_CATEGORIES } from "@/lib/types";
 
-type Mode = "login" | "register";
+type ProcessingStage = "understand" | "process" | "respond";
 
-export default function LoginPage() {
-  const router = useRouter();
-  const [mode, setMode] = useState<Mode>("login");
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [pending, setPending] = useState(false);
+const ACTIVITY_STAGES: { id: ProcessingStage; label: string }[] = [
+  { id: "understand", label: "Memahami permintaan" },
+  { id: "process", label: "Memproses permintaan" },
+  { id: "respond", label: "Menyiapkan respons" },
+];
 
-  async function handleSubmit(e: React.FormEvent) {
+// NovaActivity di repo ini menerima daftar langkah + status, bukan "stage".
+function toActivitySteps(stage: ProcessingStage) {
+  const current = ACTIVITY_STAGES.findIndex((item) => item.id === stage);
+  return ACTIVITY_STAGES.map((item, index) => ({
+    label: item.label,
+    status: (index < current ? "done" : index === current ? "active" : "pending") as
+      | "done"
+      | "active"
+      | "pending",
+  }));
+}
+
+export default function ChatPage() {
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [input, setInput] = useState("");
+  const [category, setCategory] = useState<TaskCategory>("general_chat");
+  const [useTools, setUseTools] = useState(false);
+  const [sending, setSending] = useState(false);
+  const [processingStage, setProcessingStage] = useState<ProcessingStage>("understand");
+  const [lastLatencyMs, setLastLatencyMs] = useState<number | null>(null);
+
+  const searchParams = useSearchParams();
+  const resetKey = searchParams.get("new");
+
+  useEffect(() => {
+    if (resetKey) {
+      setMessages([]);
+      setInput("");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [resetKey]);
+
+  const toolsSupported = TOOL_CALLING_CATEGORIES.includes(category);
+  const isEmpty = messages.length === 0;
+
+  function handleQuickAction(cat: TaskCategory, prompt: string, wantsTools?: boolean) {
+    setCategory(cat);
+    setInput(prompt);
+    if (wantsTools && TOOL_CALLING_CATEGORIES.includes(cat)) setUseTools(true);
+  }
+
+  async function handleSend(e: React.FormEvent) {
     e.preventDefault();
-    setError(null);
-    setPending(true);
+    const text = input.trim();
+    if (!text || sending) return;
+
+    setMessages((prev) => [...prev, { role: "user", content: text }]);
+    setInput("");
+    setSending(true);
+    setProcessingStage("understand");
+    const stageTimer = window.setTimeout(() => setProcessingStage("process"), 350);
+    const startedAt = performance.now();
+
     try {
-      if (mode === "register") {
-        await novaApi.register(email, password);
-      }
-      const { access_token } = await novaApi.login(email, password);
-      setToken(access_token);
-      router.push("/chat");
+      const toolsRequested = toolsSupported && useTools;
+      setProcessingStage("process");
+      const result = await novaApi.chatCompletion(text, category, toolsRequested);
+      setLastLatencyMs(Math.round(performance.now() - startedAt));
+      setProcessingStage("respond");
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "assistant",
+          content: result.content,
+          diagrams: result.diagrams,
+          meta: {
+            model_used: result.model_used,
+            used_fallback: result.used_fallback,
+            tools_used: result.tools_used,
+            tools_offered: toolsRequested,
+          },
+        },
+      ]);
     } catch (err) {
-      setError(err instanceof NovaApiError ? err.message : "Tidak dapat menghubungi backend NOVA.");
+      setLastLatencyMs(Math.round(performance.now() - startedAt));
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "assistant",
+          content: "AI Gateway gagal memproses request ini.",
+          meta: { error: err instanceof NovaApiError ? err.message : "Unknown error" },
+        },
+      ]);
     } finally {
-      setPending(false);
+      window.clearTimeout(stageTimer);
+      setSending(false);
     }
   }
 
   return (
-    <BootSplash>
-      <main className="flex min-h-screen items-center justify-center px-4">
-      <div className="w-full max-w-sm">
-        <div className="mb-8 text-center">
-          <img
-            src="/brand/nova-lockup.png"
-            alt="N.O.V.A — Nexus Operation Virtual Assistant"
-            className="mx-auto w-64"
-          />
-          <p className="mt-3 text-sm text-ink-500">
-            AI thinks. Tools collect evidence. Policies control actions.
-          </p>
+    <div className="mx-auto flex h-full min-h-0 w-full max-w-[944px] flex-col px-6 pb-[18px]">
+      {isEmpty ? (
+        <div className="flex min-h-0 flex-1 items-center justify-center overflow-hidden">
+          <ChatWindow messages={messages} onQuickAction={handleQuickAction} />
         </div>
-
-        <form onSubmit={handleSubmit} className="panel p-5">
-          <div className="mb-4">
-            <label className="field-label" htmlFor="email">Email</label>
-            <input
-              id="email"
-              type="email"
-              required
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="field-input"
-              placeholder="operator@nova.local"
-            />
-          </div>
-          <div className="mb-5">
-            <label className="field-label" htmlFor="password">Password</label>
-            <input
-              id="password"
-              type="password"
-              required
-              minLength={8}
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="field-input"
-              placeholder="••••••••"
-            />
-          </div>
-
-          {error && (
-            <p className="mb-4 rounded-sm border border-signal-rose/30 bg-signal-rose/10 px-3 py-2 text-sm text-signal-rose">
-              {error}
-            </p>
+      ) : (
+        <div className="nova-chat-scroll min-h-0 flex-1 overflow-y-auto pb-3 pt-1 pr-1">
+          <ChatWindow messages={messages} onQuickAction={handleQuickAction} />
+          {sending && (
+            <div className="mx-auto mt-5 w-full max-w-4xl px-1">
+              <NovaActivity activity="NOVA Operation" steps={toActivitySteps(processingStage)} />
+            </div>
           )}
+        </div>
+      )}
 
-          <button type="submit" disabled={pending} className="btn-primary w-full justify-center">
-            {pending ? "Menghubungi backend…" : mode === "login" ? "Masuk" : "Daftar & masuk"}
-          </button>
+      <div className="group relative">
+        <div className="pointer-events-none absolute -inset-1 rounded-2xl bg-gradient-to-r from-orb-glow/20 via-[#4C8EF7]/10 to-signal-teal/15 opacity-25 blur-xl transition-opacity duration-300 group-focus-within:opacity-70" />
 
-          <button
-            type="button"
-            onClick={() => setMode(mode === "login" ? "register" : "login")}
-            className="mt-3 w-full text-center text-[13px] text-ink-500 hover:text-ink-300"
-          >
-            {mode === "login" ? "Belum punya akun? Daftar" : "Sudah punya akun? Masuk"}
-          </button>
+        <form
+          onSubmit={handleSend}
+          className={`glass-composer relative flex flex-col ${isEmpty ? "p-6" : "p-4"}`}
+        >
+          <textarea
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                handleSend(e);
+              }
+            }}
+            rows={isEmpty ? 3 : 2}
+            placeholder="Ask NOVA anything, or ask it to check something on the lab server…"
+            className={`block w-full resize-none bg-transparent text-[14px] leading-relaxed text-ink-100 placeholder:text-ink-500/80 focus:outline-none ${
+              isEmpty ? "h-[82px]" : "h-[48px]"
+            }`}
+          />
+
+          <div className={`flex flex-wrap items-center justify-between gap-2 ${isEmpty ? "mt-5" : "mt-3"}`}>
+            <div className="flex flex-wrap items-center gap-2">
+              <CategoryPicker value={category} onChange={setCategory} />
+
+              {toolsSupported && (
+                <button
+                  type="button"
+                  onClick={() => setUseTools((v) => !v)}
+                  aria-pressed={useTools}
+                  title="Aktifkan tools READ: web.search, web.read_page, diagram.create"
+                  className={`flex h-9 shrink-0 items-center gap-1.5 rounded-lg border px-3.5 text-[12px] font-medium transition-colors ${
+                    useTools
+                      ? "border-signal-teal/40 bg-signal-teal/10 text-signal-teal"
+                      : "border-transparent bg-white/[0.04] text-ink-500 hover:bg-white/[0.08] hover:text-ink-100"
+                  }`}
+                >
+                  <span className={`h-1.5 w-1.5 rounded-full ${useTools ? "bg-signal-teal" : "bg-base-600"}`} />
+                  tools
+                </button>
+              )}
+
+              <span className="badge-read">
+                <span className="h-1.5 w-1.5 rounded-full bg-signal-green shadow-[0_0_6px_rgba(63,203,124,0.9)]" />
+                READ (AUTO)
+              </span>
+            </div>
+
+            <button
+              type="submit"
+              disabled={sending}
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-tr from-[#842BD2] to-orb-glow text-white shadow-[0_0_16px_rgba(168,85,247,0.5)] transition-all hover:brightness-110 active:scale-95 disabled:opacity-50"
+            >
+              <ArrowUp size={16} strokeWidth={2.5} />
+            </button>
+          </div>
         </form>
-
-        <p className="mt-6 text-center text-xs text-ink-500">
-          Milestone 1–4 aktif · Voice, Multi-Tenant UI, dan Automation menyusul.
-        </p>
       </div>
-      </main>
-    </BootSplash>
+
+      {isEmpty && (
+        <div className="mt-[18px]">
+          <CapabilityShortcuts />
+        </div>
+      )}
+
+      <div className={`flex items-center justify-between px-1 pt-1.5 text-ink-500 ${messages.length === 0 ? "hidden" : ""}`}>
+        <span className="font-sans text-[10px] text-ink-500/80">
+          <kbd className="rounded bg-white/[0.06] px-1 py-0.5 font-mono text-[9px] text-ink-300">Enter</kbd> send ·{" "}
+          <kbd className="rounded bg-white/[0.06] px-1 py-0.5 font-mono text-[9px] text-ink-300">Shift+Enter</kbd> newline
+        </span>
+        {lastLatencyMs !== null && (
+          <span className="flex items-center gap-1.5 font-mono text-[10px] text-ink-500/80">
+            <span className="h-1.5 w-1.5 rounded-full bg-signal-teal" />
+            {lastLatencyMs}ms
+          </span>
+        )}
+      </div>
+
+      <p className={`mb-2 mt-1 text-center text-[10px] text-ink-500/80 ${messages.length === 0 ? "hidden" : ""}`}>
+        Endpoint ini murni reasoning (Milestone 2). Untuk eksekusi command nyata, gunakan halaman Tools.
+      </p>
+    </div>
   );
 }
