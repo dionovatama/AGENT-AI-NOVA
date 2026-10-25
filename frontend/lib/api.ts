@@ -119,7 +119,13 @@ export const novaApi = {
       body: JSON.stringify({ message, category, use_tools: useTools }),
     }),
 
-  listTools: () => request<string[]>("/tools/list"),\n\n  generateMikrotikConfig: (payload: MikrotikGeneratorRequest) =>\n    request<MikrotikGeneratorResponse>("/mikrotik-config-generator/generate", {\n      method: "POST",\n      body: JSON.stringify(payload),\n    }),
+  listTools: () => request<string[]>("/tools/list"),
+
+  generateMikrotikConfig: (payload: MikrotikGeneratorRequest) =>
+    request<MikrotikGeneratorResponse>("/mikrotik-config-generator/generate", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
 
   executeTool: (
     toolName: string,
