@@ -219,6 +219,13 @@ export function ChatWindow({
 
             <MarkdownContent content={msg.content} />
 
+            {msg.image_url && (
+              <div className="mt-3 max-w-2xl overflow-hidden rounded-xl border border-white/[0.08] bg-base-950">
+                <img src={msg.image_url} alt="Gambar yang dihasilkan NOVA" className="h-auto max-h-[640px] w-full object-contain" />
+                <div className="border-t border-white/[0.06] px-3 py-2"><a href={msg.image_url} target="_blank" rel="noreferrer" className="text-[11px] text-orb-core hover:underline">Buka atau simpan gambar</a></div>
+              </div>
+            )}
+
             {msg.show_configuration_choices && msg.configuration_request && (
               <div className="mt-3 grid gap-2 sm:grid-cols-2">
                 <button type="button" onClick={() => onConfigurationChoice(msg.configuration_request!, "file")} className="flex items-center gap-3 rounded-xl border border-orb-glow/30 bg-orb-glow/10 p-3 text-left transition-colors hover:bg-orb-glow/20">
