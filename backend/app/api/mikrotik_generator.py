@@ -141,6 +141,16 @@ def _build_rsc(payload: GeneratorRequest, interface: ipaddress.IPv4Interface, dn
     return "\n".join(header + commands).rstrip() + "\n"
 
 
+def _build_rsc_v6(payload: GeneratorRequest, interface: ipaddress.IPv4Interface, dns: list[str]) -> str:
+    """RouterOS v6 template entry point."""
+    return _build_rsc(payload, interface, dns, "routeros-v6")
+
+
+def _build_rsc_v7(payload: GeneratorRequest, interface: ipaddress.IPv4Interface, dns: list[str]) -> str:
+    """RouterOS v7 template entry point."""
+    return _build_rsc(payload, interface, dns, "routeros-v7")
+
+
 @router.post("/generate", response_model=GeneratorResponse)
 def generate_configuration(
     payload: GeneratorRequest,
@@ -152,9 +162,9 @@ def generate_configuration(
     # Preserve a version-specific template entry point, even where safe commands
     # are intentionally identical between RouterOS v6 and v7.
     if payload.routeros_version == "6":
-        rsc = _build_rsc(payload, interface, dns, "routeros-v6")
+        rsc = _build_rsc_v6(payload, interface, dns)
     else:
-        rsc = _build_rsc(payload, interface, dns, "routeros-v7")
+        rsc = _build_rsc_v7(payload, interface, dns)
 
     data = {
         "generator": "NOVA MikroTik Configuration Generator",
