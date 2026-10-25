@@ -55,7 +55,10 @@ def _configuration_from_message(message: str) -> GeneratorRequest:
     if re.search(r"\b(firewall|filter|blokir|block|proteksi)\b", text):
         modules.append("firewall")
     if not modules:
-        modules = ["ip", "firewall"]
+        raise HTTPException(
+            status_code=422,
+            detail="Generator file saat ini mendukung modul IP, DHCP, NAT, dan firewall. Modul konfigurasi lain belum tersedia.",
+        )
     modules = list(dict.fromkeys(modules))
 
     version_match = re.search(r"router\s*os\s*v?([67])|routeros\s*v?([67])", text)
