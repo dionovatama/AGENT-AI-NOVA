@@ -113,10 +113,15 @@ export const novaApi = {
   // web.search/web.read_page). Default false supaya perilaku chat lama
   // (murni reasoning, tanpa tool) tidak berubah kalau caller tidak
   // secara eksplisit minta ini.
-  chatCompletion: (message: string, category: TaskCategory, useTools = false) =>
+  chatCompletion: (message: string, category: TaskCategory, useTools = false, configurationMode?: "file" | "direct") =>
     request<ChatCompletionResult>("/chat/completions", {
       method: "POST",
-      body: JSON.stringify({ message, category, use_tools: useTools }),
+      body: JSON.stringify({
+        message,
+        category,
+        use_tools: useTools,
+        ...(configurationMode ? { configuration_mode: configurationMode } : {}),
+      }),
     }),
 
   listTools: () => request<string[]>("/tools/list"),
