@@ -59,8 +59,8 @@ def _configuration_from_message(message: str) -> GeneratorRequest:
     version_match = re.search(r"router\s*os\s*v?([67])|routeros\s*v?([67])", text)
     version = next((group for group in version_match.groups() if group), "7") if version_match else "7"
     cidr_match = re.search(r"\b((?:\d{1,3}\.){3}\d{1,3}/\d{1,2})\b", message)
-    lan_match = re.search(r"(?:interface\s*(?:lan)?|lan)\s*[:=]?\s*([A-Za-z][A-Za-z0-9_.-]{0,31})", message, re.I)
-    wan_match = re.search(r"(?:interface\s*(?:wan)?|wan)\s*[:=]?\s*([A-Za-z][A-Za-z0-9_.-]{0,31})", message, re.I)
+    lan_match = re.search(r"(?:lan_interface|interface\s+lan)\s*[:=]\s*([A-Za-z][A-Za-z0-9_.-]{0,31})", message, re.I)
+    wan_match = re.search(r"(?:wan_interface|interface\s+wan)\s*[:=]\s*([A-Za-z][A-Za-z0-9_.-]{0,31})", message, re.I)
 
     return GeneratorRequest(
         routeros_version=version,
