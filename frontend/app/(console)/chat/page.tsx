@@ -177,7 +177,7 @@ export default function ChatPage() {
         ...prev,
         {
           role: "assistant",
-          content: "AI Gateway gagal memproses request ini.",
+          content: "Permintaan gagal diproses. Periksa koneksi atau konfigurasi layanan, lalu coba lagi.",
           meta: { error: err instanceof NovaApiError ? err.message : "Unknown error" },
         },
       ]);
