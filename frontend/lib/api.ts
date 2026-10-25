@@ -98,7 +98,8 @@ export const novaApi = {
   executeTool: (
     toolName: string,
     args: Record<string, unknown>,
-    confirmed: boolean
+    confirmed: boolean,
+    deviceId?: string
   ) =>
     request<ToolResult>("/tools/execute", {
       method: "POST",
@@ -106,6 +107,7 @@ export const novaApi = {
         tool_name: toolName,
         arguments: args,
         confirmed,
+        ...(deviceId ? { device_id: deviceId } : {}),
       }),
     }),
 
