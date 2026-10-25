@@ -16,6 +16,46 @@ export default function DevicesPage() {
   const [showDeviceForm, setShowDeviceForm] = useState(false);
   const [showCredentialForm, setShowCredentialForm] = useState(false);
   const [connectionTests, setConnectionTests] = useState<Record<string, { loading: boolean; result?: ToolResult; error?: string }>>({});
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  async function handleDeleteDevice(device: Device) {
+    const confirmed = window.confirm(
+      `Hapus device "${device.name}" (${device.platform} — ${device.host}:${device.port})?\n\nTindakan ini tidak dapat dibatalkan. Device akan dihapus dari daftar N.O.V.A.`
+    );
+    if (!confirmed) return;
+    setDeletingId(device.id);
+    setDeleteError(null);
+    try {
+      await novaApi.deleteDevice(device.id);
+      await refresh();
+    } catch (err) {
+      setDeleteError(err instanceof NovaApiError ? err.message : "Gagal menghapus device.");
+    } finally {
+      setDeletingId(null);
+    }
+  }
+
+  async function handleDeleteCredential(credential: Credential) {
+    const linkedDevices = (devices ?? []).filter((device) => device.credential_id === credential.id);
+    const linkedWarning = linkedDevices.length
+      ? `\n\nCredential ini dipakai oleh ${linkedDevices.length} device: ${linkedDevices.map((device) => device.name).join(", ")}. Penghapusan bisa membuat device tersebut kehilangan referensi autentikasi.`
+      : "";
+    const confirmed = window.confirm(
+      `Hapus credential "${credential.name}" (${credential.type})?\n\nTindakan ini tidak dapat dibatalkan.${linkedWarning}`
+    );
+    if (!confirmed) return;
+    setDeletingId(credential.id);
+    setDeleteError(null);
+    try {
+      await novaApi.deleteCredential(credential.id);
+      await refresh();
+    } catch (err) {
+      setDeleteError(err instanceof NovaApiError ? err.message : "Gagal menghapus credential.");
+    } finally {
+      setDeletingId(null);
+    }
+  }
 
   async function testConnection(device: Device) {
     setConnectionTests((current) => ({
@@ -67,7 +107,7 @@ export default function DevicesPage() {
         </p>
       </header>
 
-      {loadError && (
+      {(loadError || deleteError) && (
         <p className="mb-4 rounded-sm border border-signal-rose/30 bg-signal-rose/10 px-3 py-2 text-[13px] text-signal-rose">
           {loadError}
         </p>
@@ -103,13 +143,13 @@ export default function DevicesPage() {
                 <tr className="text-ink-500">
                   <th className="px-4 py-2 font-normal">Name</th>
                   <th className="px-4 py-2 font-normal">Type</th>
-                  <th className="px-4 py-2 font-normal">Dibuat</th>
+                  <th className="px-4 py-2 font-normal">Dibuat</th>\n                  <th className="px-4 py-2 font-normal">Aksi</th>
                 </tr>
               </thead>
               <tbody>
                 {credentials.length === 0 && (
                   <tr>
-                    <td colSpan={3} className="px-4 py-4 text-center text-ink-500">
+                    <td colSpan={4} className="px-4 py-4 text-center text-ink-500">
                       Belum ada credential. Tambah dulu sebelum bikin device yang butuh auth.
                     </td>
                   </tr>
