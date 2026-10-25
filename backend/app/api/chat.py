@@ -23,22 +23,24 @@ class ChatRequest(BaseModel):
     message: str = Field(min_length=1, max_length=8000)
     category: TaskCategory = TaskCategory.GENERAL_CHAT
     use_tools: bool = False
+    configuration_mode: str | None = None  # "file" or "direct", selected after confirmation
 
 
 def _configuration_intent(message: str) -> bool:
     text = message.lower()
-    asks_to_create = re.search(
-        r"\b(buatkan|buat|generate|bikinkan|hasilkan|siapkan|konfigurasikan|generatekan|butuh|perlu|ingin|minta)\b",
+    asks_to_configure = re.search(
+        r"\b(buatkan|buat|generate|bikinkan|hasilkan|siapkan|konfigurasikan|konfigurasi|atur|tambahkan|aktifkan|blokir|pasang|tolong|butuh|perlu|ingin|minta)\b",
         text,
     )
-    mentions_mikrotik = re.search(r"\b(mikrotik|routeros|router os)\b", text)
-    mentions_config = re.search(r"\b(konfigurasi|config|firewall|dhcp|nat|rsc)\b", text)
-    # Generic "file konfigurasi firewall" requests are treated as MikroTik
-    # only because that is the generator currently integrated into chat.
-    generic_config_file = re.search(r"\b(file\s+)?konfigurasi\b", text) and re.search(
-        r"\b(firewall|dhcp|nat|router)\b", text
+    mentions_config = re.search(
+        r"\b(mikrotik|routeros|router\s+os|firewall|dhcp|nat|masquerade|filter|rule|router)\b",
+        text,
     )
-    return bool(asks_to_create and mentions_config and (mentions_mikrotik or generic_config_file))
+    asks_for_explanation = re.search(
+        r"\b(jelaskan|jelasin|apa\s+itu|fungsi|pengertian|cara\s+kerja|bedanya|mengapa|kenapa)\b",
+        text,
+    )
+    return bool(asks_to_configure and mentions_config and not asks_for_explanation)
 
 
 def _configuration_from_message(message: str) -> GeneratorRequest:
@@ -76,8 +78,35 @@ async def chat_completions(
     payload: ChatRequest,
     current_user: User = Depends(get_current_user),
 ):
+    # First ask the user which execution path they want. The original request
+    # is preserved by the frontend and resubmitted with configuration_mode.
+    if payload.configuration_mode is None and _configuration_intent(payload.message):
+        return ChatCompletionResult(
+            content="Baik, Tuan. Konfigurasi ini ingin diproses dengan cara apa?",
+            model_used="nova-configuration-router",
+            category=TaskCategory.CONFIGURATION_GENERATION,
+            used_fallback=False,
+            tools_used=[],
+            generated_files=[],
+            configuration_choice=True,
+        )
+
+    if payload.configuration_mode == "direct":
+        return ChatCompletionResult(
+            content=(
+                "Mode konfigurasi langsung belum tersedia pada instalasi ini. "
+                "NOVA belum terhubung ke router untuk menerapkan perubahan. "
+                "Pilih pembuatan file konfigurasi, atau hubungkan dan uji tool eksekusi router terlebih dahulu."
+            ),
+            model_used="nova-configuration-router",
+            category=TaskCategory.CONFIGURATION_GENERATION,
+            used_fallback=False,
+            tools_used=[],
+            generated_files=[],
+        )
+
     # Configuration generation is an offline artifact flow, never a device action.
-    if _configuration_intent(payload.message):
+    if payload.configuration_mode == "file":
         try:
             request = _configuration_from_message(payload.message)
             generated = generate_configuration(request, current_user)
