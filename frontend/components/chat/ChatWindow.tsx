@@ -1,11 +1,36 @@
 "use client";
 
 import { useState } from "react";
-import { Paperclip } from "lucide-react";
+import { Paperclip, Copy, Check } from "lucide-react";
 import type { ChatMessage, TaskCategory } from "@/lib/types";
 import { WelcomeHero } from "@/components/chat/WelcomeHero";
 import { MermaidDiagram } from "@/components/chat/MermaidDiagram";
-import MarkdownRenderer from "@/components/chat/MarkdownRenderer";
+
+function CopyCodeButton({ value }: { value: string }) {
+  const [copied, setCopied] = useState(false);
+
+  async function copyCode() {
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1600);
+    } catch {
+      setCopied(false);
+    }
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={copyCode}
+      className="inline-flex items-center gap-1.5 rounded-md border border-white/[0.08] bg-white/[0.04] px-2 py-1 text-[10px] text-ink-400 transition-colors hover:border-orb-glow/40 hover:text-ink-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orb-glow/60"
+      aria-label={copied ? "Kode disalin" : "Salin kode"}
+    >
+      {copied ? <Check size={12} className="text-signal-green" /> : <Copy size={12} />}
+      {copied ? "Copied" : "Salin kode"}
+    </button>
+  );
+}
 
 function InlineMarkdown({ text }: { text: string }) {
   const parts = text.split(/(\*\*[^*]+\*\*|__[^_]+__|\`[^\`]+\`)/g);
@@ -48,12 +73,13 @@ function MarkdownContent({ content }: { content: string }) {
       if (i < lines.length) i += 1;
 
       blocks.push(
-        <div key={blocks.length} className="my-3 overflow-hidden rounded-xl border border-white/[0.07] bg-[#0A0B10]">
-          {language && (
-            <div className="border-b border-white/[0.06] px-3 py-1.5 font-mono text-[10px] uppercase tracking-wider text-ink-500">
-              {language}
-            </div>
-          )}
+        <div key={blocks.length} className="my-3 overflow-hidden rounded-xl border border-white/[0.09] bg-[#0B0D13] shadow-[0_8px_24px_-18px_rgba(0,0,0,0.9)]">
+          <div className="flex items-center justify-between gap-3 border-b border-white/[0.06] bg-[#11131D] px-3 py-2">
+            <span className="truncate font-mono text-[10px] uppercase tracking-wider text-ink-400">
+              {language || "OUTPUT"} <span className="ml-1 normal-case tracking-normal text-ink-500">· {code.length} baris</span>
+            </span>
+            <CopyCodeButton value={code.join("\n")} />
+          </div>
           <pre className="overflow-x-auto px-4 py-3 font-mono text-[12px] leading-6 text-ink-200">
             <code>{code.join("\n")}</code>
           </pre>
@@ -236,7 +262,7 @@ export function ChatWindow({
               </span>
             </div>
 
-            <MarkdownRenderer content={msg.content} />
+            <MarkdownContent content={msg.content} />
 
             {msg.image_url && (
               <div className="mt-3 max-w-2xl overflow-hidden rounded-xl border border-white/[0.08] bg-base-950">
