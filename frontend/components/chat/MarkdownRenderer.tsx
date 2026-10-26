@@ -105,7 +105,7 @@ function normalizeMarkdownTables(content: string): string {
   if (content.includes('\n')) return content;
 
   const unescaped = content.replace(/\\\\\\|/g, '|').trim();
-  if (!/\\|\\s*:?-{3,}:?\\s*\\|/.test(unescaped)) return content;
+  if (!/\|\s*:?-{3,}:?\s*\|/.test(unescaped)) return content;
 
   const cells = unescaped.split('|').map((cell) => cell.trim()).filter(Boolean);
   const separatorIndex = cells.findIndex((cell) => /^:?-{3,}:?$/.test(cell));
