@@ -95,7 +95,18 @@ async def chat_completions(
 ):
     # First ask the user which execution path they want. The original request
     # is preserved by the frontend and resubmitted with configuration_mode.
-    if payload.configuration_mode is None and _configuration_intent(payload.message):
+    # Network Configuration with tools enabled must reach the diagnostic tool-calling
+    # path first. Generic keyword matching can otherwise mistake read-only
+    # requests (e.g. "jangan mengubah konfigurasi") for configuration generation.
+    use_network_tools = (
+        payload.use_tools
+        and payload.category == TaskCategory.NETWORK_CONFIGURATION
+    )
+    if (
+        payload.configuration_mode is None
+        and _configuration_intent(payload.message)
+        and not use_network_tools
+    ):
         return ChatCompletionResult(
             content="Baik, Tuan. Konfigurasi ini ingin diproses dengan cara apa?",
             model_used="nova-configuration-router",
