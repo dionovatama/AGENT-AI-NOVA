@@ -49,7 +49,8 @@ from pydantic import BaseModel
 from app.ai.attachments import DiagramAttachment
 from app.ai.model_router import TaskCategory
 from app.config import settings
-from app.database.models import User
+from app.database.models import Device, User
+from app.database.session import SessionLocal
 from app.ai.openrouter import ChatMessage, OpenRouterError, _call_openrouter_raw
 from app.tools.manager import ToolManagerError, tool_manager
 from app.tools.schemas import PermissionLevel, RiskLevel, ToolRequest
@@ -60,8 +61,24 @@ logger = logging.getLogger("nova.ai.tool_calling")
 # Kategori task -> daftar nama tool yang boleh diekspos ke LLM di kategori
 # itu. Hanya tool READ yang boleh masuk sini (ditegakkan ulang secara
 # runtime di _build_tool_schemas, bukan cuma diasumsikan dari daftar ini).
+_MIKROTIK_READ_TOOLS = [
+    "mikrotik.system_resource",
+    "mikrotik.interface_status",
+    "mikrotik.ip_address",
+    "mikrotik.route_table",
+    "mikrotik.arp_table",
+    "mikrotik.dhcp_leases",
+    "mikrotik.firewall_rules",
+]
+
 _CATEGORY_TOOL_ALLOWLIST: dict[TaskCategory, list[str]] = {
     TaskCategory.GENERAL_CHAT: ["web.search", "web.read_page", "diagram.create"],
+    TaskCategory.NETWORK_CONFIGURATION: [
+        *_MIKROTIK_READ_TOOLS,
+        "web.search",
+        "web.read_page",
+        "diagram.create",
+    ],
 }
 
 MAX_TOOL_ITERATIONS = 3
