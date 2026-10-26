@@ -20,6 +20,7 @@ export type TaskCategory =
   | "general_chat"
   | "technical_reasoning"
   | "troubleshooting"
+  | "network_configuration"
   | "network_diagnostic"
   | "configuration_generation"
   | "coding"
@@ -29,8 +30,7 @@ export const TASK_CATEGORIES: { value: TaskCategory; label: string }[] = [
   { value: "general_chat", label: "General Chat" },
   { value: "technical_reasoning", label: "Technical Reasoning" },
   { value: "troubleshooting", label: "Troubleshooting" },
-  { value: "network_diagnostic", label: "Network Diagnostic" },
-  { value: "configuration_generation", label: "Configuration Generation" },
+  { value: "network_configuration", label: "Network Configuration" },
   { value: "coding", label: "Coding" },
   { value: "summarization", label: "Summarization" },
 ];
@@ -40,7 +40,7 @@ export const TASK_CATEGORIES: { value: TaskCategory; label: string }[] = [
 // backend/app/ai/tool_calling.py). Dipakai supaya toggle "pakai tools"
 // di UI chat cuma muncul untuk kategori yang memang didukung backend —
 // bukan ditampilkan untuk semua kategori lalu diam-diam tidak berefek.
-export const TOOL_CALLING_CATEGORIES: TaskCategory[] = ["general_chat"];
+export const TOOL_CALLING_CATEGORIES: TaskCategory[] = ["general_chat", "network_configuration"];
 
 // Diagram yang dilampirkan backend bersama jawaban (tool diagram.create).
 // `code` sudah divalidasi backend, tapi tetap diperlakukan untrusted —
