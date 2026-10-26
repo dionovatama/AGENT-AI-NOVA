@@ -51,7 +51,7 @@ export default function NovaActivity({ activity, steps }: NovaActivityProps) {
                 {step.status === 'active' && <span className="text-[var(--nova-accent-cyan)] animate-pulse">◉</span>}
                 {step.status === 'pending' && <span className="text-white/20">○</span>}
                 {step.status === 'error' && <span className="text-red-400">✗</span>}
-                <span className={\`${
+                <span className={`${
                   step.status === 'active' ? 'text-white/70' :
                   step.status === 'done' ? 'text-white/40' :
                   step.status === 'error' ? 'text-red-400/80' :
