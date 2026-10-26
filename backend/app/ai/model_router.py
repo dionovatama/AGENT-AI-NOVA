@@ -21,6 +21,7 @@ class TaskCategory(str, Enum):
     GENERAL_CHAT = "general_chat"
     TECHNICAL_REASONING = "technical_reasoning"
     TROUBLESHOOTING = "troubleshooting"
+    NETWORK_CONFIGURATION = "network_configuration"
     NETWORK_DIAGNOSTIC = "network_diagnostic"
     CONFIGURATION_GENERATION = "configuration_generation"
     CODING = "coding"
