@@ -13,9 +13,9 @@ import type { Config } from "tailwindcss";
   * 1. base-* / ink-* / signal-* — sistem asli, dipakai Tools/Devices/Audit/
  *    Settings/Login dan komponen lama.
  * 2. surface-panel/surface-card/border-glow/orb-core/orb-glow — sistem
- *    "Obsidian Violet Operator", desain terverifikasi (bukan referensi
+ *    "Dark Blue Operator", desain terverifikasi (bukan referensi
  *    generik yang ditolak sebelumnya) yang diadopsi sengaja untuk area
- *    Chat. Violet di sini BUKAN "orb ungu generik" seperti yang
+ *    Chat. Biru di sini BUKAN aksen dekoratif generik seperti yang
  *    sebelumnya ditolak -- itu template SaaS tanpa identitas; ini
  *    design system lengkap dengan rasional sendiri (lihat DESIGN.md
  *    yang diberikan Tuan), dipilih sadar, bukan default template.
@@ -42,8 +42,8 @@ const config: Config = {
           500: "#6B7684", // teks muted / placeholder
         },
         signal: {
-          teal: "#2FD9C4",   // aksi utama, tool aktif, link
-          blue: "#4C8EF7",   // aksen sekunder lama (masih dipakai beberapa tempat lama)
+          teal: "#3B82F6",   // aksi utama, tool aktif, link (blue primary)
+          blue: "#38BDF8",   // cyan highlight
           amber: "#F0B33D",  // MODIFY / butuh konfirmasi / pending
           rose: "#F0645F",   // HIGH_RISK / error / gagal
           green: "#3FCB7C",  // READ / sukses / online
@@ -57,13 +57,13 @@ const config: Config = {
         // didaftarkan lagi di sini -- nilainya identik dengan base.950
         // dan base.900 yang sudah ada, jadi dipakai lewat nama itu saja
         // (satu sumber kebenaran per warna, bukan dua nama untuk satu hex).
-        "surface-panel": "#15121C",       // panel bertekstur violet, ganti base-800 di area chat
-        "surface-card": "#181424",        // card composer/shortcut, elevasi di atas surface-panel
-        "surface-card-hover": "#211A34",
-        "border-subtle": "#251F38",       // border tepi panel, ganti base-700 di area chat
-        "border-glow": "#A855F7",         // electric violet -- border aktif/fokus
-        "orb-core": "#C084FC",            // violet terang, highlight core orb
-        "orb-glow": "#A855F7",            // = border-glow, dipakai utk gradient/shadow
+        "surface-panel": "#101A2A",       // panel bertekstur violet, ganti base-800 di area chat
+        "surface-card": "#142238",        // card composer/shortcut, elevasi di atas surface-panel
+        "surface-card-hover": "#1B2B43",
+        "border-subtle": "#26364C",       // border tepi panel, ganti base-700 di area chat
+        "border-glow": "#3B82F6",         // electric blue -- border aktif/fokus
+        "orb-core": "#60A5FA",            // violet terang, highlight core orb
+        "orb-glow": "#38BDF8",            // = border-glow, dipakai utk gradient/shadow
       },
       fontFamily: {
         sans: ["var(--font-sans)", "system-ui", "sans-serif"],
