@@ -174,12 +174,22 @@ function MessageMeta({ meta }: { meta: NonNullable<ChatMessage["meta"]> }) {
       </button>
 
       {expanded && hasDetail && (
-        <div className="mt-1.5 pl-3.5 font-mono text-[10px] text-ink-500">
+        <div className="mt-2 rounded-xl border border-white/[0.07] bg-[#0B0D13] p-3">
+          <div className="mb-2 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-wider text-ink-400">
+            <span className="h-1.5 w-1.5 rounded-full bg-signal-teal" />
+            Execution details
+          </div>
           {hasTools ? (
-            <p className="text-signal-teal">🔍 {meta.tools_used!.join(", ")}</p>
+            <div className="flex flex-wrap gap-1.5">
+              {meta.tools_used!.map((toolName) => (
+                <span key={toolName} className="inline-flex max-w-full items-center gap-1.5 rounded-md border border-signal-teal/20 bg-signal-teal/[0.07] px-2 py-1 font-mono text-[10px] text-signal-teal">
+                  <span aria-hidden="true">✓</span><span className="break-all">{toolName}</span>
+                </span>
+              ))}
+            </div>
           ) : (
-            <p className="text-signal-amber/80">
-              tools ditawarkan tapi model tidak memanggil tool apa pun — jawaban murni dari memori model
+            <p className="text-[11px] leading-5 text-signal-amber/80">
+              Tools tersedia untuk permintaan ini, tetapi tidak ada pemanggilan tool yang dilaporkan. NOVA menjawab tanpa eksekusi tool.
             </p>
           )}
         </div>
