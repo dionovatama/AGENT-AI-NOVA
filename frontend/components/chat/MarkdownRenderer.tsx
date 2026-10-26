@@ -94,7 +94,24 @@ interface MarkdownRendererProps {
   className?: string;
 }
 
+/**
+ * Repair compact pipe tables occasionally returned by models as a single line.
+ * Standard GFM tables are left unchanged; this only runs when a table separator
+ * row is present and the content has no line breaks.
+ */
+function normalizeMarkdownTables(content: string): string {
+  if (content.includes('\n') || !/\|\s*:?-{3,}:?\s*\|/.test(content)) {
+    return content;
+  }
+
+  return content
+    .replace(/\\\|/g, '|')
+    .replace(/\|\s+\|/g, '|\n|');
+}
+
 export default function MarkdownRenderer({ content, className = '' }: MarkdownRendererProps) {
+  const markdownContent = normalizeMarkdownTables(content);
+
   return (
     <div className={`nova-markdown ${className}`}>
       <ReactMarkdown
@@ -238,7 +255,7 @@ export default function MarkdownRenderer({ content, className = '' }: MarkdownRe
           pre: ({ children }) => <>{children}</>,
         }}
       >
-        {content}
+        {markdownContent}
       </ReactMarkdown>
     </div>
   );
