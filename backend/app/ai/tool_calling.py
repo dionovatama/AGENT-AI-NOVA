@@ -212,7 +212,51 @@ async def _execute_tool_call(
             "error": f"Tool '{tool_name}' tidak diizinkan untuk kategori ini.",
         }
 
-    request = ToolRequest(tool_name=tool_name, arguments=arguments, confirmed=False)
+    device_id = None
+    tool_definition = tool_manager.get_tool(tool_name)
+    if tool_definition is not None and tool_definition.requires_device:
+        if user is None:
+            return {"success": False, "error": "Pengguna tidak terautentikasi."}
+
+        # Resolve the device from the authenticated owner. The model cannot
+        # supply or control the device ID.
+        db = SessionLocal()
+        try:
+            devices = (
+                db.query(Device)
+                .filter(
+                    Device.owner_id == user.id,
+                    Device.platform == "mikrotik",
+                    Device.status == "active",
+                )
+                .order_by(Device.created_at.asc())
+                .limit(2)
+                .all()
+            )
+            if not devices:
+                return {
+                    "success": False,
+                    "error": "Tidak ada device MikroTik aktif yang terdaftar pada akun ini.",
+                }
+            if len(devices) > 1:
+                names = ", ".join(device.name for device in devices)
+                return {
+                    "success": False,
+                    "error": (
+                        "Ada lebih dari satu device MikroTik aktif. "
+                        f"Perlu pemilihan device secara eksplisit sebelum eksekusi: {names}."
+                    ),
+                }
+            device_id = devices[0].id
+        finally:
+            db.close()
+
+    request = ToolRequest(
+        tool_name=tool_name,
+        arguments=arguments,
+        confirmed=False,
+        device_id=device_id,
+    )
 
     try:
         result = await tool_manager.execute(request, user=user)
