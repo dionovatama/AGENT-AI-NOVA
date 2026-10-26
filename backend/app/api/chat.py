@@ -81,9 +81,9 @@ def _configuration_from_message(message: str) -> GeneratorRequest:
     wan_interfaces = mentioned_wans or ([wan_match.group(1)] if wan_match else ["ether1"])
 
     vlan_id_match = re.search(r"vlan(?:\\s*(?:id|nomor))?\\s*[:=#-]?\\s*(\\d{1,4})", text)
-    vlan_name_match = re.search(r"(?:vlan_name|nama vlan|nama)\\s*[:=]\\s*([A-Za-z0-9_.-]{1,32})", message, re.I)
-    vlan_parent_match = re.search(r"(?:vlan_parent_interface|parent interface|interface induk|parent)\\s*[:=]\\s*([A-Za-z0-9_.-]{1,32})", message, re.I)
-    vlan_comment_match = re.search(r"(?:vlan_comment|comment|komentar)\\s*[:=]\\s*([^\\r\\n]{1,128})", message, re.I)
+    vlan_name_match = re.search(r"(?:vlan_name|nama(?:\\s+interface)?|nama vlan)\\s*[:=]?\\s*([A-Za-z][A-Za-z0-9_.-]{0,31})", message, re.I)
+    vlan_parent_match = re.search(r"(?:vlan_parent_interface|parent interface|interface induk|parent)\\s*[:=]?\\s*([A-Za-z][A-Za-z0-9_.-]{0,31})", message, re.I)
+    vlan_comment_match = re.search(r"(?:vlan_comment|comment|komentar)\\s*[:=]?\\s*([^\\r\\n]{1,128})", message, re.I)
     vlan_name = vlan_name_match.group(1) if vlan_name_match else (
         f"vlan{vlan_id_match.group(1)}" if vlan_id_match else "vlan10-test"
     )
