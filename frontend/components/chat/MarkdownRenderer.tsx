@@ -1,11 +1,39 @@
 'use client';
 
 import React, { useEffect, useRef, useState } from 'react';
+import { Check, Copy, AlertTriangle } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import mermaid from 'mermaid';
+
+function CopyButton({ value, label = "Copy" }: { value: string; label?: string }) {
+  const [copied, setCopied] = useState(false);
+
+  async function handleCopy() {
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1600);
+    } catch {
+      setCopied(false);
+    }
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={handleCopy}
+      title={copied ? "Copied" : label}
+      aria-label={copied ? "Copied to clipboard" : label}
+      className="inline-flex items-center gap-1.5 rounded-md border border-white/[0.08] bg-white/[0.04] px-2 py-1 text-[10px] text-ink-400 transition-colors hover:border-orb-glow/40 hover:text-ink-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orb-glow/60"
+    >
+      {copied ? <Check size={12} className="text-signal-green" /> : <Copy size={12} />}
+      {copied ? "Copied" : label}
+    </button>
+  );
+}
 
 // Initialize mermaid with NOVA theme
 mermaid.initialize({
@@ -45,9 +73,9 @@ function MermaidDiagram({ code }: { code: string }) {
 
   if (error) {
     return (
-      <div className="my-3 p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-xs font-mono">
-        <p className="mb-1 text-red-300 text-[11px] uppercase tracking-wider">Diagram Error</p>
-        {error}
+      <div className="my-3 flex gap-2 rounded-xl border border-signal-rose/25 bg-signal-rose/[0.07] p-3 text-xs text-signal-rose">
+        <AlertTriangle size={15} className="mt-0.5 shrink-0" />
+        <div className="min-w-0"><p className="mb-1 text-[11px] font-semibold uppercase tracking-wider">Diagram gagal dirender</p><p className="break-words text-ink-300">{error}</p></div>
       </div>
     );
   }
@@ -146,16 +174,11 @@ export default function MarkdownRenderer({ content, className = '' }: MarkdownRe
             // Block code
             if (lang || codeStr.includes('\n')) {
               return (
-                <div className="my-3 rounded-lg overflow-hidden border border-white/[0.06]">
+                <div className="my-3 overflow-hidden rounded-xl border border-white/[0.09] bg-[#0B0D13] shadow-[0_8px_24px_-18px_rgba(0,0,0,0.9)]">
                   {lang && (
-                    <div className="flex items-center justify-between px-3 py-1.5 bg-white/[0.04] border-b border-white/[0.06]">
-                      <span className="text-[10px] text-white/30 font-mono uppercase tracking-wider">{lang}</span>
-                      <button
-                        onClick={() => navigator.clipboard.writeText(codeStr)}
-                        className="text-[10px] text-white/30 hover:text-white/60 transition-colors"
-                      >
-                        Copy
-                      </button>
+                    <div className="flex items-center justify-between gap-3 border-b border-white/[0.06] bg-[#11131D] px-3 py-2">
+                      <span className="truncate font-mono text-[10px] uppercase tracking-wider text-ink-400">{lang || "OUTPUT"} <span className="ml-1 normal-case tracking-normal text-ink-500">· {codeStr.split("\n").length} baris</span></span>
+                      <CopyButton value={codeStr} label="Salin kode" />
                     </div>
                   )}
                   <SyntaxHighlighter
@@ -164,11 +187,12 @@ export default function MarkdownRenderer({ content, className = '' }: MarkdownRe
                     PreTag="div"
                     customStyle={{
                       margin: 0,
-                      padding: '12px 16px',
+                      padding: '14px 16px',
                       fontSize: '12px',
-                      lineHeight: '1.6',
-                      background: 'rgba(0, 0, 0, 0.3)',
+                      lineHeight: '1.7',
+                      background: 'transparent',
                       borderRadius: 0,
+                      overflowX: 'auto',
                     }}
                   >
                     {codeStr}
@@ -190,8 +214,8 @@ export default function MarkdownRenderer({ content, className = '' }: MarkdownRe
 
           // Table
           table: ({ children }) => (
-            <div className="my-3 overflow-x-auto rounded-lg border border-white/[0.06]">
-              <table className="w-full text-sm">{children}</table>
+            <div className="my-3 overflow-x-auto rounded-xl border border-white/[0.09] bg-white/[0.015]">
+              <table className="w-full min-w-[420px] border-collapse text-sm">{children}</table>
             </div>
           ),
           thead: ({ children }) => (
@@ -204,10 +228,10 @@ export default function MarkdownRenderer({ content, className = '' }: MarkdownRe
             <tr className="hover:bg-white/[0.02] transition-colors">{children}</tr>
           ),
           th: ({ children }) => (
-            <th className="px-3 py-2 text-left font-medium">{children}</th>
+            <th className="border-b border-white/[0.07] px-3 py-2.5 text-left font-semibold text-ink-200">{children}</th>
           ),
           td: ({ children }) => (
-            <td className="px-3 py-2 text-[var(--nova-text-primary)]">{children}</td>
+            <td className="border-b border-white/[0.04] px-3 py-2.5 align-top text-[var(--nova-text-primary)]">{children}</td>
           ),
 
           // Pre - just pass through, code handles it
