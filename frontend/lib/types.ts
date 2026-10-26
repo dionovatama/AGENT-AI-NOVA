@@ -341,6 +341,7 @@ export interface DeviceCreateInput {
   connection_type?: string;
   status?: string;
   credential_id?: string | null;
+  metadata?: Record<string, unknown> | null;
 }
 
 export interface Credential {
