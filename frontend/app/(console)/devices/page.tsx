@@ -365,6 +365,7 @@ function DeviceForm({
   const [host, setHost] = useState("");
   const [port, setPort] = useState(22);
   const [connectionType, setConnectionType] = useState("ssh");
+  const [mikrotikUsername, setMikrotikUsername] = useState("");
   const [credentialId, setCredentialId] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -381,6 +382,7 @@ function DeviceForm({
         port,
         connection_type: connectionType,
         credential_id: credentialId || null,
+        ...(platform === "mikrotik" ? { metadata: { username: mikrotikUsername.trim() } } : {}),
       });
       onCreated();
     } catch (err) {
@@ -401,7 +403,17 @@ function DeviceForm({
           <label className="field-label">Platform</label>
           <select
             value={platform}
-            onChange={(e) => setPlatform(e.target.value as DevicePlatform)}
+            onChange={(e) => {
+              const nextPlatform = e.target.value as DevicePlatform;
+              setPlatform(nextPlatform);
+              if (nextPlatform === "mikrotik") {
+                setConnectionType("api");
+                setPort(8728);
+              } else if (platform === "mikrotik") {
+                setConnectionType("ssh");
+                setPort(22);
+              }
+            }}
             className="field-input"
           >
             {PLATFORMS.map((p) => (
@@ -426,6 +438,20 @@ function DeviceForm({
             max={65535}
           />
         </div>
+        {platform === "mikrotik" && (
+          <div>
+            <label className="field-label">MikroTik API Username</label>
+            <input
+              required
+              value={mikrotikUsername}
+              onChange={(e) => setMikrotikUsername(e.target.value)}
+              className="field-input"
+              placeholder="nova-agent"
+              autoComplete="username"
+            />
+            <p className="mt-1 text-[11px] text-ink-500">Disimpan di metadata device; password tetap menggunakan credential yang dipilih.</p>
+          </div>
+        )}
         <div>
           <label className="field-label">Connection type</label>
           <input
