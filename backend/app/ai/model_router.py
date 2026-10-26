@@ -34,6 +34,7 @@ _CATEGORY_TO_SETTING_FIELD: dict[TaskCategory, str] = {
     TaskCategory.GENERAL_CHAT: "general_chat_model",
     TaskCategory.TECHNICAL_REASONING: "technical_reasoning_model",
     TaskCategory.TROUBLESHOOTING: "troubleshooting_model",
+    TaskCategory.NETWORK_CONFIGURATION: "network_diagnostic_model",
     TaskCategory.NETWORK_DIAGNOSTIC: "network_diagnostic_model",
     TaskCategory.CONFIGURATION_GENERATION: "configuration_generation_model",
     TaskCategory.CODING: "coding_model",
