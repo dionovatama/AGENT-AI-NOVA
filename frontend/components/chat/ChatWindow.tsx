@@ -5,6 +5,7 @@ import { Paperclip } from "lucide-react";
 import type { ChatMessage, TaskCategory } from "@/lib/types";
 import { WelcomeHero } from "@/components/chat/WelcomeHero";
 import { MermaidDiagram } from "@/components/chat/MermaidDiagram";
+import MarkdownRenderer from "@/components/chat/MarkdownRenderer";
 
 function InlineMarkdown({ text }: { text: string }) {
   const parts = text.split(/(\*\*[^*]+\*\*|__[^_]+__|\`[^\`]+\`)/g);
@@ -218,10 +219,14 @@ export function ChatWindow({
           <div key={i} className="min-w-0 px-1 sm:px-2">
             <div className="mb-1.5 flex items-center gap-2">
               <span className="font-mono text-[13px] text-orb-core drop-shadow-[0_0_7px_rgba(192,132,252,0.45)]">✦</span>
-              <span className="text-[11px] font-medium tracking-wide text-ink-400">NOVA</span>
+              <span className="text-[11px] font-medium tracking-wide text-ink-300">NOVA</span>
+              <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[9px] font-mono uppercase tracking-wide ${msg.meta?.error ? "border-signal-rose/25 bg-signal-rose/10 text-signal-rose" : "border-signal-green/20 bg-signal-green/10 text-signal-green"}`}>
+                <span className={`h-1.5 w-1.5 rounded-full ${msg.meta?.error ? "bg-signal-rose" : "bg-signal-green"}`} />
+                {msg.meta?.error ? "Failed" : "Completed"}
+              </span>
             </div>
 
-            <MarkdownContent content={msg.content} />
+            <MarkdownRenderer content={msg.content} />
 
             {msg.image_url && (
               <div className="mt-3 max-w-2xl overflow-hidden rounded-xl border border-white/[0.08] bg-base-950">
