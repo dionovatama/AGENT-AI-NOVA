@@ -4,21 +4,21 @@
 
 :root {
   /* NOVA Color System */
-  --nova-bg-primary: #0a0a0f;
-  --nova-bg-secondary: #0f0f1a;
-  --nova-bg-tertiary: #141425;
+  --nova-bg-primary: #080d16;
+  --nova-bg-secondary: #101a2a;
+  --nova-bg-tertiary: #1b2b43;
 
-  --nova-accent-purple: #7c3aed;
-  --nova-accent-cyan: #06b6d4;
+  --nova-accent-purple: #3b82f6; /* legacy variable name; blue primary */
+  --nova-accent-cyan: #38bdf8;
   --nova-accent-blue: #3b82f6;
 
-  --nova-text-primary: #e2e8f0;
-  --nova-text-secondary: #94a3b8;
-  --nova-text-muted: #475569;
+  --nova-text-primary: #eaf2ff;
+  --nova-text-secondary: #929fb2;
+  --nova-text-muted: #64748b;
 
   --nova-border: rgba(255, 255, 255, 0.06);
-  --nova-glow-purple: rgba(124, 58, 237, 0.15);
-  --nova-glow-cyan: rgba(6, 182, 212, 0.15);
+  --nova-glow-purple: rgba(59, 130, 246, 0.15); /* legacy variable name; blue glow */
+  --nova-glow-cyan: rgba(56, 189, 248, 0.15);
 }
 
 /* Global resets */
@@ -222,23 +222,23 @@ body {
   }
 
   /* ============================================================
-     Obsidian Violet Operator — kelas baru, dipakai area Chat saja
+     Obsidian Blue Operator — kelas baru, dipakai area Chat saja
      (lihat catatan di tailwind.config.ts). Nama & nilai disalin dari
      DESIGN.md/code.html yang diberikan Tuan, bukan dikarang ulang.
      ============================================================ */
 
-  /* Composer utama — panel kaca terapung. Fokus dikasih ring violet
+  /* Composer utama — panel kaca terapung. Fokus dikasih ring blue
      supaya jelas kapan input aktif menerima ketikan. */
   .glass-composer {
-    @apply relative w-full rounded-2xl border border-white/[0.09] bg-[rgba(22,17,33,0.72)] backdrop-blur-2xl transition-shadow;
+    @apply relative w-full rounded-2xl border border-white/[0.09] bg-[rgba(16,26,42,0.72)] backdrop-blur-2xl transition-shadow;
     box-shadow:
       0 20px 48px -10px rgba(0, 0, 0, 0.7),
       inset 0 1px 0 rgba(255, 255, 255, 0.12);
   }
   .glass-composer:focus-within {
     box-shadow:
-      0 0 0 1px #a855f7,
-      0 0 24px rgba(168, 85, 247, 0.25),
+      0 0 0 1px #3b82f6,
+      0 0 24px rgba(59, 130, 246, 0.25),
       0 20px 48px -10px rgba(0, 0, 0, 0.7),
       inset 0 1px 0 rgba(255, 255, 255, 0.12);
   }
@@ -247,11 +247,11 @@ body {
      composer, hover naik dikit + border teal (bukan violet, supaya
      beda kegunaan: violet = fokus input, teal = tool/aksi). */
   .glass-card {
-    @apply relative rounded-xl border border-white/[0.06] bg-[rgba(21,16,34,0.6)] backdrop-blur-xl
+    @apply relative rounded-xl border border-white/[0.06] bg-[rgba(16,26,42,0.6)] backdrop-blur-xl
       transition-all duration-200 hover:-translate-y-0.5 hover:border-signal-teal/30;
   }
   .glass-card:hover {
-    background: rgba(29, 22, 46, 0.85);
+    background: rgba(27, 43, 67, 0.85);
   }
 
   /* Suggestion / quick-action pill — dipakai untuk shortcut yang
@@ -285,7 +285,7 @@ body {
     filter: blur(110px);
     background: linear-gradient(
       to bottom,
-      rgba(140, 70, 220, 0.18),
+      rgba(59, 130, 246, 0.18),
       rgba(76, 142, 247, 0.08),
       transparent
     );
@@ -295,7 +295,7 @@ body {
     width: 420px;
     height: 220px;
     filter: blur(90px);
-    background: radial-gradient(circle, rgba(168, 85, 247, 0.14), transparent 70%);
+    background: radial-gradient(circle, rgba(56, 189, 248, 0.14), transparent 70%);
   }
 
 
@@ -303,7 +303,7 @@ body {
      a bright browser-default scrollbar inside the console. */
   .nova-chat-scroll {
     scrollbar-width: thin;
-    scrollbar-color: rgba(168, 85, 247, 0.28) transparent;
+    scrollbar-color: rgba(59, 130, 246, 0.28) transparent;
     overscroll-behavior: contain;
     scroll-behavior: smooth;
   }
@@ -318,7 +318,7 @@ body {
     background: rgba(168, 85, 247, 0.28);
   }
   .nova-chat-scroll::-webkit-scrollbar-thumb:hover {
-    background: rgba(168, 85, 247, 0.48);
+    background: rgba(59, 130, 246, 0.48);
   }
 
   /* Badge permission — mono, pulse dot kecil. Warnanya SEMANTIK
