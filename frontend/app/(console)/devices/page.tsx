@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { HudLoader } from "@/components/HudLoader";
 import { novaApi, NovaApiError } from "@/lib/api";
 import type { Credential, Device, DevicePlatform, ToolResult } from "@/lib/types";
+import { Activity, KeyRound, Network, Plus, Router, Server, ShieldCheck, Trash2 } from "lucide-react";
 
 const PLATFORMS: DevicePlatform[] = ["linux", "windows", "mikrotik", "cisco"];
 const CREDENTIAL_TYPES = ["ssh_key", "password", "api_token"] as const;
@@ -97,91 +98,76 @@ export default function DevicesPage() {
   const credentialName = (id: string | null) =>
     id ? credentials?.find((c) => c.id === id)?.name ?? id.slice(0, 8) : "—";
 
+  const activeCount = (devices ?? []).filter((device) => device.status.toLowerCase() === "active").length;
+
   return (
-    <div className="mx-auto max-w-4xl">
-      <header className="mb-6">
-        <h1 className="text-base font-medium text-ink-100">Devices</h1>
-        <p className="mt-1 text-[13px] text-ink-500">
-          Data asli dari <code className="font-mono text-ink-300">GET /devices</code> —
-          tenant-isolated lewat JWT (owner_id), bukan preview lagi.
-        </p>
+    <div className="mx-auto w-full max-w-6xl space-y-8">
+      <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <div className="mb-2 flex items-center gap-2 text-[11px] uppercase tracking-[0.22em] text-ink-500">
+            <span className="h-1.5 w-1.5 rounded-full bg-signal-green shadow-[0_0_10px_rgba(52,211,153,0.55)]" />
+            Operator Console / Infrastructure
+          </div>
+          <h1 className="text-2xl font-semibold tracking-tight text-ink-100">Devices</h1>
+          <p className="mt-1 max-w-2xl text-[13px] leading-6 text-ink-500">
+            Kelola perangkat dan kredensial koneksi dalam satu tempat. Data dimuat dari API dengan isolasi tenant berbasis JWT.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => setShowDeviceForm((value) => !value)}
+          className="inline-flex items-center justify-center gap-2 rounded-lg border border-accent-violet/40 bg-accent-violet/15 px-4 py-2.5 text-[13px] font-medium text-ink-100 transition hover:border-accent-violet/70 hover:bg-accent-violet/25"
+        >
+          <Plus size={16} />
+          {showDeviceForm ? "Batal" : "Tambah Device"}
+        </button>
       </header>
 
       {(loadError || deleteError) && (
-        <p className="mb-4 rounded-sm border border-signal-rose/30 bg-signal-rose/10 px-3 py-2 text-[13px] text-signal-rose">
+        <div role="alert" className="rounded-xl border border-signal-rose/30 bg-signal-rose/10 px-4 py-3 text-[13px] text-signal-rose">
           {loadError || deleteError}
-        </p>
+        </div>
       )}
 
-      {/* --- Credentials --- */}
-      <section className="mb-8">
-        <div className="mb-2.5 flex items-center justify-between">
-          <h2 className="text-[13px] text-ink-500">Credentials</h2>
-          <button className="btn-secondary !px-2.5 !py-1 text-[12px]" onClick={() => setShowCredentialForm((v) => !v)}>
-            {showCredentialForm ? "Batal" : "+ Credential"}
-          </button>
+      <section className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <div className="rounded-xl border border-base-700 bg-base-800/70 p-4">
+          <div className="flex items-center justify-between">
+            <span className="text-[12px] text-ink-500">Total Devices</span>
+            <span className="rounded-lg bg-base-700 p-2 text-ink-300"><Server size={17} /></span>
+          </div>
+          <div className="mt-3 flex items-end gap-2">
+            <span className="text-3xl font-semibold tracking-tight text-ink-100">{devices === null ? "—" : String(devices.length).padStart(2, "0")}</span>
+            <span className="pb-1 text-[11px] text-ink-500">terdaftar</span>
+          </div>
         </div>
-
-        {showCredentialForm && (
-          <CredentialForm
-            onCreated={() => {
-              setShowCredentialForm(false);
-              refresh();
-            }}
-          />
-        )}
-
-        <div className="panel overflow-hidden">
-          {credentials === null && !loadError && (
-            <div className="flex justify-center py-8">
-              <HudLoader size={40} />
-            </div>
-          )}
-          {credentials !== null && (
-            <table className="w-full text-left text-[13px]">
-              <thead>
-                <tr className="text-ink-500">
-                  <th className="px-4 py-2 font-normal">Name</th>
-                  <th className="px-4 py-2 font-normal">Type</th>
-                  <th className="px-4 py-2 font-normal">Dibuat</th>\n                  <th className="px-4 py-2 font-normal">Aksi</th>
-                </tr>
-              </thead>
-              <tbody>
-                {credentials.length === 0 && (
-                  <tr>
-                    <td colSpan={4} className="px-4 py-4 text-center text-ink-500">
-                      Belum ada credential. Tambah dulu sebelum bikin device yang butuh auth.
-                    </td>
-                  </tr>
-                )}
-                {credentials.map((c) => (
-                  <tr key={c.id} className="border-t border-base-700">
-                    <td className="px-4 py-2 font-mono">{c.name}</td>
-                    <td className="px-4 py-2">{c.type}</td>
-                    <td className="px-4 py-2 text-ink-500">{new Date(c.created_at).toLocaleString("id-ID")}</td>
-                    <td className="px-4 py-2">
-                      <button type="button" disabled={deletingId === c.id} onClick={() => handleDeleteCredential(c)} className="rounded-sm border border-signal-rose/30 px-2 py-1 text-[11px] text-signal-rose disabled:opacity-50">
-                        {deletingId === c.id ? "Menghapus…" : "Hapus"}
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
+        <div className="rounded-xl border border-base-700 bg-base-800/70 p-4">
+          <div className="flex items-center justify-between">
+            <span className="text-[12px] text-ink-500">Active Devices</span>
+            <span className="rounded-lg border border-signal-green/20 bg-signal-green/10 p-2 text-signal-green"><Activity size={17} /></span>
+          </div>
+          <div className="mt-3 flex items-end gap-2">
+            <span className="text-3xl font-semibold tracking-tight text-ink-100">{devices === null ? "—" : String(activeCount).padStart(2, "0")}</span>
+            <span className="pb-1 text-[11px] text-ink-500">status tersimpan</span>
+          </div>
+        </div>
+        <div className="rounded-xl border border-base-700 bg-base-800/70 p-4">
+          <div className="flex items-center justify-between">
+            <span className="text-[12px] text-ink-500">Credentials</span>
+            <span className="rounded-lg bg-base-700 p-2 text-ink-300"><KeyRound size={17} /></span>
+          </div>
+          <div className="mt-3 flex items-end gap-2">
+            <span className="text-3xl font-semibold tracking-tight text-ink-100">{credentials === null ? "—" : String(credentials.length).padStart(2, "0")}</span>
+            <span className="pb-1 text-[11px] text-ink-500">referensi autentikasi</span>
+          </div>
         </div>
       </section>
 
-      {/* --- Devices --- */}
-      <section className="mb-8">
-        <div className="mb-2.5 flex items-center justify-between">
-          <h2 className="text-[13px] text-ink-500">Devices</h2>
-          <button className="btn-secondary !px-2.5 !py-1 text-[12px]" onClick={() => setShowDeviceForm((v) => !v)}>
-            {showDeviceForm ? "Batal" : "+ Device"}
-          </button>
-        </div>
-
-        {showDeviceForm && (
+      {showDeviceForm && (
+        <section>
+          <div className="mb-3 flex items-center gap-2">
+            <Plus size={16} className="text-accent-violet" />
+            <h2 className="text-sm font-medium text-ink-100">Daftarkan Device</h2>
+          </div>
           <DeviceForm
             credentials={credentials ?? []}
             onCreated={() => {
@@ -189,99 +175,179 @@ export default function DevicesPage() {
               refresh();
             }}
           />
+        </section>
+      )}
+
+      <section className="space-y-4">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h2 className="text-base font-semibold text-ink-100">Registered Devices</h2>
+            <p className="mt-1 text-[12px] text-ink-500">Informasi perangkat, metode koneksi, dan pemeriksaan akses.</p>
+          </div>
+          <span className="w-fit rounded-full border border-base-700 bg-base-800 px-3 py-1 text-[11px] text-ink-400">
+            {devices === null ? "Memuat…" : `${devices.length} device`}
+          </span>
+        </div>
+
+        {devices === null && !loadError && (
+          <div className="panel flex justify-center py-12"><HudLoader size={40} /></div>
         )}
 
-        <div className="panel overflow-hidden">
-          {devices === null && !loadError && (
-            <div className="flex justify-center py-8">
-              <HudLoader size={40} />
-            </div>
-          )}
-          {devices !== null && (
-            <table className="w-full text-left text-[13px]">
-              <thead>
-                <tr className="text-ink-500">
-                  <th className="px-4 py-2 font-normal">Name</th>
-                  <th className="px-4 py-2 font-normal">Platform</th>
-                  <th className="px-4 py-2 font-normal">Host</th>
-                  <th className="px-4 py-2 font-normal">Connection</th>
-                  <th className="px-4 py-2 font-normal">Credential</th>
-                  <th className="px-4 py-2 font-normal">Status</th>
-                  <th className="px-4 py-2 font-normal">Aksi</th>
-                </tr>
-              </thead>
-              <tbody>
-                {devices.length === 0 && (
-                  <tr>
-                    <td colSpan={7} className="px-4 py-4 text-center text-ink-500">
-                      Belum ada device terdaftar.
-                    </td>
-                  </tr>
-                )}
-                {devices.map((d) => (
-                  <tr key={d.id} className="border-t border-base-700">
-                    <td className="px-4 py-2 font-mono">{d.name}</td>
-                    <td className="px-4 py-2 uppercase text-ink-300">{d.platform}</td>
-                    <td className="px-4 py-2 font-mono">
-                      {d.host}:{d.port}
-                    </td>
-                    <td className="px-4 py-2">{d.connection_type}</td>
-                    <td className="px-4 py-2 font-mono text-ink-500">{credentialName(d.credential_id)}</td>
-                    <td className="px-4 py-2">
-                      <span className="rounded-sm border border-signal-green/30 bg-signal-green/10 px-1.5 py-0.5 text-[11px] text-signal-green">
-                        {d.status}
-                      </span>
-                    </td>
-                    <td className="min-w-44 px-4 py-2">
-                      {d.platform.toLowerCase() === "mikrotik" ? (
-                        <div className="space-y-2">
-                          <button
-                            type="button"
-                            disabled={connectionTests[d.id]?.loading}
-                            onClick={() => testConnection(d)}
-                            className="btn-secondary !px-2.5 !py-1 text-[12px] disabled:cursor-not-allowed disabled:opacity-50"
-                          >
-                            {connectionTests[d.id]?.loading ? "Menguji…" : "Test Connection"}
-                          </button>
-                          {connectionTests[d.id]?.result && (
-                            <div className={`max-w-64 rounded-sm border px-2 py-1.5 text-[11px] ${connectionTests[d.id].result?.success ? "border-signal-green/30 bg-signal-green/10 text-signal-green" : "border-signal-rose/30 bg-signal-rose/10 text-signal-rose"}`}>
-                              <div className="font-medium">
-                                {connectionTests[d.id].result?.success ? "Terhubung" : "Gagal terhubung"}
-                              </div>
-                              {connectionTests[d.id].result?.success && (
-                                <div className="mt-1 text-ink-300">
-                                  {String(connectionTests[d.id].result?.output?.identity ?? d.name)} · {String(connectionTests[d.id].result?.duration_ms.toFixed(1))} ms
-                                </div>
-                              )}
-                              {!connectionTests[d.id].result?.success && (
-                                <div className="mt-1 break-words">{connectionTests[d.id].result?.error ?? "Tool gagal dijalankan."}</div>
-                              )}
-                            </div>
-                          )}
-                          {connectionTests[d.id]?.error && (
-                            <p role="alert" className="max-w-64 break-words text-[11px] text-signal-rose">
-                              {connectionTests[d.id].error}
-                            </p>
+        {devices !== null && devices.length === 0 && (
+          <div className="rounded-xl border border-dashed border-base-700 bg-base-800/40 px-5 py-12 text-center">
+            <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-base-700 text-ink-400"><Server size={22} /></div>
+            <h3 className="text-sm font-medium text-ink-100">Belum ada device</h3>
+            <p className="mx-auto mt-1 max-w-sm text-[12px] leading-5 text-ink-500">Tambahkan perangkat untuk mulai mengelola koneksi dari N.O.V.A.</p>
+            <button type="button" onClick={() => setShowDeviceForm(true)} className="mt-4 inline-flex items-center gap-2 rounded-lg border border-base-600 px-3 py-2 text-[12px] text-ink-200 transition hover:bg-base-700"><Plus size={14} /> Tambah Device</button>
+          </div>
+        )}
+
+        {devices !== null && devices.length > 0 && (
+          <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+            {devices.map((device) => {
+              const test = connectionTests[device.id];
+              const connected = Boolean(test?.result?.success);
+              const platform = device.platform.toLowerCase();
+              return (
+                <article key={device.id} className="group overflow-hidden rounded-xl border border-base-700 bg-base-800/65 transition hover:border-base-600 hover:bg-base-800">
+                  <div className="p-4 sm:p-5">
+                    <div className="flex items-start gap-3">
+                      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-base-600 bg-base-900 text-ink-200">
+                        {platform === "mikrotik" ? <Router size={21} /> : platform === "cisco" ? <Network size={21} /> : <Server size={21} />}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <h3 className="break-words text-sm font-semibold text-ink-100">{device.name}</h3>
+                          <span className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[10px] ${device.status.toLowerCase() === "active" ? "border-signal-green/25 bg-signal-green/10 text-signal-green" : "border-signal-amber/25 bg-signal-amber/10 text-signal-amber"}`}>
+                            <span className={`h-1.5 w-1.5 rounded-full ${device.status.toLowerCase() === "active" ? "bg-signal-green" : "bg-signal-amber"}`} />
+                            {device.status}
+                          </span>
+                          {test?.result && (
+                            <span className={`rounded-full border px-2 py-0.5 text-[10px] ${connected ? "border-signal-green/25 bg-signal-green/10 text-signal-green" : "border-signal-rose/25 bg-signal-rose/10 text-signal-rose"}`}>
+                              {connected ? "Reachable" : "Test failed"}
+                            </span>
                           )}
                         </div>
-                      ) : (
-                        <span className="text-[11px] text-ink-500">Belum tersedia</span>
-                      )}
-                      <button type="button" disabled={deletingId === d.id} onClick={() => handleDeleteDevice(d)} className="mt-1 rounded-sm border border-signal-rose/30 px-2 py-1 text-[11px] text-signal-rose disabled:opacity-50">
-                        {deletingId === d.id ? "Menghapus…" : "Hapus Device"}
+                        <p className="mt-1 text-[10px] uppercase tracking-[0.16em] text-ink-500">{device.platform} <span className="px-1 text-base-500">/</span> {device.connection_type}</p>
+                      </div>
+                    </div>
+
+                    <div className="mt-5 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                      <div className="rounded-lg border border-base-700/80 bg-base-900/60 p-3">
+                        <div className="mb-1 text-[10px] uppercase tracking-[0.12em] text-ink-500">Host / Port</div>
+                        <div className="break-all font-mono text-[12px] text-ink-200">{device.host}:{device.port}</div>
+                      </div>
+                      <div className="rounded-lg border border-base-700/80 bg-base-900/60 p-3">
+                        <div className="mb-1 text-[10px] uppercase tracking-[0.12em] text-ink-500">Credential</div>
+                        <div className="flex min-w-0 items-center gap-2 text-[12px] text-ink-200">
+                          <KeyRound size={13} className="shrink-0 text-ink-500" />
+                          <span className="break-all">{credentialName(device.credential_id)}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {test?.result?.success && (
+                      <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-ink-400">
+                        <span className="inline-flex items-center gap-1.5"><ShieldCheck size={13} className="text-signal-green" /> {String(test.result.output?.identity ?? device.name)}</span>
+                        <span>{test.result.duration_ms.toFixed(1)} ms response</span>
+                      </div>
+                    )}
+                    {test?.result && !test.result.success && (
+                      <p role="alert" className="mt-3 break-words rounded-lg border border-signal-rose/25 bg-signal-rose/10 px-3 py-2 text-[11px] text-signal-rose">
+                        {test.result.error ?? "Tool gagal dijalankan."}
+                      </p>
+                    )}
+                    {test?.error && <p role="alert" className="mt-3 break-words text-[11px] text-signal-rose">{test.error}</p>}
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2 border-t border-base-700 bg-base-900/40 px-4 py-3 sm:px-5">
+                    {platform === "mikrotik" ? (
+                      <button
+                        type="button"
+                        disabled={test?.loading}
+                        onClick={() => testConnection(device)}
+                        className="inline-flex items-center gap-2 rounded-lg border border-base-600 bg-base-800 px-3 py-2 text-[11px] font-medium text-ink-200 transition hover:border-accent-violet/50 hover:text-ink-100 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        <Activity size={14} />
+                        {test?.loading ? "Menguji koneksi…" : "Test Connection"}
                       </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </div>
+                    ) : (
+                      <span className="inline-flex items-center gap-1.5 px-1 text-[11px] text-ink-500"><Activity size={13} /> Test connection belum tersedia</span>
+                    )}
+                    <div className="flex-1" />
+                    <button
+                      type="button"
+                      disabled={deletingId === device.id}
+                      onClick={() => handleDeleteDevice(device)}
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-signal-rose/25 px-3 py-2 text-[11px] text-signal-rose transition hover:border-signal-rose/50 hover:bg-signal-rose/10 disabled:opacity-50"
+                    >
+                      <Trash2 size={13} />
+                      {deletingId === device.id ? "Menghapus…" : "Hapus"}
+                    </button>
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        )}
       </section>
 
-      <p className="text-[11px] text-ink-500">
-        Test Connection menjalankan pemeriksaan READ-only melalui <code className="font-mono">mikrotik.system_resource</code>.
-        Fitur ini belum mengubah konfigurasi router.
+      <section className="space-y-4 border-t border-base-700 pt-7">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h2 className="text-base font-semibold text-ink-100">Credentials</h2>
+            <p className="mt-1 text-[12px] text-ink-500">Referensi autentikasi yang dapat ditautkan ke perangkat.</p>
+          </div>
+          <button type="button" onClick={() => setShowCredentialForm((value) => !value)} className="inline-flex w-fit items-center gap-2 rounded-lg border border-base-600 bg-base-800 px-3 py-2 text-[12px] text-ink-200 transition hover:border-accent-violet/50 hover:bg-base-700">
+            <Plus size={14} /> {showCredentialForm ? "Batal" : "Tambah Credential"}
+          </button>
+        </div>
+
+        {showCredentialForm && (
+          <CredentialForm onCreated={() => { setShowCredentialForm(false); refresh(); }} />
+        )}
+
+        {credentials === null && !loadError && <div className="panel flex justify-center py-8"><HudLoader size={32} /></div>}
+
+        {credentials !== null && credentials.length === 0 && (
+          <div className="rounded-xl border border-dashed border-base-700 px-4 py-8 text-center text-[12px] text-ink-500">
+            Belum ada credential tersimpan.
+          </div>
+        )}
+
+        {credentials !== null && credentials.length > 0 && (
+          <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+            {credentials.map((credential) => {
+              const linkedDevices = (devices ?? []).filter((device) => device.credential_id === credential.id);
+              return (
+                <article key={credential.id} className="flex min-w-0 items-start gap-3 rounded-xl border border-base-700 bg-base-800/50 p-4 transition hover:border-base-600">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-base-700 text-ink-300"><KeyRound size={18} /></div>
+                  <div className="min-w-0 flex-1">
+                    <h3 className="break-words text-[13px] font-medium text-ink-100">{credential.name}</h3>
+                    <p className="mt-1 text-[11px] text-ink-500">{credential.type.replaceAll("_", " ")}</p>
+                    <p className="mt-2 text-[10px] text-ink-500">Dibuat {new Date(credential.created_at).toLocaleString("id-ID")}</p>
+                    <p className="mt-1 text-[10px] text-ink-500">{linkedDevices.length} device terhubung</p>
+                  </div>
+                  <button
+                    type="button"
+                    disabled={deletingId === credential.id}
+                    onClick={() => handleDeleteCredential(credential)}
+                    aria-label={`Hapus credential ${credential.name}`}
+                    className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-signal-rose/25 px-2.5 py-2 text-[10px] text-signal-rose transition hover:border-signal-rose/50 hover:bg-signal-rose/10 disabled:opacity-50"
+                  >
+                    <Trash2 size={12} />
+                    {deletingId === credential.id ? "Menghapus…" : "Hapus"}
+                  </button>
+                </article>
+              );
+            })}
+          </div>
+        )}
+      </section>
+
+      <p className="flex items-start gap-2 border-t border-base-700 pt-4 text-[11px] leading-5 text-ink-500">
+        <ShieldCheck size={14} className="mt-0.5 shrink-0" />
+        Test Connection menjalankan pemeriksaan READ-only melalui <code className="font-mono text-ink-300">mikrotik.system_resource</code>; tindakan ini tidak mengubah konfigurasi router. Status Active menunjukkan status yang tersimpan, sedangkan Reachable berasal dari tes koneksi yang berhasil.
       </p>
     </div>
   );
