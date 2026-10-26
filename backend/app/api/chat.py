@@ -52,38 +52,38 @@ def _configuration_intent(message: str) -> bool:
 def _configuration_from_message(message: str) -> GeneratorRequest:
     text = message.lower()
     modules: list[str] = []
-    if re.search(r"\b(ip|alamat ip|lan|gateway)\b", text):
-        modules.append("ip")
-    if re.search(r"\b(dhcp|pool dhcp)\b", text):
+    # Keep module selection narrow: mentioning VLAN must not imply IP setup.
+    if re.search(r"\\b(dhcp|pool dhcp)\\b", text):
         modules.extend(["ip", "dhcp"])
-    if re.search(r"\b(nat|masquerade|internet sharing)\b", text):
+    elif re.search(r"\\b(ip|alamat ip|lan|gateway)\\b", text) and not re.search(r"\\bvlan\\b", text):
+        modules.append("ip")
+    if re.search(r"\\bnat|masquerade|internet sharing\\b", text):
         modules.append("nat")
-    if re.search(r"\b(firewall|filter|blokir|block|proteksi)\b", text):
+    if re.search(r"\\b(firewall|filter|blokir|block|proteksi)\\b", text):
         modules.append("firewall")
-    if re.search(r"\bvlan\b", text):
+    if re.search(r"\\bvlan\\b", text):
         modules.append("vlan")
     if not modules:
         raise HTTPException(
             status_code=422,
-            detail="Generator file saat ini mendukung modul IP, DHCP, NAT, firewall, dan VLAN. Sebutkan modul yang ingin dibuat.",
+            detail="Sebutkan modul yang ingin dibuat: IP, DHCP, NAT, firewall, atau VLAN.",
         )
     modules = list(dict.fromkeys(modules))
 
-    version_match = re.search(r"router\s*os\s*v?([67])|routeros\s*v?([67])", text)
+    version_match = re.search(r"router\\s*os\\s*v?([67])|routeros\\s*v?([67])", text)
     version = next((group for group in version_match.groups() if group), "7") if version_match else "7"
-    cidr_match = re.search(r"\b((?:\d{1,3}\.){3}\d{1,3}/\d{1,2})\b", message)
-    lan_match = re.search(r"(?:lan_interface|interface\s+lan)\s*[:=]\s*([A-Za-z][A-Za-z0-9_.-]{0,31})", message, re.I)
-    wan_match = re.search(r"(?:wan_interface|interface\s+wan)\s*[:=]\s*([A-Za-z][A-Za-z0-9_.-]{0,31})", message, re.I)
-    # Extract common interface names mentioned naturally, e.g. "ether1 dan ether5".
+    cidr_match = re.search(r"\\b((?:\\d{1,3}\\.){3}\\d{1,3}/\\d{1,2})\\b", message)
+    lan_match = re.search(r"(?:lan_interface|interface\\s+lan)\\s*[:=]\\s*([A-Za-z][A-Za-z0-9_.-]{0,31})", message, re.I)
+    wan_match = re.search(r"(?:wan_interface|interface\\s+wan)\\s*[:=]\\s*([A-Za-z][A-Za-z0-9_.-]{0,31})", message, re.I)
     mentioned_wans = list(dict.fromkeys(re.findall(
-        r"\b(?:ether\d+|sfp\d+(?:-\d+)?|pppoe-out\d*|wan\d+)\b", text
+        r"\\b(?:ether\\d+|sfp\\d+(?:-\\d+)?|pppoe-out\\d*|wan\\d+)\\b", text
     )))
     wan_interfaces = mentioned_wans or ([wan_match.group(1)] if wan_match else ["ether1"])
 
-    vlan_id_match = re.search(r"vlan(?:\s*(?:id|nomor))?\s*[:=#-]?\s*(\d{1,4})", text)
-    vlan_name_match = re.search(r"(?:vlan_name|nama vlan|nama)\s*[:=]\s*([A-Za-z0-9_.-]{1,32})", message, re.I)
-    vlan_parent_match = re.search(r"(?:vlan_parent_interface|parent interface|interface induk|parent)\s*[:=]\s*([A-Za-z0-9_.-]{1,32})", message, re.I)
-    vlan_comment_match = re.search(r"(?:vlan_comment|comment|komentar)\s*[:=]\s*([^\r\n]{1,128})", message, re.I)
+    vlan_id_match = re.search(r"vlan(?:\\s*(?:id|nomor))?\\s*[:=#-]?\\s*(\\d{1,4})", text)
+    vlan_name_match = re.search(r"(?:vlan_name|nama vlan|nama)\\s*[:=]\\s*([A-Za-z0-9_.-]{1,32})", message, re.I)
+    vlan_parent_match = re.search(r"(?:vlan_parent_interface|parent interface|interface induk|parent)\\s*[:=]\\s*([A-Za-z0-9_.-]{1,32})", message, re.I)
+    vlan_comment_match = re.search(r"(?:vlan_comment|comment|komentar)\\s*[:=]\\s*([^\\r\\n]{1,128})", message, re.I)
     vlan_name = vlan_name_match.group(1) if vlan_name_match else (
         f"vlan{vlan_id_match.group(1)}" if vlan_id_match else "vlan10-test"
     )
