@@ -60,10 +60,12 @@ def _configuration_from_message(message: str) -> GeneratorRequest:
         modules.append("nat")
     if re.search(r"\b(firewall|filter|blokir|block|proteksi)\b", text):
         modules.append("firewall")
+    if re.search(r"\bvlan\b", text):
+        modules.append("vlan")
     if not modules:
         raise HTTPException(
             status_code=422,
-            detail="Generator file saat ini mendukung modul IP, DHCP, NAT, dan firewall. Modul konfigurasi lain belum tersedia.",
+            detail="Generator file saat ini mendukung modul IP, DHCP, NAT, firewall, dan VLAN. Sebutkan modul yang ingin dibuat.",
         )
     modules = list(dict.fromkeys(modules))
 
@@ -78,6 +80,14 @@ def _configuration_from_message(message: str) -> GeneratorRequest:
     )))
     wan_interfaces = mentioned_wans or ([wan_match.group(1)] if wan_match else ["ether1"])
 
+    vlan_id_match = re.search(r"vlan(?:\s*(?:id|nomor))?\s*[:=#-]?\s*(\d{1,4})", text)
+    vlan_name_match = re.search(r"(?:vlan_name|nama vlan|nama)\s*[:=]\s*([A-Za-z0-9_.-]{1,32})", message, re.I)
+    vlan_parent_match = re.search(r"(?:vlan_parent_interface|parent interface|interface induk|parent)\s*[:=]\s*([A-Za-z0-9_.-]{1,32})", message, re.I)
+    vlan_comment_match = re.search(r"(?:vlan_comment|comment|komentar)\s*[:=]\s*([^\r\n]{1,128})", message, re.I)
+    vlan_name = vlan_name_match.group(1) if vlan_name_match else (
+        f"vlan{vlan_id_match.group(1)}" if vlan_id_match else "vlan10-test"
+    )
+
     return GeneratorRequest(
         routeros_version=version,
         modules=modules,
@@ -85,6 +95,10 @@ def _configuration_from_message(message: str) -> GeneratorRequest:
         wan_interface=wan_interfaces[0],
         wan_interfaces=wan_interfaces,
         ip_cidr=cidr_match.group(1) if cidr_match else "192.168.88.1/24",
+        vlan_name=vlan_name,
+        vlan_id=int(vlan_id_match.group(1)) if vlan_id_match else 10,
+        vlan_parent_interface=vlan_parent_match.group(1) if vlan_parent_match else "ether1",
+        vlan_comment=vlan_comment_match.group(1).strip() if vlan_comment_match else "NOVA generated VLAN",
     )
 
 
@@ -95,17 +109,11 @@ async def chat_completions(
 ):
     # First ask the user which execution path they want. The original request
     # is preserved by the frontend and resubmitted with configuration_mode.
-    # Network Configuration with tools enabled must reach the diagnostic tool-calling
-    # path first. Generic keyword matching can otherwise mistake read-only
-    # requests (e.g. "jangan mengubah konfigurasi") for configuration generation.
-    use_network_tools = (
-        payload.use_tools
-        and payload.category == TaskCategory.NETWORK_CONFIGURATION
-    )
+    # Configuration intent takes priority over the read-only tool-calling path,
+    # even when tools are enabled. Require an explicit mode choice before routing.
     if (
         payload.configuration_mode is None
         and _configuration_intent(payload.message)
-        and not use_network_tools
     ):
         return ChatCompletionResult(
             content="Baik, Tuan. Konfigurasi ini ingin diproses dengan cara apa?",
