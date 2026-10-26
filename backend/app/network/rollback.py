@@ -12,6 +12,7 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 from app.network.adapters.base import NetworkDeviceAdapter
+from app.network.device_context import build_device_context
 from app.network.models import NetworkOperation
 from app.security.audit import record_audit_event
 from app.security.authorization import ApprovalContext
@@ -86,12 +87,13 @@ async def execute_lifo_rollback(
 
     # Verifikasi state nyata paska rollback
     try:
-        live_state = await adapter.get_device_state(device)
+        ctx = build_device_context(device, user, db) if device.platform == "mikrotik" and db is not None else None
+        live_state = await adapter.get_device_state(device, ctx)
         unreverted_items: list[str] = []
 
         for op, obj_id in applied_steps:
             # Pastikan objek yang di-apply sudah tidak ada lagi di state nyata
-            is_still_present = await adapter.verify_operation(op, device)
+            is_still_present = await adapter.verify_operation(op, device, ctx)
             if is_still_present:
                 unreverted_items.append(f"Operasi {op.type.value} ({obj_id}) masih ditemukan di perangkat.")
 

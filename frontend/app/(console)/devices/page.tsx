@@ -2,9 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { HudLoader } from "@/components/HudLoader";
-import { PlaceholderPanel } from "@/components/PlaceholderPanel";
 import { novaApi, NovaApiError } from "@/lib/api";
-import type { Credential, Device, DevicePlatform } from "@/lib/types";
+import type { Credential, Device, DevicePlatform, ToolResult } from "@/lib/types";
 
 const PLATFORMS: DevicePlatform[] = ["linux", "windows", "mikrotik", "cisco"];
 const CREDENTIAL_TYPES = ["ssh_key", "password", "api_token"] as const;
@@ -16,6 +15,30 @@ export default function DevicesPage() {
 
   const [showDeviceForm, setShowDeviceForm] = useState(false);
   const [showCredentialForm, setShowCredentialForm] = useState(false);
+  const [connectionTests, setConnectionTests] = useState<Record<string, { loading: boolean; result?: ToolResult; error?: string }>>({});
+
+  async function testConnection(device: Device) {
+    setConnectionTests((current) => ({
+      ...current,
+      [device.id]: { loading: true },
+    }));
+    try {
+      // Pakai tool READ yang sudah tervalidasi di backend untuk memeriksa koneksi API RouterOS.
+      const result = await novaApi.executeTool("mikrotik.system_resource", {}, false, device.id);
+      setConnectionTests((current) => ({
+        ...current,
+        [device.id]: { loading: false, result },
+      }));
+    } catch (err) {
+      setConnectionTests((current) => ({
+        ...current,
+        [device.id]: {
+          loading: false,
+          error: err instanceof NovaApiError ? err.message : "Tes koneksi gagal.",
+        },
+      }));
+    }
+  }
 
   async function refresh() {
     try {
@@ -139,12 +162,13 @@ export default function DevicesPage() {
                   <th className="px-4 py-2 font-normal">Connection</th>
                   <th className="px-4 py-2 font-normal">Credential</th>
                   <th className="px-4 py-2 font-normal">Status</th>
+                  <th className="px-4 py-2 font-normal">Aksi</th>
                 </tr>
               </thead>
               <tbody>
                 {devices.length === 0 && (
                   <tr>
-                    <td colSpan={6} className="px-4 py-4 text-center text-ink-500">
+                    <td colSpan={7} className="px-4 py-4 text-center text-ink-500">
                       Belum ada device terdaftar.
                     </td>
                   </tr>
@@ -163,6 +187,42 @@ export default function DevicesPage() {
                         {d.status}
                       </span>
                     </td>
+                    <td className="min-w-44 px-4 py-2">
+                      {d.platform.toLowerCase() === "mikrotik" ? (
+                        <div className="space-y-2">
+                          <button
+                            type="button"
+                            disabled={connectionTests[d.id]?.loading}
+                            onClick={() => testConnection(d)}
+                            className="btn-secondary !px-2.5 !py-1 text-[12px] disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            {connectionTests[d.id]?.loading ? "Menguji…" : "Test Connection"}
+                          </button>
+                          {connectionTests[d.id]?.result && (
+                            <div className={`max-w-64 rounded-sm border px-2 py-1.5 text-[11px] ${connectionTests[d.id].result?.success ? "border-signal-green/30 bg-signal-green/10 text-signal-green" : "border-signal-rose/30 bg-signal-rose/10 text-signal-rose"}`}>
+                              <div className="font-medium">
+                                {connectionTests[d.id].result?.success ? "Terhubung" : "Gagal terhubung"}
+                              </div>
+                              {connectionTests[d.id].result?.success && (
+                                <div className="mt-1 text-ink-300">
+                                  {String(connectionTests[d.id].result?.output?.identity ?? d.name)} · {String(connectionTests[d.id].result?.duration_ms.toFixed(1))} ms
+                                </div>
+                              )}
+                              {!connectionTests[d.id].result?.success && (
+                                <div className="mt-1 break-words">{connectionTests[d.id].result?.error ?? "Tool gagal dijalankan."}</div>
+                              )}
+                            </div>
+                          )}
+                          {connectionTests[d.id]?.error && (
+                            <p role="alert" className="max-w-64 break-words text-[11px] text-signal-rose">
+                              {connectionTests[d.id].error}
+                            </p>
+                          )}
+                        </div>
+                      ) : (
+                        <span className="text-[11px] text-ink-500">Belum tersedia</span>
+                      )}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -171,17 +231,10 @@ export default function DevicesPage() {
         </div>
       </section>
 
-      <section>
-        <h2 className="mb-2.5 text-[13px] text-ink-500">Menunggu implementasi</h2>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <PlaceholderPanel
-            title="Protocol Execution"
-            milestone="Phase 5–6"
-            description="Device record di atas cuma data registry — belum ada satu pun tool yang benar-benar connect memakainya (RouterOS API-SSL untuk MikroTik, SSH/NETCONF untuk Cisco)."
-            prdReference="PRD §17 MikroTik Engine, §18 Cisco Engine"
-          />
-        </div>
-      </section>
+      <p className="text-[11px] text-ink-500">
+        Test Connection menjalankan pemeriksaan READ-only melalui <code className="font-mono">mikrotik.system_resource</code>.
+        Fitur ini belum mengubah konfigurasi router.
+      </p>
     </div>
   );
 }

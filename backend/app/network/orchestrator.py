@@ -24,6 +24,7 @@ from app.network.adapters.base import NetworkDeviceAdapter
 from app.network.adapters.fake import FakeNetworkAdapter
 from app.network.adapters.mikrotik import MikrotikNetworkAdapter
 from app.network.backup import save_state_snapshot
+from app.network.device_context import build_device_context
 from app.network.models import ChangeSet, NetworkOperation
 from app.network.preview import calculate_state_fingerprint
 from app.network.rollback import RollbackError, execute_lifo_rollback
@@ -247,9 +248,10 @@ async def apply_configuration(
             )
 
         adapter = _resolve_adapter(device)
+        ctx = build_device_context(device, user, db) if device.platform == "mikrotik" else None
 
         # 5. Baca state perangkat untuk cek Drift
-        current_state = await adapter.get_device_state(device)
+        current_state = await adapter.get_device_state(device, ctx)
         current_fingerprint = calculate_state_fingerprint(current_state)
 
         if current_fingerprint != config.state_fingerprint:
@@ -281,7 +283,7 @@ async def apply_configuration(
         backup_name = f"nova_backup_{config.id.hex[:8]}"
         if hasattr(adapter, "create_native_backup"):
             try:
-                await adapter.create_native_backup(backup_name, device)
+                await adapter.create_native_backup(backup_name, device, ctx)
                 snapshot_ref["native_backup_name"] = backup_name
             except Exception as exc:
                 logger.warning("Gagal membuat backup native di flash router: %s", exc)
@@ -395,7 +397,7 @@ async def apply_configuration(
         verification_details: dict[str, Any] = {}
 
         for idx, (op, obj_id) in enumerate(applied_steps, start=1):
-            is_verified = await adapter.verify_operation(op, device)
+            is_verified = await adapter.verify_operation(op, device, ctx)
             verification_details[f"step_{idx}"] = {
                 "type": op.type.value,
                 "verified": is_verified,
@@ -431,7 +433,7 @@ async def apply_configuration(
         config.status = "VERIFIED"
         config.applied_at = datetime.now(timezone.utc)
 
-        state_after = await adapter.get_device_state(device)
+        state_after = await adapter.get_device_state(device, ctx)
         db.commit()
         db.refresh(config)
 
@@ -513,6 +515,7 @@ async def manual_rollback_configuration(
             raise OrchestratorError("Tidak ada riwayat operasi yang tersimpan untuk di-rollback.")
 
         adapter = _resolve_adapter(device)
+        ctx = build_device_context(device, user, db) if device.platform == "mikrotik" else None
         change_set = ChangeSet.model_validate(config.change_set)
 
         # Mapping operasi dan object_id

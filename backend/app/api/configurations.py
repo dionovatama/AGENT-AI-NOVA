@@ -20,6 +20,8 @@ from app.database.models import Configuration, Device, User
 from app.database.session import get_db
 from app.network.adapters.base import NetworkDeviceAdapter
 from app.network.adapters.fake import FakeNetworkAdapter
+from app.network.adapters.mikrotik import MikrotikNetworkAdapter
+from app.network.device_context import build_device_context
 from app.network.models import ChangeSet, DeviceStateSnapshot
 from app.network.preview import (
     calculate_plan_hash,
@@ -54,7 +56,11 @@ def get_adapter_for_device(device: Device) -> NetworkDeviceAdapter:
     if _CUSTOM_ADAPTER is not None:
         return _CUSTOM_ADAPTER
 
-    # Default adapter simulasi aman
+    metadata = device.device_metadata or {}
+    if metadata.get("mock") is True:
+        return FakeNetworkAdapter()
+    if device.platform == "mikrotik":
+        return MikrotikNetworkAdapter()
     return FakeNetworkAdapter()
 
 
@@ -88,7 +94,8 @@ async def create_configuration(
     # 2. Ambil adapter dan baca state perangkat
     adapter = get_adapter_for_device(device)
     try:
-        device_state = await adapter.get_device_state(device)
+        ctx = build_device_context(device, current_user, db) if device.platform == "mikrotik" else None
+        device_state = await adapter.get_device_state(device, ctx)
     except Exception as exc:
         logger.error("Gagal membaca state perangkat %s: %s", device.id, exc)
         raise HTTPException(
@@ -212,6 +219,7 @@ async def get_configuration(
         device = db.query(Device).filter(Device.id == config.device_id).first()
         if device:
             adapter = get_adapter_for_device(device)
+            ctx = build_device_context(device, current_user, db) if device.platform == "mikrotik" else None
             cs = ChangeSet.model_validate(config.change_set)
             response.cli_preview = render_cli_preview(cs, adapter)
     except Exception as exc:

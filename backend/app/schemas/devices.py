@@ -76,3 +76,15 @@ class AuditLogResponse(BaseModel):
     created_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class DeviceUpdateRequest(BaseModel):
+    """Partial update schema for an owner-scoped device."""
+    name: str | None = Field(default=None, min_length=1, max_length=100)
+    platform: str | None = Field(default=None, min_length=1, max_length=50)
+    host: str | None = Field(default=None, min_length=1, max_length=255)
+    port: int | None = Field(default=None, ge=1, le=65535)
+    connection_type: str | None = Field(default=None, min_length=1, max_length=50)
+    status: str | None = Field(default=None, min_length=1, max_length=50)
+    credential_id: uuid.UUID | None = None
+    metadata: dict[str, Any] | None = None
