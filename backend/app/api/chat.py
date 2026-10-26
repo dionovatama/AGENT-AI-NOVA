@@ -51,19 +51,32 @@ def _configuration_intent(message: str) -> bool:
 
 def _configuration_from_message(message: str) -> GeneratorRequest:
     text = message.lower()
-    modules: list[str] = []
 
-    # Detect requested modules, not merely words appearing in a negative clause.
-    if re.search(r"\b(dhcp|pool dhcp)\b", text):
-        modules.extend(["ip", "dhcp"])
-    elif re.search(r"\b(ip|alamat ip|lan|gateway)\b", text) and not re.search(r"\bvlan\b", text):
-        modules.append("ip")
-    if re.search(r"\b(nat|masquerade|internet sharing)\b", text):
-        modules.append("nat")
-    if re.search(r"\b(firewall|filter|blokir|block|proteksi)\b", text):
-        modules.append("firewall")
-    if re.search(r"\bvlan\b", text):
-        modules.append("vlan")
+    # Ignore modules mentioned only in constraints such as "do not add DHCP/NAT/firewall".
+    positive_text = re.split(
+        r"\b(?:jangan|tanpa|tidak perlu|tidak usah|do not|don't|must not|exclude|ketentuan wajib|larangan)\b",
+        text,
+        maxsplit=1,
+    )[0]
+
+    modules: list[str] = []
+    only_vlan = bool(
+        re.search(r"\bvlan\b.{0,30}\b(?:saja|only)\b", positive_text)
+        or re.search(r"\b(?:saja|only)\b.{0,30}\bvlan\b", positive_text)
+    )
+    if only_vlan:
+        modules = ["vlan"]
+    else:
+        if re.search(r"\b(dhcp|pool dhcp)\b", positive_text):
+            modules.extend(["ip", "dhcp"])
+        elif re.search(r"\b(?:konfigurasi|tambahkan|buat|atur|set)\s+(?:alamat\s+)?ip\b|\b(?:ip address|alamat ip)\s*[:=]", positive_text):
+            modules.append("ip")
+        if re.search(r"\b(nat|masquerade|internet sharing)\b", positive_text):
+            modules.append("nat")
+        if re.search(r"\b(firewall|filter|blokir|block|proteksi)\b", positive_text):
+            modules.append("firewall")
+        if re.search(r"\bvlan\b", positive_text):
+            modules.append("vlan")
     if not modules:
         raise HTTPException(
             status_code=422,
@@ -82,7 +95,7 @@ def _configuration_from_message(message: str) -> GeneratorRequest:
     wan_interfaces = mentioned_wans or ([wan_match.group(1)] if wan_match else ["ether1"])
 
     vlan_id_match = re.search(r"\bvlan(?:\s*(?:id|nomor))?\s*[:=#-]?\s*(\d{1,4})\b", text)
-    vlan_name_match = re.search(r"(?:vlan_name|nama\s+vlan|nama(?:\s+interface)?|name)\s*[:=]?\s*([A-Za-z][A-Za-z0-9_.-]{0,31})", message, re.I)
+    vlan_name_match = re.search(r"(?:vlan_name|vlan\s+name|nama\s+vlan|nama(?:\s+interface)?|name)\s*[:=]?\s*([A-Za-z][A-Za-z0-9_.-]{0,31})", message, re.I)
     vlan_parent_match = re.search(r"(?:vlan_parent_interface|parent\s+interface|interface\s+induk|parent)\s*[:=]?\s*([A-Za-z][A-Za-z0-9_.-]{0,31})", message, re.I)
     vlan_comment_match = re.search(r"(?:vlan_comment|comment|komentar)\s*[:=]?\s*([^\r\n.;]{1,128})", message, re.I)
     vlan_name = vlan_name_match.group(1) if vlan_name_match else (
