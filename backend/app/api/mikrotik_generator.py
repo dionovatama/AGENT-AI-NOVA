@@ -19,13 +19,17 @@ from app.security.dependencies import get_current_user
 router = APIRouter(prefix="/mikrotik-config-generator", tags=["mikrotik-config-generator"])
 
 _INTERFACE_RE = re.compile(r"^[A-Za-z0-9_.-]{1,32}$")
-_MODULES = {"ip", "dhcp", "nat", "firewall"}
+_MODULES = {"ip", "dhcp", "nat", "firewall", "vlan"}
 
 
 class GeneratorRequest(BaseModel):
     routeros_version: Literal["6", "7"] = "7"
-    modules: list[Literal["ip", "dhcp", "nat", "firewall"]] = Field(min_length=1)
+    modules: list[Literal["ip", "dhcp", "nat", "firewall", "vlan"]] = Field(min_length=1)
     lan_interface: str = Field(default="bridge-lan", min_length=1, max_length=32)
+    vlan_name: str = Field(default="vlan10-test", min_length=1, max_length=32)
+    vlan_id: int = Field(default=10, ge=1, le=4094)
+    vlan_parent_interface: str = Field(default="ether1", min_length=1, max_length=32)
+    vlan_comment: str = Field(default="NOVA generated VLAN", max_length=128)
     wan_interface: str = Field(default="ether1", min_length=1, max_length=32)
     wan_interfaces: list[str] | None = Field(default=None, max_length=8)
     ip_cidr: str = Field(default="192.168.88.1/24", max_length=43)
@@ -64,6 +68,11 @@ def _validated_values(payload: GeneratorRequest) -> tuple[ipaddress.IPv4Interfac
         raise HTTPException(status_code=422, detail="Interface WAN tidak boleh duplikat.")
     if "dhcp" in payload.modules and "ip" not in payload.modules:
         raise HTTPException(status_code=422, detail="Modul DHCP membutuhkan modul IP agar gateway LAN ikut dikonfigurasi.")
+    if "vlan" in payload.modules:
+        _safe_interface(payload.vlan_name, "vlan_name")
+        _safe_interface(payload.vlan_parent_interface, "vlan_parent_interface")
+        if "\n" in payload.vlan_comment or "\r" in payload.vlan_comment or '"' in payload.vlan_comment:
+            raise HTTPException(status_code=422, detail="vlan_comment tidak boleh mengandung baris baru atau tanda kutip.")
     if len(set(payload.modules)) != len(payload.modules):
         raise HTTPException(status_code=422, detail="Modul konfigurasi tidak boleh duplikat.")
     try:
@@ -116,6 +125,14 @@ def _build_rsc(payload: GeneratorRequest, interface: ipaddress.IPv4Interface, dn
         "",
     ]
     commands: list[str] = []
+    if "vlan" in payload.modules:
+        commands += [
+            "/interface vlan add "
+            f"name={payload.vlan_name} vlan-id={payload.vlan_id} "
+            f"interface={payload.vlan_parent_interface} "
+            f'comment="{payload.vlan_comment}"',
+            "",
+        ]
     if "ip" in payload.modules:
         commands += [
             f"/ip address add address={interface} interface={payload.lan_interface} comment=\"NOVA generated LAN address\"",
@@ -195,6 +212,13 @@ def generate_configuration(
         parameters.update({
             "wan_interface": wan_interfaces[0],
             "wan_interfaces": wan_interfaces,
+        })
+    if "vlan" in modules:
+        parameters.update({
+            "vlan_name": payload.vlan_name,
+            "vlan_id": payload.vlan_id,
+            "vlan_parent_interface": payload.vlan_parent_interface,
+            "vlan_comment": payload.vlan_comment,
         })
 
     data = {
