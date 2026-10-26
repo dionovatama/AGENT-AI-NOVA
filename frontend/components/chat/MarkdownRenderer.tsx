@@ -100,15 +100,31 @@ interface MarkdownRendererProps {
  * row is present and the content has no line breaks.
  */
 function normalizeMarkdownTables(content: string): string {
-  if (content.includes('\n') || !/\|\s*:?-{3,}:?\s*\|/.test(content)) {
-    return content;
+  // Some models emit a complete GFM table on one line and escape each pipe
+  // as \\|. Convert only this recognizable compact-table shape.
+  if (content.includes('\n')) return content;
+
+  const unescaped = content.replace(/\\\\\\|/g, '|').trim();
+  if (!/\\|\\s*:?-{3,}:?\\s*\\|/.test(unescaped)) return content;
+
+  const cells = unescaped.split('|').map((cell) => cell.trim()).filter(Boolean);
+  const separatorIndex = cells.findIndex((cell) => /^:?-{3,}:?$/.test(cell));
+  if (separatorIndex < 2) return content;
+
+  const columnCount = separatorIndex;
+  if (cells.length < columnCount * 2 + 1) return content;
+  const header = cells.slice(0, columnCount);
+  const separator = cells.slice(separatorIndex, separatorIndex + columnCount);
+  const data = cells.slice(separatorIndex + columnCount);
+  const lines = [
+    '| ' + header.join(' | ') + ' |',
+    '| ' + separator.join(' | ') + ' |',
+  ];
+  for (let i = 0; i + columnCount <= data.length; i += columnCount) {
+    lines.push('| ' + data.slice(i, i + columnCount).join(' | ') + ' |');
   }
-
-  return content
-    .replace(/\\\|/g, '|')
-    .replace(/\|\s+\|/g, '|\n|');
+  return lines.length > 2 ? lines.join('\n') : content;
 }
-
 export default function MarkdownRenderer({ content, className = '' }: MarkdownRendererProps) {
   const markdownContent = normalizeMarkdownTables(content);
 
