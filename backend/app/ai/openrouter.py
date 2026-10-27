@@ -80,6 +80,8 @@ class ChatCompletionResult(BaseModel):
     # Generated files are inert text artifacts; chat clients may preview/download them.
     generated_files: list[dict] = []
     configuration_choice: bool = False
+    # Structured proposal metadata lets the chat UI render an in-chat approval card.
+    configuration_proposal: dict[str, Any] | None = None
 
     # 'model_used' bentrok dengan reserved prefix Pydantic v2 (model_dump,
     # model_validate, dst). protected_namespaces=() menonaktifkan proteksi
