@@ -374,3 +374,17 @@ export interface AuditLogEntry {
   duration_ms: number | null;
   created_at: string;
 }
+
+export interface ConfigurationProposal {
+  id: string;
+  device_id: string;
+  status: string;
+  risk_level: RiskLevel;
+  change_set: { description: string; operations: Array<Record<string, unknown>> };
+  plan_hash: string;
+  structured_diff?: unknown;
+  cli_preview?: string;
+  created_at: string;
+  expires_at?: string | null;
+  applied_at?: string | null;
+}
