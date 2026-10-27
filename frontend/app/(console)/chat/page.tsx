@@ -337,7 +337,7 @@ export default function ChatPage() {
       </div>
 
       <p className={`mb-2 mt-1 text-center text-[10px] text-ink-500/80 ${messages.length === 0 ? "hidden" : ""}`}>
-        Chat mendukung pembuatan file konfigurasi MikroTik secara offline. File harus ditinjau sebelum diimpor; NOVA tidak menerapkannya ke router.
+        Mode file membuat konfigurasi offline untuk ditinjau sebelum diimpor. Mode langsung menampilkan proposal dan hanya menjalankan perubahan setelah persetujuan eksplisit.
       </p>
     </div>
   );
