@@ -26,11 +26,19 @@ export default function DevicesPage() {
       `Tandai "${device.name}" (${device.host}) sebagai perangkat LAB? Lakukan hanya jika ini benar-benar CHR/VM terisolasi. Tindakan ini mengizinkan perangkat melewati lab guard, tetapi kill-switch backend dan approval tetap berlaku.`
     );
     if (!confirmed) return;
+    const username = window.prompt(
+      "Masukkan username MikroTik API yang benar untuk perangkat ini:",
+      typeof device.metadata?.username === "string" ? device.metadata.username : ""
+    )?.trim();
+    if (!username) {
+      window.alert("Username API wajib diisi. Metadata tidak diubah.");
+      return;
+    }
     setLabUpdatingId(device.id);
     setDeleteError(null);
     try {
       await novaApi.updateDevice(device.id, {
-        metadata: { ...(device.metadata ?? {}), lab: true },
+        metadata: { ...(device.metadata ?? {}), username, lab: true },
       });
       await refresh();
     } catch (err) {
