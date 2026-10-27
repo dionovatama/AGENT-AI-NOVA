@@ -70,6 +70,8 @@ def _validated_values(payload: GeneratorRequest) -> tuple[ipaddress.IPv4Interfac
         raise HTTPException(status_code=422, detail="Modul DHCP membutuhkan modul IP agar gateway LAN ikut dikonfigurasi.")
     if "firewall" in payload.modules and payload.firewall_action not in {"block_ping", "allow_ping"}:
         raise HTTPException(status_code=422, detail="Pilih aksi firewall yang jelas: blokir ping atau izinkan ping.")
+    if "firewall" in payload.modules and payload.firewall_action not in {"block_ping", "allow_ping"}:
+        raise HTTPException(status_code=422, detail="Pilih aksi firewall yang jelas: blokir ping atau izinkan ping.")
     if "vlan" in payload.modules:
         _safe_interface(payload.vlan_name, "vlan_name")
         _safe_interface(payload.vlan_parent_interface, "vlan_parent_interface")
