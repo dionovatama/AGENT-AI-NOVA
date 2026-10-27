@@ -2,17 +2,23 @@
 Chat endpoint with safe, offline MikroTik configuration generation.
 """
 import re
+import uuid
 from io import BytesIO
 from pathlib import Path
 
 from docx import Document
 from fastapi import File, Form, UploadFile
+from sqlalchemy.orm import Session
 from pypdf import PdfReader
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 
-from app.database.models import User
+from app.database.models import Device, User
+from app.database.session import get_db
+from app.network.models import AddIpAddressOperation, ChangeSet
+from app.schemas.configurations import ConfigurationCreateRequest
+from app.api.configurations import create_configuration
 from app.security.dependencies import get_current_user
 from app.ai.model_router import TaskCategory
 from app.ai.openrouter import ChatMessage, ChatCompletionResult, OpenRouterError, get_completion
@@ -30,6 +36,7 @@ class ChatRequest(BaseModel):
     category: TaskCategory = TaskCategory.GENERAL_CHAT
     use_tools: bool = False
     configuration_mode: str | None = None  # "file" or "direct", selected after confirmation
+    device_id: uuid.UUID | None = None  # explicit selected device; never supplied by the model
 
 
 def _configuration_intent(message: str) -> bool:
@@ -39,7 +46,9 @@ def _configuration_intent(message: str) -> bool:
         r"\b(buatkan|buat|generate|bikinkan|hasilkan|siapkan|konfigurasikan|konfigurasi|atur|tambahkan|aktifkan|blokir|pasang|set)\b",
         text,
     )
-    return bool(action and re.search(r"\b(mikrotik|routeros|router\s+os|firewall|dhcp|nat|masquerade|ip address|alamat ip|vlan)\b", text))
+    has_network_target = re.search(r"\b(mikrotik|routeros|router\s+os|firewall|dhcp|nat|masquerade|ip address|alamat ip|vlan)\b", text)
+    has_interface_ip = re.search(r"\binterface\s+[a-zA-Z][a-zA-Z0-9_.-]{0,31}\b", text) and re.search(r"\b(?:\d{1,3}\.){3}\d{1,3}/\d{1,2}\b", text)
+    return bool(action and (has_network_target or has_interface_ip))
 
 
 def _configuration_from_message(message: str) -> GeneratorRequest:
@@ -141,6 +150,7 @@ def _configuration_from_message(message: str) -> GeneratorRequest:
 async def chat_completions(
     payload: ChatRequest,
     current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
     # First ask the user which execution path they want. The original request
     # is preserved by the frontend and resubmitted with configuration_mode.
@@ -161,16 +171,117 @@ async def chat_completions(
         )
 
     if payload.configuration_mode == "direct":
+        # Direct mode enters the existing Configuration Engine as a proposal.
+        # It deliberately does not apply changes here: the separate approval
+        # and apply endpoints enforce ownership, approval TTL, kill-switch,
+        # lab guard, drift detection, rollback, and post-apply verification.
+        interface_match = re.search(
+            r"\binterface\s+([A-Za-z][A-Za-z0-9_.-]{0,31})\b", payload.message, re.I
+        )
+        cidr_match = re.search(
+            r"\b((?:\d{1,3}\.){3}\d{1,3}/\d{1,2})\b", payload.message
+        )
+        if not interface_match or not cidr_match:
+            return ChatCompletionResult(
+                content=(
+                    "Mode konfigurasi langsung untuk saat ini menerima penambahan IP statis. "
+                    "Sebutkan interface dan IP/CIDR, misalnya: konfigurasi interface ether2 "
+                    "dengan IP 192.168.7.5/24."
+                ),
+                model_used="nova-configuration-router",
+                category=TaskCategory.CONFIGURATION_GENERATION,
+                used_fallback=False,
+                tools_used=[],
+                generated_files=[],
+            )
+
+        # Resolve only a device owned by this authenticated user. An explicit
+        # selected device wins; otherwise exactly one active MikroTik is required.
+        device_query = db.query(Device).filter(
+            Device.owner_id == current_user.id,
+            Device.platform == "mikrotik",
+            Device.status == "active",
+        )
+        if payload.device_id is not None:
+            device = device_query.filter(Device.id == payload.device_id).first()
+            if device is None:
+                return ChatCompletionResult(
+                    content="Perangkat MikroTik yang dipilih tidak ditemukan, tidak aktif, atau bukan milik akun ini.",
+                    model_used="nova-configuration-router",
+                    category=TaskCategory.CONFIGURATION_GENERATION,
+                    used_fallback=False,
+                    tools_used=[],
+                    generated_files=[],
+                )
+        else:
+            devices = device_query.order_by(Device.created_at.asc()).limit(2).all()
+            if len(devices) != 1:
+                reason = (
+                    "Tidak ada perangkat MikroTik aktif pada akun ini."
+                    if not devices else
+                    "Ada beberapa perangkat MikroTik aktif. Pilih perangkat target secara eksplisit sebelum membuat proposal."
+                )
+                return ChatCompletionResult(
+                    content=reason,
+                    model_used="nova-configuration-router",
+                    category=TaskCategory.CONFIGURATION_GENERATION,
+                    used_fallback=False,
+                    tools_used=[],
+                    generated_files=[],
+                )
+            device = devices[0]
+
+        try:
+            operation = AddIpAddressOperation(
+                interface=interface_match.group(1),
+                address=cidr_match.group(1),
+                comment=f"{interface_match.group(1)} LAN",
+            )
+            change_set = ChangeSet(
+                description=f"Add static IP {operation.address} to {operation.interface}",
+                operations=[operation],
+            )
+            proposal = await create_configuration(
+                ConfigurationCreateRequest(device_id=device.id, change_set=change_set),
+                current_user=current_user,
+                db=db,
+            )
+        except HTTPException as exc:
+            detail = exc.detail
+            if isinstance(detail, dict):
+                detail = detail.get("message", str(detail))
+            return ChatCompletionResult(
+                content=f"Proposal konfigurasi ditolak oleh validasi: {detail}",
+                model_used="nova-configuration-router",
+                category=TaskCategory.CONFIGURATION_GENERATION,
+                used_fallback=False,
+                tools_used=[],
+                generated_files=[],
+            )
+        except Exception:
+            # Avoid leaking credentials, connection strings, or adapter details.
+            return ChatCompletionResult(
+                content="NOVA gagal membaca state perangkat atau membuat proposal. Tidak ada perubahan yang diterapkan.",
+                model_used="nova-configuration-router",
+                category=TaskCategory.CONFIGURATION_GENERATION,
+                used_fallback=False,
+                tools_used=[],
+                generated_files=[],
+            )
+
         return ChatCompletionResult(
             content=(
-                "Mode konfigurasi langsung belum tersedia pada instalasi ini. "
-                "NOVA belum terhubung ke router untuk menerapkan perubahan. "
-                "Pilih pembuatan file konfigurasi, atau hubungkan dan uji tool eksekusi router terlebih dahulu."
+                f"Proposal konfigurasi dibuat untuk perangkat '{device.name}' (ID: {device.id}).\n"
+                f"Perubahan: tambahkan {operation.address} pada interface {operation.interface}.\n"
+                f"Status: {proposal.status}. Belum ada perubahan yang diterapkan.\n"
+                f"Periksa preview, lalu setujui melalui POST /configurations/{proposal.id}/approve. "
+                f"Setelah persetujuan berhasil, terapkan melalui POST /configurations/{proposal.id}/apply. "
+                "Apply tetap tunduk pada kill-switch, lab guard, pemeriksaan drift, dan verifikasi pasca-eksekusi."
             ),
-            model_used="nova-configuration-router",
+            model_used="nova-configuration-engine",
             category=TaskCategory.CONFIGURATION_GENERATION,
             used_fallback=False,
-            tools_used=[],
+            tools_used=["configurations.create"],
             generated_files=[],
         )
 
