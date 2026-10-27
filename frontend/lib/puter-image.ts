@@ -93,8 +93,8 @@ function loadPuter(): Promise<void> {
 
 /**
  * Runs only after an explicit user action or a clear image-generation request.
- * testMode=false means this requests a real generation and may use the user's
- * Puter account quota/billing according to Puter's current terms.
+ * testMode=true uses Puter's test API to diagnose the integration without
+ * requesting a normal image generation.
  */
 export async function generatePuterImage(prompt: string): Promise<string> {
   const cleanPrompt = prompt.trim();
@@ -118,7 +118,7 @@ export async function generatePuterImage(prompt: string): Promise<string> {
     });
 
     const result = await Promise.race([
-      window.puter!.ai.txt2img(cleanPrompt, false),
+      window.puter!.ai.txt2img(cleanPrompt, true),
       timeout,
     ]);
 
