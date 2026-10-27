@@ -90,6 +90,30 @@ export default function ChatPage() {
     }
   }
 
+  async function handleApproveConfiguration(configurationId: string) {
+    if (sending) return;
+    setSending(true);
+    setProcessingStage("process");
+    try {
+      await novaApi.approveConfiguration(configurationId);
+      const applied = await novaApi.applyConfiguration(configurationId);
+      setMessages((prev) => [...prev, {
+        role: "assistant",
+        content: applied.status === "VERIFIED"
+          ? "Konfigurasi berhasil diterapkan dan status proposal telah diperbarui. Periksa hasil verifikasi pada proposal/audit log."
+          : "Permintaan eksekusi selesai dengan status: " + applied.status,
+      }]);
+    } catch (err) {
+      setMessages((prev) => [...prev, {
+        role: "assistant",
+        content: "Eksekusi ditolak atau gagal. Periksa detail error dan audit log; jangan ulangi tanpa meninjau status router.",
+        meta: { error: err instanceof NovaApiError ? err.message : "Unknown error" },
+      }]);
+    } finally {
+      setSending(false);
+    }
+  }
+
   async function handleImageGeneration(prompt: string) {
     if (sending) return;
     const cleanPrompt = prompt.trim();
