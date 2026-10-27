@@ -274,9 +274,8 @@ async def chat_completions(
                 f"Proposal konfigurasi dibuat untuk perangkat '{device.name}' (ID: {device.id}).\n"
                 f"Perubahan: tambahkan {operation.address} pada interface {operation.interface}.\n"
                 f"Status: {proposal.status}. Belum ada perubahan yang diterapkan.\n"
-                f"Periksa preview, lalu setujui melalui POST /configurations/{proposal.id}/approve. "
-                f"Setelah persetujuan berhasil, terapkan melalui POST /configurations/{proposal.id}/apply. "
-                "Apply tetap tunduk pada kill-switch, lab guard, pemeriksaan drift, dan verifikasi pasca-eksekusi."
+                "Periksa preview pada kartu proposal di chat, lalu klik 'Approve & Execute' untuk menyetujui dan meminta penerapan. "
+                "Eksekusi tetap tunduk pada kill-switch, lab guard, pemeriksaan drift, dan verifikasi pasca-eksekusi."
             ),
             model_used="nova-configuration-engine",
             category=TaskCategory.CONFIGURATION_GENERATION,
