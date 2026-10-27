@@ -60,6 +60,24 @@ export default function ChatPage() {
     if (wantsTools && TOOL_CALLING_CATEGORIES.includes(cat)) setUseTools(true);
   }
 
+  async function handleConfigurationChoice(requestText: string, choice: "file" | "direct") {
+    if (choice === "file") {
+      setSending(true);
+      try {
+        const result = await novaApi.chatCompletion(requestText, category, false, "file");
+        setMessages((prev) => [...prev, { role: "assistant", content: result.content, generated_files: result.generated_files }]);
+      } catch (err) {
+        setMessages((prev) => [...prev, { role: "assistant", content: "Gagal membuat file konfigurasi.", meta: { error: err instanceof NovaApiError ? err.message : "Unknown error" } }]);
+      } finally { setSending(false); }
+      return;
+    }
+    setMessages((prev) => [...prev, { role: "assistant", content: "Mode konfigurasi langsung belum aktif dari chat. Proposal engine tersedia, tetapi pemetaan bahasa alami ke operasi router belum diimplementasikan. Router tidak diubah." }]);
+  }
+
+  function handleRegenerateImage(prompt: string) {
+    setInput(prompt);
+  }
+
   async function handleSend(e: React.FormEvent) {
     e.preventDefault();
     const text = input.trim();
@@ -84,6 +102,9 @@ export default function ChatPage() {
           role: "assistant",
           content: result.content,
           diagrams: result.diagrams,
+          generated_files: result.generated_files,
+          show_configuration_choices: result.configuration_choice === true,
+          configuration_request: result.configuration_choice === true ? text : undefined,
           meta: {
             model_used: result.model_used,
             used_fallback: result.used_fallback,
@@ -112,7 +133,7 @@ export default function ChatPage() {
     <div className="mx-auto flex h-full min-h-0 w-full max-w-[944px] flex-col px-6 pb-[18px]">
       {isEmpty ? (
         <div className="flex min-h-0 flex-1 items-center justify-center overflow-hidden">
-          <ChatWindow messages={messages} onQuickAction={handleQuickAction} />
+          <ChatWindow messages={messages} onQuickAction={handleQuickAction} onConfigurationChoice={handleConfigurationChoice} onRegenerateImage={handleRegenerateImage} />
         </div>
       ) : (
         <div className="nova-chat-scroll min-h-0 flex-1 overflow-y-auto pb-3 pt-1 pr-1">
