@@ -109,13 +109,13 @@ def _configuration_from_message(message: str) -> GeneratorRequest:
     return GeneratorRequest(
         routeros_version=version,
         modules=modules,
-        lan_interface=lan_match.group(1) if lan_match else "",
-        wan_interface=wan_match.group(1) if wan_match else "",
+        lan_interface=lan_match.group(1) if lan_match else "bridge-lan",
+        wan_interface=wan_match.group(1) if wan_match else "ether1",
         wan_interfaces=[wan_match.group(1)] if wan_match else None,
-        ip_cidr=cidr_match.group(1) if cidr_match else "",
+        ip_cidr=cidr_match.group(1) if cidr_match else "192.168.88.1/24",
         vlan_name=vlan_name,
         vlan_id=int(vlan_id_match.group(1)) if vlan_id_match else 10,
-        vlan_parent_interface=vlan_parent_match.group(1) if vlan_parent_match else "",
+        vlan_parent_interface=vlan_parent_match.group(1) if vlan_parent_match else "ether1",
         vlan_comment=vlan_comment_match.group(1).strip() if vlan_comment_match else "NOVA VLAN",
         firewall_action=firewall_action,
     )
