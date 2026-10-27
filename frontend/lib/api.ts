@@ -8,6 +8,7 @@ import type {
   DeviceCreateInput,
   TaskCategory,
   ToolResult,
+  ConfigurationProposal,
 } from "./types";
 
 const BASE_URL =
@@ -141,6 +142,18 @@ export const novaApi = {
     }),
 
   listTools: () => request<string[]>("/tools/list"),
+
+  createConfiguration: (payload: { device_id: string; change_set: { description: string; operations: Array<Record<string, unknown>> } }) =>
+    request<ConfigurationProposal>("/configurations", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+
+  approveConfiguration: (configurationId: string) =>
+    request<ConfigurationProposal>(`/configurations/${configurationId}/approve`, { method: "POST" }),
+
+  applyConfiguration: (configurationId: string) =>
+    request<ConfigurationProposal>(`/configurations/${configurationId}/apply`, { method: "POST" }),
 
   generateMikrotikConfig: (payload: MikrotikGeneratorRequest) =>
     request<MikrotikGeneratorResponse>("/mikrotik-config-generator/generate", {
