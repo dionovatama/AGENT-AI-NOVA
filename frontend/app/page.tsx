@@ -146,6 +146,7 @@ export default function ChatPage() {
           diagrams: result.diagrams,
           generated_files: result.generated_files,
           show_configuration_choices: result.configuration_choice === true,
+          configuration_proposal: result.configuration_proposal,
           configuration_request: result.configuration_choice === true ? text : undefined,
           meta: {
             model_used: result.model_used,
