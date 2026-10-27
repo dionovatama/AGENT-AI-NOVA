@@ -105,7 +105,7 @@ def _configuration_from_message(message: str) -> GeneratorRequest:
         raise HTTPException(status_code=422, detail="Sebutkan interface LAN dan alamat IP/CIDR, misalnya LAN: bridge-lan, IP: 192.168.88.1/24.")
     firewall_action = None
     if "firewall" in modules:
-        if re.search(r"\b(blokir|block|drop|tolak)\b.{0,30}\b(ping|icmp)\b|\b(ping|icmp)\b.{0,30}\b(blokir|block|drop|tolak)\b", positive_text):
+        if re.search(r"\b(memblokir|memblok|blokir|pemblokiran|block|drop|tolak)\b.{0,30}\b(ping|icmp)\b|\b(ping|icmp)\b.{0,30}\b(memblokir|memblok|blokir|pemblokiran|block|drop|tolak)\b", positive_text):
             firewall_action = "block_ping"
         elif re.search(r"\b(izinkan|allow|accept)\b.{0,30}\b(ping|icmp)\b|\b(ping|icmp)\b.{0,30}\b(izinkan|allow|accept)\b", positive_text):
             firewall_action = "allow_ping"
