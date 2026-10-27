@@ -283,6 +283,7 @@ async def chat_completions(
             used_fallback=False,
             tools_used=["configurations.create"],
             generated_files=[],
+            configuration_proposal=proposal.model_dump(mode="json"),
         )
 
     # Configuration generation is an offline artifact flow, never a device action.
