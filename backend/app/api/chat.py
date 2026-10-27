@@ -112,7 +112,8 @@ def _configuration_from_message(message: str) -> GeneratorRequest:
         else:
             raise HTTPException(status_code=422, detail="Jelaskan aksi firewall yang diinginkan, misalnya blokir ping atau izinkan ping.")
 
-    vlan_name = vlan_name_match.group(1) if vlan_name_match else f"vlan{vlan_id_match.group(1)}" if vlan_id_match else ""
+    # GeneratorRequest validates vlan_name even when VLAN is not selected, so never pass an empty string.
+    vlan_name = vlan_name_match.group(1) if vlan_name_match else f"vlan{vlan_id_match.group(1)}" if vlan_id_match else "vlan10"
     return GeneratorRequest(
         routeros_version=version,
         modules=modules,
