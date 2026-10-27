@@ -1,6 +1,9 @@
 "use client";
 
 const PUTER_SCRIPT_URL = "https://js.puter.com/v2/";
+const PUTER_LOAD_TIMEOUT_MS = 20_000;
+const IMAGE_GENERATION_TIMEOUT_MS = 120_000;
+const PUTER_POLL_INTERVAL_MS = 100;
 
 type PuterImageElement = HTMLImageElement;
 
@@ -20,51 +23,69 @@ declare global {
 
 let scriptPromise: Promise<void> | null = null;
 
+function hasPuterImageAPI(): boolean {
+  return Boolean(window.puter?.ai?.txt2img);
+}
+
 function loadPuter(): Promise<void> {
   if (typeof window === "undefined") {
     return Promise.reject(new Error("Puter.js hanya tersedia di browser."));
   }
 
-  if (window.puter?.ai?.txt2img) return Promise.resolve();
+  if (hasPuterImageAPI()) return Promise.resolve();
   if (scriptPromise) return scriptPromise;
 
   scriptPromise = new Promise<void>((resolve, reject) => {
-    const existing = document.querySelector<HTMLScriptElement>(
-      'script[data-nova-puter="true"]'
-    );
+    let settled = false;
+    let pollId: number | undefined;
 
-    const script = existing ?? document.createElement("script");
-    const timeout = window.setTimeout(() => {
+    const script =
+      document.querySelector<HTMLScriptElement>('script[data-nova-puter="true"]') ??
+      document.createElement("script");
+
+    const cleanup = () => {
+      window.clearTimeout(timeoutId);
+      if (pollId !== undefined) window.clearInterval(pollId);
+      script.removeEventListener("error", onError);
       scriptPromise = null;
-      reject(new Error("Puter.js terlalu lama dimuat. Periksa koneksi internet lalu coba lagi."));
-    }, 20000);
-
-    const finish = () => {
-      window.clearTimeout(timeout);
-      if (window.puter?.ai?.txt2img) {
-        resolve();
-      } else {
-        scriptPromise = null;
-        reject(new Error("Puter.js berhasil dimuat, tetapi API gambar tidak tersedia."));
-      }
     };
 
-    script.addEventListener("load", finish, { once: true });
-    script.addEventListener("error", () => {
-      window.clearTimeout(timeout);
-      scriptPromise = null;
-      reject(new Error("Gagal memuat Puter.js dari CDN."));
-    }, { once: true });
+    const finish = () => {
+      if (settled || !hasPuterImageAPI()) return;
+      settled = true;
+      cleanup();
+      resolve();
+    };
 
-    if (!existing) {
+    const fail = (message: string) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      reject(new Error(message));
+    };
+
+    const onError = () => {
+      fail("Gagal memuat Puter.js dari CDN. Periksa koneksi atau pemblokir konten lalu coba lagi.");
+    };
+
+    const timeoutId = window.setTimeout(() => {
+      fail("Puter.js tidak siap setelah 20 detik. Coba muat ulang halaman; jika masalah berlanjut, periksa login Puter dan pemblokir konten.");
+    }, PUTER_LOAD_TIMEOUT_MS);
+
+    // Poll for the API instead of relying only on the script's load event.
+    // An existing script may already have fired its load event before NOVA
+    // attaches listeners, while Puter is still initializing authentication.
+    pollId = window.setInterval(finish, PUTER_POLL_INTERVAL_MS);
+    script.addEventListener("error", onError, { once: true });
+
+    if (!script.isConnected) {
       script.src = PUTER_SCRIPT_URL;
       script.async = true;
       script.dataset.novaPuter = "true";
       document.head.appendChild(script);
-    } else if (window.puter?.ai?.txt2img) {
-      window.clearTimeout(timeout);
-      resolve();
     }
+
+    finish();
   });
 
   return scriptPromise;
@@ -83,9 +104,30 @@ export async function generatePuterImage(prompt: string): Promise<string> {
   }
 
   await loadPuter();
-  const result = await window.puter!.ai.txt2img(cleanPrompt, false);
-  if (!result?.src) {
-    throw new Error("Puter.js tidak mengembalikan gambar yang dapat ditampilkan.");
+
+  let timeoutId: number | undefined;
+  try {
+    const timeout = new Promise<never>((_, reject) => {
+      timeoutId = window.setTimeout(() => {
+        reject(
+          new Error(
+            "Puter.js belum menyelesaikan generasi gambar setelah 120 detik. Coba lagi; jika berulang, periksa status layanan atau sesi login Puter."
+          )
+        );
+      }, IMAGE_GENERATION_TIMEOUT_MS);
+    });
+
+    const result = await Promise.race([
+      window.puter!.ai.txt2img(cleanPrompt, false),
+      timeout,
+    ]);
+
+    if (!result?.src) {
+      throw new Error("Puter.js tidak mengembalikan gambar yang dapat ditampilkan.");
+    }
+
+    return result.src;
+  } finally {
+    if (timeoutId !== undefined) window.clearTimeout(timeoutId);
   }
-  return result.src;
 }
