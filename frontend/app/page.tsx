@@ -109,7 +109,7 @@ export default function ChatPage() {
       const applied = await novaApi.applyConfiguration(configurationId);
       setMessages((prev) => [...prev, {
         role: "assistant",
-        content: applied.status === "APPLIED" ? "Konfigurasi berhasil diterapkan dan status proposal telah diperbarui. Periksa hasil verifikasi pada proposal/audit log." : "Permintaan eksekusi selesai dengan status: " + applied.status,
+        content: applied.status === "VERIFIED" ? "Konfigurasi berhasil diterapkan dan status proposal telah diperbarui. Periksa hasil verifikasi pada proposal/audit log." : "Permintaan eksekusi selesai dengan status: " + applied.status,
       }]);
     } catch (err) {
       setMessages((prev) => [...prev, { role: "assistant", content: "Eksekusi ditolak atau gagal. Periksa detail error dan audit log; jangan ulangi tanpa meninjau status router.", meta: { error: err instanceof NovaApiError ? err.message : "Unknown error" } }]);
@@ -179,7 +179,7 @@ export default function ChatPage() {
         </div>
       ) : (
         <div className="nova-chat-scroll min-h-0 flex-1 overflow-y-auto pb-3 pt-1 pr-1">
-          <ChatWindow messages={messages} onQuickAction={handleQuickAction} />
+          <ChatWindow messages={messages} onQuickAction={handleQuickAction} onConfigurationChoice={handleConfigurationChoice} onRegenerateImage={handleRegenerateImage} onApproveConfiguration={handleApproveConfiguration} />
           {sending && (
             <div className="mx-auto mt-5 w-full max-w-4xl px-1">
               <NovaActivity activity="NOVA Operation" steps={toActivitySteps(processingStage)} />
