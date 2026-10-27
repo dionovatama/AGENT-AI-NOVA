@@ -76,6 +76,7 @@ export default function ChatPage() {
         role: "assistant",
         content: result.content,
         generated_files: result.generated_files,
+        configuration_proposal: result.configuration_proposal,
         meta: { model_used: result.model_used, used_fallback: result.used_fallback, tools_used: result.tools_used },
       }]);
     } catch (err) {
