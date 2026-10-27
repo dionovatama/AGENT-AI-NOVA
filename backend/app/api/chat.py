@@ -86,17 +86,17 @@ def _configuration_from_message(message: str) -> GeneratorRequest:
     version = next((group for group in version_match.groups() if group), "7") if version_match else "7"
     cidr_match = re.search(r"\b((?:\d{1,3}\.){3}\d{1,3}/\d{1,2})\b", message)
     lan_match = re.search(r"(?:lan_interface|interface\s+lan|lan)\s*[:=]?\s*([A-Za-z][A-Za-z0-9_.-]{0,31})", message, re.I)
-    wan_match = re.search(r"(?:wan_interface|interface\s+wan|wan)\s*[:=]?\s*([A-Za-z][A-Za-z0-9_.-]{0,31})", message, re.I)
+    wan_match = re.search(r"(?:wan_interface|interface\s+wan|wan)\s*[:=]?\s*([A-Za-z][A-Za-z0-9_-]{0,31}(?:\.[A-Za-z0-9_-]+)*)", message, re.I)
     vlan_id_match = re.search(r"\bvlan(?:\s*(?:id|nomor))?\s*[:=#-]?\s*(\d{1,4})\b", text)
-    vlan_name_match = re.search(r"(?:vlan_name|vlan\s+name|nama\s+vlan|nama(?:\s+interface)?|name)\s*[:=]\s*([A-Za-z][A-Za-z0-9_.-]{0,31})", message, re.I)
-    vlan_parent_match = re.search(r"(?:vlan_parent_interface|parent\s+interface|interface\s+induk|parent)\s*[:=]?\s*([A-Za-z][A-Za-z0-9_.-]{0,31})", message, re.I)
+    vlan_name_match = re.search(r"(?:vlan_name|vlan\s+name|nama\s+vlan|nama(?:\s+interface)?|name)\s*[:=]\s*([A-Za-z][A-Za-z0-9_-]{0,31}(?:\.[A-Za-z0-9_-]+)*)", message, re.I)
+    vlan_parent_match = re.search(r"(?:vlan_parent_interface|parent\s+interface|interface\s+induk|parent)\s*[:=]?\s*([A-Za-z][A-Za-z0-9_-]{0,31}(?:\.[A-Za-z0-9_-]+)*)", message, re.I)
     vlan_comment_match = re.search(r"(?:vlan_comment|comment|komentar)\s*[:=]\s*([^\r\n]{1,128})", message, re.I)
     if "vlan" in modules:
         if not vlan_id_match:
             raise HTTPException(status_code=422, detail="Sebutkan VLAN ID yang ingin dibuat.")
         if not vlan_parent_match:
             # Natural phrasing such as "VLAN 20 di ether2" is supported.
-            vlan_parent_match = re.search(r"\bvlan\b.{0,30}\bdi\s+([A-Za-z][A-Za-z0-9_.-]{0,31})", message, re.I)
+            vlan_parent_match = re.search(r"\bvlan\b.{0,30}\bdi\s+([A-Za-z][A-Za-z0-9_-]{0,31}(?:\.[A-Za-z0-9_-]+)*)", message, re.I)
         if not vlan_parent_match:
             raise HTTPException(status_code=422, detail="Sebutkan parent interface VLAN, misalnya ether1.")
     if "nat" in modules and not wan_match:
