@@ -85,6 +85,7 @@ export interface ChatMessage {
   generated_files?: GeneratedFileAttachment[];
   show_configuration_choices?: boolean;
   configuration_request?: string;
+  configuration_proposal?: ConfigurationProposal;
   meta?: {
     model_used?: string;
     used_fallback?: boolean;
