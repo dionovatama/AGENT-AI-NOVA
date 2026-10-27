@@ -44,13 +44,20 @@ def _configuration_intent(message: str) -> bool:
 
 def _configuration_from_message(message: str) -> GeneratorRequest:
     text = message.lower()
-    # Remove negative clauses individually; positive clauses after a prohibition remain usable.
-    clauses = re.split(r"[,;\n]|(?:\b(?:dan|but|and)\b)", text)
-    positive_clauses = [
-        clause for clause in clauses
-        if not re.search(r"\b(jangan|tanpa|tidak perlu|tidak usah|do not|don't|must not|exclude|larangan)\b", clause)
-    ]
-    positive_text = " ".join(positive_clauses)
+    # Remove each negative instruction through the end of its sentence before
+    # splitting on commas/conjunctions. Otherwise "jangan tambahkan DHCP, NAT,
+    # atau firewall" incorrectly leaves NAT/firewall as positive targets.
+    negative_instruction = re.compile(
+        r"\b(?:jangan|tanpa|tidak perlu|tidak usah|do not|don't|must not|exclude|larangan)\b"
+        r"[^.!?\n]*(?:[.!?]|$)",
+        re.IGNORECASE,
+    )
+    positive_text = negative_instruction.sub(" ", text)
+    positive_text = " ".join(
+        clause.strip()
+        for clause in re.split(r"[,;\n]|\b(?:dan|but|and|atau|or)\b", positive_text)
+        if clause.strip()
+    )
     action = re.search(r"\b(buatkan|buat|generate|bikinkan|hasilkan|siapkan|konfigurasikan|konfigurasi|atur|tambahkan|aktifkan|blokir|pasang|set)\b", positive_text)
     modules: list[str] = []
 
