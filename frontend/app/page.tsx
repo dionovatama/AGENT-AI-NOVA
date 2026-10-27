@@ -71,35 +71,28 @@ export default function ChatPage() {
       } finally { setSending(false); }
       return;
     }
-    const cidr = requestText.match(/\\b(?:\\d{1,3}\\.){3}\\d{1,3}\\/\\d{1,2}\\b/)?.[0];
-    const interfaceName = requestText.match(/\\binterface\\s+([a-zA-Z][a-zA-Z0-9_.-]{0,31})/i)?.[1]
-      ?? requestText.match(/\\b(?:pada|di)\\s+(?:interface\\s+)?([a-zA-Z][a-zA-Z0-9_.-]{0,31})\\s+(?:dengan|menggunakan)\\b/i)?.[1];
-    if (!cidr || !interfaceName) {
-      setMessages((prev) => [...prev, { role: "assistant", content: "Untuk konfigurasi langsung, sebutkan satu operasi IP yang jelas, termasuk interface dan CIDR. Contoh: 'Tambahkan IP 192.168.10.1/24 pada interface ether2'. Bridge, DHCP, NAT, firewall, dan operasi lain di luar whitelist belum bisa diproses dari alur chat ini." }]);
-      return;
-    }
     setSending(true);
     try {
-      const devices = (await novaApi.listDevices()).filter((device) => device.platform.toLowerCase() === "mikrotik" && device.status.toLowerCase() === "active");
-      if (devices.length !== 1) {
-        setMessages((prev) => [...prev, { role: "assistant", content: devices.length === 0 ? "Tidak ada perangkat MikroTik aktif yang terdaftar. Daftarkan router dan uji koneksinya di halaman Tools terlebih dahulu." : "Ada lebih dari satu perangkat MikroTik aktif. Pilih satu perangkat dari halaman Tools; chat belum menyediakan pemilih target router." }]);
-        return;
-      }
-      const proposal = await novaApi.createConfiguration({
-        device_id: devices[0].id,
-        change_set: {
-          description: "Chat proposal: " + requestText.slice(0, 180),
-          operations: [{ type: "add_ip_address", interface: interfaceName, address: cidr, comment: "NOVA approved chat proposal" }],
-        },
-      });
+      const result = await novaApi.chatCompletion(requestText, category, false, "direct");
       setMessages((prev) => [...prev, {
         role: "assistant",
-        content: "Proposal konfigurasi dibuat dan divalidasi terhadap state router. Belum ada perubahan yang diterapkan. Tinjau target, risiko, dan perintah di bawah ini sebelum memilih Approve & Execute.",
-        configuration_proposal: proposal,
+        content: result.content,
+        configuration_proposal: result.configuration_proposal,
+        meta: {
+          model_used: result.model_used,
+          used_fallback: result.used_fallback,
+          tools_used: result.tools_used,
+        },
       }]);
     } catch (err) {
-      setMessages((prev) => [...prev, { role: "assistant", content: "Gagal membuat proposal konfigurasi.", meta: { error: err instanceof NovaApiError ? err.message : "Periksa koneksi API dan kredensial router." } }]);
-    } finally { setSending(false); }
+      setMessages((prev) => [...prev, {
+        role: "assistant",
+        content: "Gagal membuat proposal konfigurasi langsung.",
+        meta: { error: err instanceof NovaApiError ? err.message : "Periksa koneksi API dan kredensial router." },
+      }]);
+    } finally {
+      setSending(false);
+    }
   }
 
   async function handleApproveConfiguration(configurationId: string) {
