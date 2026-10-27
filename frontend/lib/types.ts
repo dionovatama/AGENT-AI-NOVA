@@ -67,6 +67,7 @@ export interface ChatCompletionResult {
   diagrams?: DiagramAttachment[];
   generated_files?: GeneratedFileAttachment[];
   configuration_choice?: boolean;
+  configuration_proposal?: ConfigurationProposal;
 }
 
 export interface GeneratedFileAttachment {
