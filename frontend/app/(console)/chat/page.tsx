@@ -208,11 +208,11 @@ export default function ChatPage() {
     <div className="mx-auto flex h-full min-h-0 w-full max-w-[944px] flex-col px-6 pb-[18px]">
       {isEmpty ? (
         <div className="flex min-h-0 flex-1 items-center justify-center overflow-hidden">
-          <ChatWindow messages={messages} onQuickAction={handleQuickAction} onConfigurationChoice={handleConfigurationChoice} onRegenerateImage={handleImageGeneration} />
+          <ChatWindow messages={messages} onQuickAction={handleQuickAction} onConfigurationChoice={handleConfigurationChoice} onRegenerateImage={handleImageGeneration} onApproveConfiguration={handleApproveConfiguration} />
         </div>
       ) : (
         <div className="nova-chat-scroll min-h-0 flex-1 overflow-y-auto pb-3 pt-1 pr-1">
-          <ChatWindow messages={messages} onQuickAction={handleQuickAction} onConfigurationChoice={handleConfigurationChoice} onRegenerateImage={handleImageGeneration} />
+          <ChatWindow messages={messages} onQuickAction={handleQuickAction} onConfigurationChoice={handleConfigurationChoice} onRegenerateImage={handleImageGeneration} onApproveConfiguration={handleApproveConfiguration} />
           {sending && (
             <div className="mx-auto mt-5 w-full max-w-4xl px-1">
               <NovaActivity activity="NOVA Operation" steps={toActivitySteps(processingStage)} />
