@@ -89,7 +89,7 @@ def _configuration_from_message(message: str) -> GeneratorRequest:
     wan_match = re.search(r"(?:wan_interface|interface\s+wan|wan)\s*[:=]?\s*([A-Za-z][A-Za-z0-9_.-]{0,31})", message, re.I)
     vlan_id_match = re.search(r"\bvlan(?:\s*(?:id|nomor))?\s*[:=#-]?\s*(\d{1,4})\b", text)
     vlan_name_match = re.search(r"(?:vlan_name|vlan\s+name|nama\s+vlan|nama(?:\s+interface)?|name)\s*[:=]\s*([A-Za-z][A-Za-z0-9_.-]{0,31})", message, re.I)
-    vlan_parent_match = re.search(r"(?:vlan_parent_interface|parent\s+interface|interface\s+induk|parent)\s*[:=]\s*([A-Za-z][A-Za-z0-9_.-]{0,31})", message, re.I)
+    vlan_parent_match = re.search(r"(?:vlan_parent_interface|parent\s+interface|interface\s+induk|parent)\s*[:=]?\s*([A-Za-z][A-Za-z0-9_.-]{0,31})", message, re.I)
     vlan_comment_match = re.search(r"(?:vlan_comment|comment|komentar)\s*[:=]\s*([^\r\n]{1,128})", message, re.I)
     if "vlan" in modules:
         if not vlan_id_match:
