@@ -19,6 +19,26 @@ export default function DevicesPage() {
   const [connectionTests, setConnectionTests] = useState<Record<string, { loading: boolean; result?: ToolResult; error?: string }>>({});
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [labUpdatingId, setLabUpdatingId] = useState<string | null>(null);
+
+  async function markDeviceAsLab(device: Device) {
+    const confirmed = window.confirm(
+      `Tandai "${device.name}" (${device.host}) sebagai perangkat LAB? Lakukan hanya jika ini benar-benar CHR/VM terisolasi. Tindakan ini mengizinkan perangkat melewati lab guard, tetapi kill-switch backend dan approval tetap berlaku.`
+    );
+    if (!confirmed) return;
+    setLabUpdatingId(device.id);
+    setDeleteError(null);
+    try {
+      await novaApi.updateDevice(device.id, {
+        metadata: { ...(device.metadata ?? {}), lab: true },
+      });
+      await refresh();
+    } catch (err) {
+      setDeleteError(err instanceof NovaApiError ? err.message : "Gagal memperbarui metadata perangkat.");
+    } finally {
+      setLabUpdatingId(null);
+    }
+  }
 
   async function handleDeleteDevice(device: Device) {
     const confirmed = window.confirm(
@@ -275,6 +295,22 @@ export default function DevicesPage() {
                       <span className="inline-flex items-center gap-1.5 px-1 text-[11px] text-ink-500"><Activity size={13} /> Test connection belum tersedia</span>
                     )}
                     <div className="flex-1" />
+                    {platform === "mikrotik" && device.metadata?.lab !== true && (
+                      <button
+                        type="button"
+                        disabled={labUpdatingId === device.id}
+                        onClick={() => markDeviceAsLab(device)}
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-signal-amber/30 px-3 py-2 text-[11px] text-signal-amber transition hover:bg-signal-amber/10 disabled:opacity-50"
+                      >
+                        <ShieldCheck size={13} />
+                        {labUpdatingId === device.id ? "Menyimpan…" : "Tandai sebagai Lab"}
+                      </button>
+                    )}
+                    {platform === "mikrotik" && device.metadata?.lab === true && (
+                      <span className="inline-flex items-center gap-1.5 rounded-lg border border-signal-green/25 bg-signal-green/10 px-3 py-2 text-[11px] text-signal-green">
+                        <ShieldCheck size={13} /> Lab terdaftar
+                      </span>
+                    )}
                     <button
                       type="button"
                       disabled={deletingId === device.id}
