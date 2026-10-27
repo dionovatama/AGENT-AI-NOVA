@@ -59,10 +59,9 @@ def _safe_interface(value: str, field_name: str) -> str:
 
 
 def _validated_values(payload: GeneratorRequest) -> tuple[ipaddress.IPv4Interface, list[str]]:
-    _safe_interface(payload.lan_interface, "lan_interface")
-    wan_interfaces = payload.wan_interfaces or [payload.wan_interface]
-    if not wan_interfaces:
-        raise HTTPException(status_code=422, detail="Minimal satu interface WAN diperlukan untuk NAT.")
+    if "ip" in payload.modules or "dhcp" in payload.modules:
+        _safe_interface(payload.lan_interface, "lan_interface")
+    wan_interfaces = payload.wan_interfaces or ([payload.wan_interface] if "nat" in payload.modules else [])
     for interface_name in wan_interfaces:
         _safe_interface(interface_name, "wan_interfaces")
     if len(set(wan_interfaces)) != len(wan_interfaces):
@@ -79,7 +78,7 @@ def _validated_values(payload: GeneratorRequest) -> tuple[ipaddress.IPv4Interfac
     if len(set(payload.modules)) != len(payload.modules):
         raise HTTPException(status_code=422, detail="Modul konfigurasi tidak boleh duplikat.")
     try:
-        interface = ipaddress.ip_interface(payload.ip_cidr)
+        interface = ipaddress.ip_interface(payload.ip_cidr) if ("ip" in payload.modules or "dhcp" in payload.modules) else ipaddress.ip_interface("192.0.2.1/24")
         if not isinstance(interface, ipaddress.IPv4Interface):
             raise ValueError("IPv4 required")
     except ValueError as exc:
