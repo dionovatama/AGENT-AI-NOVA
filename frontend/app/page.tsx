@@ -71,7 +71,49 @@ export default function ChatPage() {
       } finally { setSending(false); }
       return;
     }
-    setMessages((prev) => [...prev, { role: "assistant", content: "Mode konfigurasi langsung belum aktif dari chat. Proposal engine tersedia, tetapi pemetaan bahasa alami ke operasi router belum diimplementasikan. Router tidak diubah." }]);
+    const cidr = requestText.match(/\\b(?:\\d{1,3}\\.){3}\\d{1,3}\\/\\d{1,2}\\b/)?.[0];
+    const interfaceName = requestText.match(/\\binterface\\s+([a-zA-Z][a-zA-Z0-9_.-]{0,31})/i)?.[1]
+      ?? requestText.match(/\\b(?:pada|di)\\s+(?:interface\\s+)?([a-zA-Z][a-zA-Z0-9_.-]{0,31})\\s+(?:dengan|menggunakan)\\b/i)?.[1];
+    if (!cidr || !interfaceName) {
+      setMessages((prev) => [...prev, { role: "assistant", content: "Untuk konfigurasi langsung, sebutkan satu operasi IP yang jelas, termasuk interface dan CIDR. Contoh: 'Tambahkan IP 192.168.10.1/24 pada interface ether2'. Bridge, DHCP, NAT, firewall, dan operasi lain di luar whitelist belum bisa diproses dari alur chat ini." }]);
+      return;
+    }
+    setSending(true);
+    try {
+      const devices = (await novaApi.listDevices()).filter((device) => device.platform.toLowerCase() === "mikrotik" && device.status.toLowerCase() === "active");
+      if (devices.length !== 1) {
+        setMessages((prev) => [...prev, { role: "assistant", content: devices.length === 0 ? "Tidak ada perangkat MikroTik aktif yang terdaftar. Daftarkan router dan uji koneksinya di halaman Tools terlebih dahulu." : "Ada lebih dari satu perangkat MikroTik aktif. Pilih satu perangkat dari halaman Tools; chat belum menyediakan pemilih target router." }]);
+        return;
+      }
+      const proposal = await novaApi.createConfiguration({
+        device_id: devices[0].id,
+        change_set: {
+          description: "Chat proposal: " + requestText.slice(0, 180),
+          operations: [{ type: "add_ip_address", interface: interfaceName, address: cidr, comment: "NOVA approved chat proposal" }],
+        },
+      });
+      setMessages((prev) => [...prev, {
+        role: "assistant",
+        content: "Proposal konfigurasi dibuat dan divalidasi terhadap state router. Belum ada perubahan yang diterapkan. Tinjau target, risiko, dan perintah di bawah ini sebelum memilih Approve & Execute.",
+        configuration_proposal: proposal,
+      }]);
+    } catch (err) {
+      setMessages((prev) => [...prev, { role: "assistant", content: "Gagal membuat proposal konfigurasi.", meta: { error: err instanceof NovaApiError ? err.message : "Periksa koneksi API dan kredensial router." } }]);
+    } finally { setSending(false); }
+  }
+
+  async function handleApproveConfiguration(configurationId: string) {
+    setSending(true);
+    try {
+      await novaApi.approveConfiguration(configurationId);
+      const applied = await novaApi.applyConfiguration(configurationId);
+      setMessages((prev) => [...prev, {
+        role: "assistant",
+        content: applied.status === "APPLIED" ? "Konfigurasi berhasil diterapkan dan status proposal telah diperbarui. Periksa hasil verifikasi pada proposal/audit log." : "Permintaan eksekusi selesai dengan status: " + applied.status,
+      }]);
+    } catch (err) {
+      setMessages((prev) => [...prev, { role: "assistant", content: "Eksekusi ditolak atau gagal. Periksa detail error dan audit log; jangan ulangi tanpa meninjau status router.", meta: { error: err instanceof NovaApiError ? err.message : "Unknown error" } }]);
+    } finally { setSending(false); }
   }
 
   function handleRegenerateImage(prompt: string) {
@@ -133,7 +175,7 @@ export default function ChatPage() {
     <div className="mx-auto flex h-full min-h-0 w-full max-w-[944px] flex-col px-6 pb-[18px]">
       {isEmpty ? (
         <div className="flex min-h-0 flex-1 items-center justify-center overflow-hidden">
-          <ChatWindow messages={messages} onQuickAction={handleQuickAction} onConfigurationChoice={handleConfigurationChoice} onRegenerateImage={handleRegenerateImage} />
+          <ChatWindow messages={messages} onQuickAction={handleQuickAction} onConfigurationChoice={handleConfigurationChoice} onRegenerateImage={handleRegenerateImage} onApproveConfiguration={handleApproveConfiguration} />
         </div>
       ) : (
         <div className="nova-chat-scroll min-h-0 flex-1 overflow-y-auto pb-3 pt-1 pr-1">
