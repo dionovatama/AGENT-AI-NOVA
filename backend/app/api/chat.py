@@ -85,7 +85,12 @@ def _configuration_from_message(message: str) -> GeneratorRequest:
     version_match = re.search(r"router\s*os\s*v?([67])|routeros\s*v?([67])", text)
     version = next((group for group in version_match.groups() if group), "7") if version_match else "7"
     cidr_match = re.search(r"\b((?:\d{1,3}\.){3}\d{1,3}/\d{1,2})\b", message)
-    lan_match = re.search(r"(?:lan_interface|interface\s+lan|lan)\s*[:=]?\s*([A-Za-z][A-Za-z0-9_.-]{0,31})", message, re.I)
+    # Prefer explicit interface names; do not match "lan" inside "bridge-lan".
+    lan_match = re.search(r"\\blan_interface\\s*[:=]?\\s*([A-Za-z][A-Za-z0-9_.-]{0,31})", message, re.I)
+    if not lan_match:
+        lan_match = re.search(r"\\binterface\\s+(?!lan\\b)([A-Za-z][A-Za-z0-9_.-]{0,31})", message, re.I)
+    if not lan_match:
+        lan_match = re.search(r"(?:^|\\s)lan\\s*[:=]?\\s*([A-Za-z][A-Za-z0-9_.-]{0,31})", message, re.I)
     wan_match = re.search(r"(?:wan_interface|interface\s+wan|wan)\s*[:=]?\s*([A-Za-z][A-Za-z0-9_-]{0,31}(?:\.[A-Za-z0-9_-]+)*)", message, re.I)
     vlan_id_match = re.search(r"\bvlan(?:\s*(?:id|nomor))?\s*[:=#-]?\s*(\d{1,4})\b", text)
     vlan_name_match = re.search(r"(?:vlan_name|vlan\s+name|nama\s+vlan|nama(?:\s+interface)?|name)\s*[:=]\s*([A-Za-z][A-Za-z0-9_-]{0,31}(?:\.[A-Za-z0-9_-]+)*)", message, re.I)
