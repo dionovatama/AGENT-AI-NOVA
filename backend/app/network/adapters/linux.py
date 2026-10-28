@@ -37,13 +37,13 @@ class LinuxNetworkAdapter(NetworkDeviceAdapter):
         links, addrs, routes_raw = await asyncio.gather(self._run(device, "ip -o link show"), self._run(device, "ip -o -4 addr show"), self._run(device, "ip -4 route show"))
         interfaces = []
         for line in links.splitlines():
-            match = re.match(r"^\\d+:\\s+([^:@]+)(?:@[^:]+)?:\\s+<([^>]*)>", line)
+            match = re.match(r"^\d+:\s+([^:@]+)(?:@[^:]+)?:\s+<([^>]*)>", line)
             if match:
                 flags = set(match.group(2).split(","))
                 interfaces.append(InterfaceState(name=match.group(1), type="loopback" if "LOOPBACK" in flags else "ethernet", running="UP" in flags, disabled="UP" not in flags))
         addresses = []
         for line in addrs.splitlines():
-            match = re.match(r"^\\d+:\\s+([^\\s]+)\\s+inet\\s+(\\S+)", line)
+            match = re.match(r"^\d+:\s+([^\s]+)\s+inet\s+(\S+)", line)
             if match:
                 addresses.append(IpAddressState(address=match.group(2), interface=match.group(1).split("@", 1)[0]))
         routes = []
