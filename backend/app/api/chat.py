@@ -46,7 +46,7 @@ def _configuration_intent(message: str) -> bool:
         r"\b(buatkan|buat|generate|bikinkan|hasilkan|siapkan|konfigurasikan|konfigurasi|atur|tambahkan|aktifkan|blokir|pasang|set)\b",
         text,
     )
-    has_network_target = re.search(r"\b(mikrotik|routeros|router\s+os|firewall|dhcp|nat|masquerade|ip address|alamat ip|vlan)\b", text)
+    has_network_target = re.search(r"\b(mikrotik|routeros|router\s+os|linux|server|firewall|dhcp|nat|masquerade|ip address|alamat ip|vlan)\b", text)
     has_interface_ip = re.search(r"\binterface\s+[a-zA-Z][a-zA-Z0-9_.-]{0,31}\b", text) and re.search(r"\b(?:\d{1,3}\.){3}\d{1,3}/\d{1,2}\b", text)
     return bool(action and (has_network_target or has_interface_ip))
 
@@ -195,18 +195,18 @@ async def chat_completions(
                 generated_files=[],
             )
 
-        # Resolve only a device owned by this authenticated user. An explicit
-        # selected device wins; otherwise exactly one active MikroTik is required.
+        # Direct mode supports registered Linux and MikroTik network devices.
+        # Explicit selection is owner-scoped; ambiguity fails closed.
         device_query = db.query(Device).filter(
             Device.owner_id == current_user.id,
-            Device.platform == "mikrotik",
+            Device.platform.in_(["mikrotik", "linux"]),
             Device.status == "active",
         )
         if payload.device_id is not None:
             device = device_query.filter(Device.id == payload.device_id).first()
             if device is None:
                 return ChatCompletionResult(
-                    content="Perangkat MikroTik yang dipilih tidak ditemukan, tidak aktif, atau bukan milik akun ini.",
+                    content="Perangkat yang dipilih tidak ditemukan, tidak aktif, tidak didukung, atau bukan milik akun ini.",
                     model_used="nova-configuration-router",
                     category=TaskCategory.CONFIGURATION_GENERATION,
                     used_fallback=False,
@@ -217,9 +217,9 @@ async def chat_completions(
             devices = device_query.order_by(Device.created_at.asc()).limit(2).all()
             if len(devices) != 1:
                 reason = (
-                    "Tidak ada perangkat MikroTik aktif pada akun ini."
+                    "Tidak ada perangkat Linux/MikroTik aktif pada akun ini."
                     if not devices else
-                    "Ada beberapa perangkat MikroTik aktif. Pilih perangkat target secara eksplisit sebelum membuat proposal."
+                    "Ada beberapa perangkat Linux/MikroTik aktif. Pilih perangkat target secara eksplisit sebelum membuat proposal."
                 )
                 return ChatCompletionResult(
                     content=reason,
