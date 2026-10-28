@@ -99,6 +99,10 @@ tool_manager.register(firewall_rules_tool)
 from app.tools.mikrotik_config import mikrotik_config_apply_tool
 tool_manager.register(mikrotik_config_apply_tool)
 
+# Linux configuration writer is internal-only and can only be called by the orchestrator.
+from app.tools.linux_config import linux_config_apply_tool
+tool_manager.register(linux_config_apply_tool)
+
 
 @app.on_event("startup")
 async def start_background_tasks():
