@@ -62,6 +62,11 @@ export interface HealthResponse {
   environment: string;
 }
 
+export type LinuxGeneratorModule = "packages" | "ssh" | "bind9" | "firewall";
+export interface LinuxGeneratorRequest { distro: "debian" | "ubuntu"; modules: LinuxGeneratorModule[]; hostname: string; ssh_port: number; dns_listen_address: string; dns_forwarders: string; firewall_ssh: boolean; }
+export interface LinuxGeneratedFile { filename: string; mime_type: string; content: string; }
+export interface LinuxGeneratorResponse { distro: string; modules: string[]; files: LinuxGeneratedFile[]; warnings: string[]; }
+
 export type MikrotikGeneratorModule = "ip" | "dhcp" | "nat" | "firewall";
 
 export interface MikrotikGeneratorRequest {
@@ -154,6 +159,8 @@ export const novaApi = {
 
   applyConfiguration: (configurationId: string) =>
     request<ConfigurationProposal>(`/configurations/${configurationId}/apply`, { method: "POST" }),
+
+  generateLinuxConfig: (payload: LinuxGeneratorRequest) => request<LinuxGeneratorResponse>("/linux-config-generator/generate", { method: "POST", body: JSON.stringify(payload) }),
 
   generateMikrotikConfig: (payload: MikrotikGeneratorRequest) =>
     request<MikrotikGeneratorResponse>("/mikrotik-config-generator/generate", {
