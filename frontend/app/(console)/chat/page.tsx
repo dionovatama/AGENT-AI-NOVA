@@ -170,12 +170,24 @@ export default function ChatPage() {
         return;
       }
 
+      // Explicit slash command takes priority over the legacy image-intent heuristic.
+      const slashMatch = text.match(/^\/(image|img|gambar)\s+([\s\S]+)/i);
+      if (!slashMatch && /^\/(image|img|gambar)$/i.test(text)) {
+        setMessages((prev) => [...prev, {
+          role: "assistant",
+          content: "Format: /image <deskripsi gambar>",
+        }]);
+        return;
+      }
+
       // Match clear image-generation intent; normal chat stays on the existing AI Gateway.
-      const wantsImage = /\b(generate|create|draw|make|render)\b.{0,100}\b(image|picture|illustration|artwork|poster|logo|wallpaper)\b|\b(buatkan|buat|gambar|ilustrasikan|lukiskan|hasilkan|bikin)\b.{0,100}\b(gambar|ilustrasi|poster|logo|wallpaper|foto|ilustrasi)\b|\b(gambar|ilustrasi|poster|logo|wallpaper)\b.{0,80}\b(buatkan|buat|generate|bikin|desain|gambarkan)\b/i.test(text);
+      const wantsImage = Boolean(slashMatch) || /\b(generate|create|draw|make|render)\b.{0,100}\b(image|picture|illustration|artwork|poster|logo|wallpaper)\b|\b(buatkan|buat|gambar|ilustrasikan|lukiskan|hasilkan|bikin)\b.{0,100}\b(gambar|ilustrasi|poster|logo|wallpaper|foto|ilustrasi)\b|\b(gambar|ilustrasi|poster|logo|wallpaper)\b.{0,80}\b(buatkan|buat|generate|bikin|desain|gambarkan)\b/i.test(text);
       if (wantsImage) {
-        const imagePrompt = text
-          .replace(/^(tolong\s+)?(buatkan|buat|bikin|gambarkan|hasilkan|generate|create|draw|make|render)\s+(saya\s+)?(sebuah\s+)?(gambar|image|picture|ilustrasi|illustration|poster|logo|wallpaper|foto)\s*/i, "")
-          .trim();
+        const imagePrompt = slashMatch
+          ? slashMatch[2].trim()
+          : text
+              .replace(/^(tolong\s+)?(buatkan|buat|bikin|gambarkan|hasilkan|generate|create|draw|make|render)\s+(saya\s+)?(sebuah\s+)?(gambar|image|picture|ilustrasi|illustration|poster|logo|wallpaper|foto)\s*/i, "")
+              .trim();
         const prompt = imagePrompt || text;
         const imageUrl = (await generateImage(prompt)).imageDataUrl;
         setProcessingStage("respond");
