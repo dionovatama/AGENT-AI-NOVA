@@ -21,6 +21,7 @@ from app.database.session import get_db
 from app.network.adapters.base import NetworkDeviceAdapter
 from app.network.adapters.fake import FakeNetworkAdapter
 from app.network.adapters.mikrotik import MikrotikNetworkAdapter
+from app.network.adapters.linux import LinuxNetworkAdapter
 from app.network.device_context import build_device_context
 from app.network.models import ChangeSet, DeviceStateSnapshot
 from app.network.preview import (
@@ -61,7 +62,9 @@ def get_adapter_for_device(device: Device) -> NetworkDeviceAdapter:
         return FakeNetworkAdapter()
     if device.platform == "mikrotik":
         return MikrotikNetworkAdapter()
-    return FakeNetworkAdapter()
+    if device.platform == "linux":
+        return LinuxNetworkAdapter()
+    raise ValueError(f"Platform konfigurasi tidak didukung: {device.platform}")
 
 
 @router.post("", response_model=ConfigurationResponse, status_code=status.HTTP_201_CREATED)
@@ -94,7 +97,7 @@ async def create_configuration(
     # 2. Ambil adapter dan baca state perangkat
     adapter = get_adapter_for_device(device)
     try:
-        ctx = build_device_context(device, current_user, db) if device.platform == "mikrotik" else None
+        ctx = build_device_context(device, current_user, db) if device.platform in ("mikrotik", "linux") else None
         device_state = await adapter.get_device_state(device, ctx)
     except Exception as exc:
         logger.error("Gagal membaca state perangkat %s: %s", device.id, exc)
