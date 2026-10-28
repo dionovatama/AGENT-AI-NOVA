@@ -23,6 +23,7 @@ from app.database.models import Configuration, ConfigurationVersion, Device, Use
 from app.network.adapters.base import NetworkDeviceAdapter
 from app.network.adapters.fake import FakeNetworkAdapter
 from app.network.adapters.mikrotik import MikrotikNetworkAdapter
+from app.network.adapters.linux import LinuxNetworkAdapter
 from app.network.backup import save_state_snapshot
 from app.network.device_context import build_device_context
 from app.network.models import ChangeSet, NetworkOperation
@@ -84,8 +85,10 @@ def _resolve_adapter(device: Device) -> NetworkDeviceAdapter:
 
     if device.platform == "mikrotik":
         return MikrotikNetworkAdapter()
+    if device.platform == "linux":
+        return LinuxNetworkAdapter()
 
-    return FakeNetworkAdapter()
+    raise ValueError(f"Platform konfigurasi tidak didukung: {device.platform}")
 
 
 def approve_configuration(
@@ -251,7 +254,7 @@ async def apply_configuration(
             )
 
         adapter = _resolve_adapter(device)
-        ctx = build_device_context(device, user, db) if device.platform == "mikrotik" else None
+        ctx = build_device_context(device, user, db) if device.platform in ("mikrotik", "linux") else None
 
         # 5. Baca state perangkat untuk cek Drift
         current_state = await adapter.get_device_state(device, ctx)
