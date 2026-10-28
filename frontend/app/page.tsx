@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { ArrowUp } from "lucide-react";
 import { ChatWindow } from "@/components/chat/ChatWindow";
@@ -31,7 +31,7 @@ function toActivitySteps(stage: ProcessingStage) {
   }));
 }
 
-export default function ChatPage() {
+function ChatPageContent() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [category, setCategory] = useState<TaskCategory>("general_chat");
@@ -266,5 +266,13 @@ export default function ChatPage() {
         Endpoint ini murni reasoning (Milestone 2). Untuk eksekusi command nyata, gunakan halaman Tools.
       </p>
     </div>
+  );
+}
+
+export default function ChatPage() {
+  return (
+    <Suspense fallback={null}>
+      <ChatPageContent />
+    </Suspense>
   );
 }
