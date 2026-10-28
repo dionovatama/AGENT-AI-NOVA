@@ -6,8 +6,8 @@ import { HudLoader } from "@/components/HudLoader";
 import { PlaceholderPanel } from "@/components/PlaceholderPanel";
 import { ToolCard } from "@/components/tools/ToolCard";
 import { ToolRunModal } from "@/components/tools/ToolRunModal";
+import { ImageStudio } from "@/components/tools/ImageStudio";
 import { MikrotikConfigGenerator } from "@/components/tools/MikrotikConfigGenerator";
-import { PuterImageStudio } from "@/components/tools/PuterImageStudio";
 import { novaApi, NovaApiError } from "@/lib/api";
 import { KNOWN_TOOLS, type KnownToolSpec, type PermissionLevel } from "@/lib/types";
 
@@ -300,7 +300,7 @@ export default function ToolsPage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-3 backdrop-blur-sm sm:p-6" onMouseDown={(event) => { if (event.target === event.currentTarget) setImageStudioOpen(false); }}>
           <section role="dialog" aria-modal="true" aria-labelledby="puter-image-studio-title" className="max-h-[92vh] w-full max-w-6xl overflow-y-auto rounded-xl border border-base-700 bg-base-900 shadow-2xl">
             <div className="sticky top-0 z-10 flex items-center justify-between border-b border-base-700 bg-base-900/95 px-4 py-3 backdrop-blur sm:px-5"><div className="flex items-center gap-2 text-sm font-semibold text-ink-100"><ImagePlus size={16} className="text-orb-core" /><h2 id="puter-image-studio-title">NOVA Image Studio</h2></div><button type="button" onClick={() => setImageStudioOpen(false)} aria-label="Close Image Studio" className="rounded-md border border-base-700 p-2 text-ink-400 transition hover:bg-white/[0.05] hover:text-ink-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orb-glow/50"><X size={15} /></button></div>
-            <div className="p-2 sm:p-3"><PuterImageStudio /></div>
+            <div className="p-2 sm:p-3"><ImageStudio/></div>
           </section>
         </div>
       )}

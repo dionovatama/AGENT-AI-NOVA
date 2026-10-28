@@ -10,7 +10,7 @@ import NovaActivity from "@/components/chat/NovaActivity";
 import { novaApi, NovaApiError } from "@/lib/api";
 import type { ChatMessage, TaskCategory } from "@/lib/types";
 import { TOOL_CALLING_CATEGORIES } from "@/lib/types";
-import { generatePuterImage } from "@/lib/puter-image";
+import { generateImage } from "@/lib/image-generation";
 
 type ProcessingStage = "understand" | "process" | "respond";
 
@@ -122,20 +122,20 @@ export default function ChatPage() {
     setProcessingStage("process");
     const startedAt = performance.now();
     try {
-      const imageUrl = await generatePuterImage(cleanPrompt);
+      const imageUrl = (await generateImage(cleanPrompt)).imageDataUrl;
       setProcessingStage("respond");
       setMessages((prev) => [...prev, {
         role: "assistant",
         content: "",
         image_url: imageUrl,
         image_prompt: cleanPrompt,
-        meta: { model_used: "Puter.js Image Generation" },
+        meta: { model_used: "Cloudflare FLUX Image Generation" },
       }]);
       setLastLatencyMs(Math.round(performance.now() - startedAt));
     } catch (err) {
       setMessages((prev) => [...prev, {
         role: "assistant",
-        content: "Gagal membuat gambar. Periksa koneksi atau akun Puter.js, lalu coba lagi.",
+        content: "Gagal membuat gambar. Lihat detail error di bawah, lalu coba lagi.",
         meta: { error: err instanceof Error ? err.message : "Unknown error" },
       }]);
     } finally {
@@ -177,14 +177,14 @@ export default function ChatPage() {
           .replace(/^(tolong\s+)?(buatkan|buat|bikin|gambarkan|hasilkan|generate|create|draw|make|render)\s+(saya\s+)?(sebuah\s+)?(gambar|image|picture|ilustrasi|illustration|poster|logo|wallpaper|foto)\s*/i, "")
           .trim();
         const prompt = imagePrompt || text;
-        const imageUrl = await generatePuterImage(prompt);
+        const imageUrl = (await generateImage(prompt)).imageDataUrl;
         setProcessingStage("respond");
         setMessages((prev) => [...prev, {
           role: "assistant",
           content: "",
           image_url: imageUrl,
           image_prompt: prompt,
-          meta: { model_used: "Puter.js Image Generation" },
+          meta: { model_used: "Cloudflare FLUX Image Generation" },
         }]);
         setLastLatencyMs(Math.round(performance.now() - startedAt));
         return;

@@ -2,9 +2,9 @@
 
 import { useState } from "react";
 import { Download, ImagePlus, LoaderCircle, Sparkles } from "lucide-react";
-import { generatePuterImage } from "@/lib/puter-image";
+import { generateImage, MAX_IMAGE_PROMPT_CHARS } from "@/lib/image-generation";
 
-export function PuterImageStudio() {
+export function ImageStudio() {
   const [prompt, setPrompt] = useState("");
   const [imageUrl, setImageUrl] = useState("");
   const [error, setError] = useState("");
@@ -17,7 +17,8 @@ export function PuterImageStudio() {
     setImageUrl("");
 
     try {
-      setImageUrl(await generatePuterImage(prompt));
+      const result = await generateImage(prompt);
+      setImageUrl(result.imageDataUrl);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Gagal menghasilkan gambar.");
     } finally {
@@ -31,7 +32,7 @@ export function PuterImageStudio() {
     link.href = imageUrl;
     link.target = "_blank";
     link.rel = "noreferrer";
-    link.download = "nova-generated-image";
+    link.download = "nova-generated-image.jpg";
     link.click();
   }
 
@@ -41,9 +42,9 @@ export function PuterImageStudio() {
         <div className="flex items-center gap-2">
           <ImagePlus size={17} className="text-orb-core" />
           <h2 className="text-sm font-semibold text-ink-100">NOVA Image Studio</h2>
-          <span className="rounded border border-orb-glow/30 bg-orb-glow/10 px-2 py-0.5 text-[10px] uppercase tracking-wide text-orb-core">Puter.js</span>
+          <span className="rounded border border-orb-glow/30 bg-orb-glow/10 px-2 py-0.5 text-[10px] uppercase tracking-wide text-orb-core">FLUX</span>
         </div>
-        <p className="mt-1 text-xs leading-5 text-ink-500">Buat gambar dari deskripsi teks. Permintaan dikirim melalui Puter.js di browser.</p>
+        <p className="mt-1 text-xs leading-5 text-ink-500">Buat gambar dari deskripsi teks. Gambar dibuat di backend NOVA lewat Cloudflare Workers AI.</p>
       </div>
 
       <div className="grid gap-5 p-4 sm:p-5 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
@@ -53,14 +54,14 @@ export function PuterImageStudio() {
             id="nova-image-prompt"
             value={prompt}
             onChange={(event) => setPrompt(event.target.value)}
-            maxLength={4000}
+            maxLength={MAX_IMAGE_PROMPT_CHARS}
             rows={7}
             placeholder="Contoh: ilustrasi topologi jaringan sekolah, router MikroTik terhubung ke switch dan tiga PC, diagram teknis bersih dengan latar gelap..."
             className="w-full resize-y rounded-md border border-base-700 bg-base-950 px-3 py-3 text-sm leading-6 text-ink-100 outline-none placeholder:text-ink-500 focus:border-orb-glow/60 focus:ring-2 focus:ring-orb-glow/10"
           />
           <div className="flex items-center justify-between text-[10px] text-ink-500">
-            <span>Prompt maksimal 4.000 karakter</span>
-            <span>{prompt.length}/4000</span>
+            <span>Prompt maksimal 2.000 karakter</span>
+            <span>{prompt.length}/{MAX_IMAGE_PROMPT_CHARS}</span>
           </div>
           {error && <p role="alert" className="rounded-md border border-signal-rose/30 bg-signal-rose/10 p-3 text-xs text-signal-rose">{error}</p>}
           <button
@@ -71,7 +72,7 @@ export function PuterImageStudio() {
           >
             {busy ? <><LoaderCircle size={14} className="animate-spin" /> Membuat gambar...</> : <><Sparkles size={14} /> Generate image</>}
           </button>
-          <p className="text-[10px] leading-4 text-ink-500">Puter dapat meminta login. Penggunaan mengikuti kuota dan ketentuan biaya akun Puter; periksa ketentuan sebelum menghasilkan gambar.</p>
+          <p className="text-[10px] leading-4 text-ink-500">Memakai jatah gratis harian Cloudflare Workers AI. Jika jatah habis, generasi akan gagal sampai reset (00:00 UTC).</p>
         </div>
 
         <div className="min-w-0">
@@ -79,7 +80,7 @@ export function PuterImageStudio() {
           {busy ? (
             <div className="flex min-h-64 flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-base-700 text-center">
               <LoaderCircle size={24} className="animate-spin text-orb-core" />
-              <p className="text-xs text-ink-400">Puter.js sedang memproses permintaan...</p>
+              <p className="text-xs text-ink-400">NOVA sedang memproses permintaan...</p>
             </div>
           ) : imageUrl ? (
             <div className="space-y-3">

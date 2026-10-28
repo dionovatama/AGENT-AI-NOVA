@@ -124,6 +124,12 @@ class Settings(BaseSettings):
     config_apply_enabled: bool = False
 
     audit_log_retention_days: int = 90
+        # --- Image Generation (Cloudflare Workers AI) ---
+    # Opsional: kalau kosong, POST /images/generate menjawab 503 [CONFIG]
+    # (bukan membuat seluruh backend gagal start).
+    cloudflare_account_id: str | None = None
+    cloudflare_api_token: str | None = None
+    image_model: str = "@cf/black-forest-labs/flux-1-schnell"
 
     model_config = SettingsConfigDict(
         env_file=".env",
