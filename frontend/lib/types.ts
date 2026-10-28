@@ -67,6 +67,7 @@ export interface ChatCompletionResult {
   diagrams?: DiagramAttachment[];
   generated_files?: GeneratedFileAttachment[];
   configuration_choice?: boolean;
+  configuration_proposal?: ConfigurationProposal;
 }
 
 export interface GeneratedFileAttachment {
@@ -85,6 +86,7 @@ export interface ChatMessage {
   generated_files?: GeneratedFileAttachment[];
   show_configuration_choices?: boolean;
   configuration_request?: string;
+  configuration_proposal?: ConfigurationProposal;
   meta?: {
     model_used?: string;
     used_fallback?: boolean;
@@ -373,4 +375,18 @@ export interface AuditLogEntry {
   error_message: string | null;
   duration_ms: number | null;
   created_at: string;
+}
+
+export interface ConfigurationProposal {
+  id: string;
+  device_id: string;
+  status: string;
+  risk_level: RiskLevel;
+  change_set: { description: string; operations: Array<Record<string, unknown>> };
+  plan_hash: string;
+  structured_diff?: unknown;
+  cli_preview?: string;
+  created_at: string;
+  expires_at?: string | null;
+  applied_at?: string | null;
 }

@@ -36,6 +36,7 @@ class GeneratorRequest(BaseModel):
     dhcp_pool_start: str = Field(default="192.168.88.10", max_length=15)
     dhcp_pool_end: str = Field(default="192.168.88.254", max_length=15)
     dns_servers: str = Field(default="1.1.1.1,8.8.8.8", max_length=100)
+    firewall_action: Literal["block_ping", "allow_ping"] | None = None
 
 
 class GeneratedFile(BaseModel):
@@ -58,16 +59,17 @@ def _safe_interface(value: str, field_name: str) -> str:
 
 
 def _validated_values(payload: GeneratorRequest) -> tuple[ipaddress.IPv4Interface, list[str]]:
-    _safe_interface(payload.lan_interface, "lan_interface")
-    wan_interfaces = payload.wan_interfaces or [payload.wan_interface]
-    if not wan_interfaces:
-        raise HTTPException(status_code=422, detail="Minimal satu interface WAN diperlukan untuk NAT.")
+    if "ip" in payload.modules or "dhcp" in payload.modules:
+        _safe_interface(payload.lan_interface, "lan_interface")
+    wan_interfaces = payload.wan_interfaces or ([payload.wan_interface] if "nat" in payload.modules else [])
     for interface_name in wan_interfaces:
         _safe_interface(interface_name, "wan_interfaces")
     if len(set(wan_interfaces)) != len(wan_interfaces):
         raise HTTPException(status_code=422, detail="Interface WAN tidak boleh duplikat.")
     if "dhcp" in payload.modules and "ip" not in payload.modules:
         raise HTTPException(status_code=422, detail="Modul DHCP membutuhkan modul IP agar gateway LAN ikut dikonfigurasi.")
+    if "firewall" in payload.modules and payload.firewall_action not in {"block_ping", "allow_ping"}:
+        raise HTTPException(status_code=422, detail="Pilih aksi firewall yang jelas: blokir ping atau izinkan ping.")
     if "vlan" in payload.modules:
         _safe_interface(payload.vlan_name, "vlan_name")
         _safe_interface(payload.vlan_parent_interface, "vlan_parent_interface")
@@ -76,7 +78,7 @@ def _validated_values(payload: GeneratorRequest) -> tuple[ipaddress.IPv4Interfac
     if len(set(payload.modules)) != len(payload.modules):
         raise HTTPException(status_code=422, detail="Modul konfigurasi tidak boleh duplikat.")
     try:
-        interface = ipaddress.ip_interface(payload.ip_cidr)
+        interface = ipaddress.ip_interface(payload.ip_cidr) if ("ip" in payload.modules or "dhcp" in payload.modules) else ipaddress.ip_interface("192.0.2.1/24")
         if not isinstance(interface, ipaddress.IPv4Interface):
             raise ValueError("IPv4 required")
     except ValueError as exc:
@@ -155,15 +157,11 @@ def _build_rsc(payload: GeneratorRequest, interface: ipaddress.IPv4Interface, dn
         ]
         commands += [""]
     if "firewall" in payload.modules:
-        # Conservative additions only; no blanket input drop that could lock out management.
-        commands += [
-            "/ip firewall filter add chain=input connection-state=established,related action=accept comment=\"NOVA: accept established input\"",
-            "/ip firewall filter add chain=input connection-state=invalid action=drop comment=\"NOVA: drop invalid input\"",
-            "/ip firewall filter add chain=input protocol=icmp action=accept comment=\"NOVA: allow ICMP input\"",
-            "/ip firewall filter add chain=forward connection-state=established,related action=accept comment=\"NOVA: accept established forward\"",
-            "/ip firewall filter add chain=forward connection-state=invalid action=drop comment=\"NOVA: drop invalid forward\"",
-            "",
-        ]
+        if payload.firewall_action == "block_ping":
+            commands.append('/ip firewall filter add chain=input protocol=icmp action=drop comment="NOVA: block ping"')
+        elif payload.firewall_action == "allow_ping":
+            commands.append('/ip firewall filter add chain=input protocol=icmp action=accept comment="NOVA: allow ping"')
+        commands.append("")
     return "\n".join(header + commands).rstrip() + "\n"
 
 
@@ -213,6 +211,8 @@ def generate_configuration(
             "wan_interface": wan_interfaces[0],
             "wan_interfaces": wan_interfaces,
         })
+    if "firewall" in modules:
+        parameters["firewall_action"] = payload.firewall_action
     if "vlan" in modules:
         parameters.update({
             "vlan_name": payload.vlan_name,

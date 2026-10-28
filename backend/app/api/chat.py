@@ -2,17 +2,23 @@
 Chat endpoint with safe, offline MikroTik configuration generation.
 """
 import re
+import uuid
 from io import BytesIO
 from pathlib import Path
 
 from docx import Document
 from fastapi import File, Form, UploadFile
+from sqlalchemy.orm import Session
 from pypdf import PdfReader
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 
-from app.database.models import User
+from app.database.models import Device, User
+from app.database.session import get_db
+from app.network.models import AddIpAddressOperation, ChangeSet
+from app.schemas.configurations import ConfigurationCreateRequest
+from app.api.configurations import create_configuration
 from app.security.dependencies import get_current_user
 from app.ai.model_router import TaskCategory
 from app.ai.openrouter import ChatMessage, ChatCompletionResult, OpenRouterError, get_completion
@@ -30,89 +36,113 @@ class ChatRequest(BaseModel):
     category: TaskCategory = TaskCategory.GENERAL_CHAT
     use_tools: bool = False
     configuration_mode: str | None = None  # "file" or "direct", selected after confirmation
+    device_id: uuid.UUID | None = None  # explicit selected device; never supplied by the model
 
 
 def _configuration_intent(message: str) -> bool:
     text = message.lower()
-    asks_to_configure = re.search(
-        r"\b(buatkan|buat|generate|bikinkan|hasilkan|siapkan|konfigurasikan|konfigurasi|atur|tambahkan|aktifkan|blokir|pasang|tolong|butuh|perlu|ingin|minta)\b",
+    # Require an explicit configuration action; "check/show/explain" stays read-only.
+    action = re.search(
+        r"\b(buatkan|buat|generate|bikinkan|hasilkan|siapkan|konfigurasikan|konfigurasi|atur|tambahkan|aktifkan|blokir|pasang|set)\b",
         text,
     )
-    mentions_config = re.search(
-        r"\b(mikrotik|routeros|router\s+os|firewall|dhcp|nat|masquerade|filter|rule|router|ip|alamat\s+ip|lan|bridge(?:-lan)?|vlan|gateway|ether\d+|sfp\d*)\b",
-        text,
-    )
-    asks_for_explanation = re.search(
-        r"\b(jelaskan|jelasin|apa\s+itu|fungsi|pengertian|cara\s+kerja|bedanya|mengapa|kenapa)\b",
-        text,
-    )
-    return bool(asks_to_configure and mentions_config and not asks_for_explanation)
+    has_network_target = re.search(r"\b(mikrotik|routeros|router\s+os|firewall|dhcp|nat|masquerade|ip address|alamat ip|vlan)\b", text)
+    has_interface_ip = re.search(r"\binterface\s+[a-zA-Z][a-zA-Z0-9_.-]{0,31}\b", text) and re.search(r"\b(?:\d{1,3}\.){3}\d{1,3}/\d{1,2}\b", text)
+    return bool(action and (has_network_target or has_interface_ip))
 
 
 def _configuration_from_message(message: str) -> GeneratorRequest:
     text = message.lower()
-
-    # Ignore modules mentioned only in constraints such as "do not add DHCP/NAT/firewall".
-    positive_text = re.split(
-        r"\b(?:jangan|tanpa|tidak perlu|tidak usah|do not|don't|must not|exclude|ketentuan wajib|larangan)\b",
-        text,
-        maxsplit=1,
-    )[0]
-
-    modules: list[str] = []
-    only_vlan = bool(
-        re.search(r"\bvlan\b.{0,30}\b(?:saja|only)\b", positive_text)
-        or re.search(r"\b(?:saja|only)\b.{0,30}\bvlan\b", positive_text)
+    # Remove each negative instruction through the end of its sentence before
+    # splitting on commas/conjunctions. Otherwise "jangan tambahkan DHCP, NAT,
+    # atau firewall" incorrectly leaves NAT/firewall as positive targets.
+    negative_instruction = re.compile(
+        r"\b(?:jangan|tanpa|tidak perlu|tidak usah|do not|don't|must not|exclude|larangan)\b"
+        r"[^.!?\n]*(?:[.!?]|$)",
+        re.IGNORECASE,
     )
+    positive_text = negative_instruction.sub(" ", text)
+    positive_text = " ".join(
+        clause.strip()
+        for clause in re.split(r"[,;\n]|\b(?:dan|but|and|atau|or)\b", positive_text)
+        if clause.strip()
+    )
+    action = re.search(r"\b(buatkan|buat|generate|bikinkan|hasilkan|siapkan|konfigurasikan|konfigurasi|atur|tambahkan|aktifkan|blokir|pasang|set)\b", positive_text)
+    modules: list[str] = []
+
+    # Only count a module when it is an explicit target, not merely a related interface/context.
+    if re.search(r"\bdhcp\b", positive_text) and (action or re.search(r"^\s*dhcp\b", positive_text)):
+        modules.extend(["ip", "dhcp"])
+    if re.search(r"\bnat\b|\bmasquerade\b|\binternet sharing\b", positive_text) and (action or re.search(r"^\s*nat\b", positive_text)):
+        modules.append("nat")
+    if re.search(r"\bfirewall\b", positive_text) and (action or re.search(r"^\s*firewall\b", positive_text)):
+        modules.append("firewall")
+    vlan_target = re.search(r"\b(?:buatkan|buat|generate|bikinkan|hasilkan|siapkan|konfigurasikan|konfigurasi|atur|tambahkan|pasang)\b.{0,50}\bvlan\b|\bvlan(?:\s+(?:name|id|nomor))?\s*[:=#-]?\s*\d+\s*(?:saja|only)?", positive_text)
+    if vlan_target and not re.search(r"\b(?:nat|dhcp|firewall)\s+saja\b", positive_text):
+        modules.append("vlan")
+    ip_target = re.search(r"\b(?:buatkan|buat|generate|konfigurasi|tambahkan|atur|set)\s+(?:alamat\s+)?ip(?: address)?\b|\bip address\s*[:=]", positive_text)
+    if ip_target and "dhcp" not in modules:
+        modules.append("ip")
+    modules = list(dict.fromkeys(modules))
+    if not modules:
+        raise HTTPException(status_code=422, detail="Sebutkan modul yang ingin dibuat secara eksplisit: IP, DHCP, NAT, firewall, atau VLAN.")
+
+    only_vlan = modules == ["vlan"] and bool(re.search(r"\bvlan\b.{0,30}\b(?:saja|hanya|only)\b|\b(?:saja|hanya|only)\b.{0,30}\bvlan\b", positive_text))
     if only_vlan:
         modules = ["vlan"]
-    else:
-        if re.search(r"\b(dhcp|pool dhcp)\b", positive_text):
-            modules.extend(["ip", "dhcp"])
-        elif re.search(r"\b(?:konfigurasi|tambahkan|buat|atur|set)\s+(?:alamat\s+)?ip\b|\b(?:ip address|alamat ip)\s*[:=]", positive_text):
-            modules.append("ip")
-        if re.search(r"\b(nat|masquerade|internet sharing)\b", positive_text):
-            modules.append("nat")
-        if re.search(r"\b(firewall|filter|blokir|block|proteksi)\b", positive_text):
-            modules.append("firewall")
-        if re.search(r"\bvlan\b", positive_text):
-            modules.append("vlan")
-    if not modules:
-        raise HTTPException(
-            status_code=422,
-            detail="Sebutkan modul yang ingin dibuat: IP, DHCP, NAT, firewall, atau VLAN.",
-        )
-    modules = list(dict.fromkeys(modules))
 
     version_match = re.search(r"router\s*os\s*v?([67])|routeros\s*v?([67])", text)
     version = next((group for group in version_match.groups() if group), "7") if version_match else "7"
     cidr_match = re.search(r"\b((?:\d{1,3}\.){3}\d{1,3}/\d{1,2})\b", message)
-    lan_match = re.search(r"(?:lan_interface|interface\s+lan)\s*[:=]\s*([A-Za-z][A-Za-z0-9_.-]{0,31})", message, re.I)
-    wan_match = re.search(r"(?:wan_interface|interface\s+wan)\s*[:=]\s*([A-Za-z][A-Za-z0-9_.-]{0,31})", message, re.I)
-    mentioned_wans = list(dict.fromkeys(re.findall(
-        r"\b(?:ether\d+|sfp\d+(?:-\d+)?|pppoe-out\d*|wan\d+)\b", text
-    )))
-    wan_interfaces = mentioned_wans or ([wan_match.group(1)] if wan_match else ["ether1"])
-
+    # Prefer explicit interface names; do not match "lan" inside "bridge-lan".
+    lan_match = re.search(r"\blan_interface\s*[:=]?\s*([A-Za-z][A-Za-z0-9_.-]{0,31})", message, re.I)
+    if not lan_match:
+        lan_match = re.search(r"\binterface\s+(?!lan\b)([A-Za-z][A-Za-z0-9_.-]{0,31})", message, re.I)
+    if not lan_match:
+        lan_match = re.search(r"(?:^|\s)lan\s*[:=]?\s*([A-Za-z][A-Za-z0-9_.-]{0,31})", message, re.I)
+    wan_match = re.search(r"(?:wan_interface|interface\s+wan|wan)\s*[:=]?\s*([A-Za-z][A-Za-z0-9_-]{0,31}(?:\.[A-Za-z0-9_-]+)*)", message, re.I)
     vlan_id_match = re.search(r"\bvlan(?:\s*(?:id|nomor))?\s*[:=#-]?\s*(\d{1,4})\b", text)
-    vlan_name_match = re.search(r"(?:vlan_name|vlan\s+name|nama\s+vlan|nama(?:\s+interface)?|name)\s*[:=]?\s*([A-Za-z][A-Za-z0-9_.-]{0,31})", message, re.I)
-    vlan_parent_match = re.search(r"(?:vlan_parent_interface|parent\s+interface|interface\s+induk|parent)\s*[:=]?\s*([A-Za-z][A-Za-z0-9_.-]{0,31})", message, re.I)
-    vlan_comment_match = re.search(r"(?:vlan_comment|comment|komentar)\s*[:=]?\s*([^\r\n.;]{1,128})", message, re.I)
-    vlan_name = vlan_name_match.group(1) if vlan_name_match else (
-        f"vlan{vlan_id_match.group(1)}" if vlan_id_match else "vlan10-test"
-    )
+    vlan_name_match = re.search(r"(?:vlan_name|vlan\s+name|nama\s+vlan|nama(?:\s+interface)?|name)\s*[:=]\s*([A-Za-z][A-Za-z0-9_-]{0,31}(?:\.[A-Za-z0-9_-]+)*)", message, re.I)
+    if not vlan_name_match:
+        # Also accept natural phrasing such as "VLAN 10 dengan nama vlan10-test".
+        vlan_name_match = re.search(r"\b(?:dengan\s+)?nama\s+(?!vlan\b)([A-Za-z][A-Za-z0-9_-]{0,31}(?:\.[A-Za-z0-9_-]+)*)", message, re.I)
+    vlan_parent_match = re.search(r"(?:vlan_parent_interface|parent\s+interface|interface\s+induk|parent)\s*[:=]?\s*([A-Za-z][A-Za-z0-9_-]{0,31}(?:\.[A-Za-z0-9_-]+)*)", message, re.I)
+    vlan_comment_match = re.search(r"(?:vlan_comment|comment|komentar)\s*[:=]\s*([^\r\n]{1,128})", message, re.I)
+    if "vlan" in modules:
+        if not vlan_id_match:
+            raise HTTPException(status_code=422, detail="Sebutkan VLAN ID yang ingin dibuat.")
+        if not vlan_parent_match:
+            # Natural phrasing such as "VLAN 20 di ether2" is supported.
+            vlan_parent_match = re.search(r"\bvlan\b.{0,30}\bdi\s+([A-Za-z][A-Za-z0-9_-]{0,31}(?:\.[A-Za-z0-9_-]+)*)", message, re.I)
+        if not vlan_parent_match:
+            raise HTTPException(status_code=422, detail="Sebutkan parent interface VLAN, misalnya ether1.")
+    if "nat" in modules and not wan_match:
+        raise HTTPException(status_code=422, detail="Sebutkan interface WAN untuk NAT, misalnya WAN: ether1.")
+    if ("ip" in modules or "dhcp" in modules) and (not lan_match or not cidr_match):
+        raise HTTPException(status_code=422, detail="Sebutkan interface LAN dan alamat IP/CIDR, misalnya LAN: bridge-lan, IP: 192.168.88.1/24.")
+    firewall_action = None
+    if "firewall" in modules:
+        if re.search(r"\b(memblokir|memblok|blokir|pemblokiran|block|drop|tolak)\b.{0,30}\b(ping|icmp)\b|\b(ping|icmp)\b.{0,30}\b(memblokir|memblok|blokir|pemblokiran|block|drop|tolak)\b", positive_text):
+            firewall_action = "block_ping"
+        elif re.search(r"\b(izinkan|allow|accept)\b.{0,30}\b(ping|icmp)\b|\b(ping|icmp)\b.{0,30}\b(izinkan|allow|accept)\b", positive_text):
+            firewall_action = "allow_ping"
+        else:
+            raise HTTPException(status_code=422, detail="Jelaskan aksi firewall yang diinginkan, misalnya blokir ping atau izinkan ping.")
 
+    # GeneratorRequest validates vlan_name even when VLAN is not selected, so never pass an empty string.
+    vlan_name = vlan_name_match.group(1) if vlan_name_match else f"vlan{vlan_id_match.group(1)}" if vlan_id_match else "vlan10"
     return GeneratorRequest(
         routeros_version=version,
         modules=modules,
         lan_interface=lan_match.group(1) if lan_match else "bridge-lan",
-        wan_interface=wan_interfaces[0],
-        wan_interfaces=wan_interfaces,
+        wan_interface=wan_match.group(1) if wan_match else "ether1",
+        wan_interfaces=[wan_match.group(1)] if wan_match else None,
         ip_cidr=cidr_match.group(1) if cidr_match else "192.168.88.1/24",
         vlan_name=vlan_name,
         vlan_id=int(vlan_id_match.group(1)) if vlan_id_match else 10,
         vlan_parent_interface=vlan_parent_match.group(1) if vlan_parent_match else "ether1",
-        vlan_comment=vlan_comment_match.group(1).strip() if vlan_comment_match else "NOVA generated VLAN",
+        vlan_comment=vlan_comment_match.group(1).strip() if vlan_comment_match else "NOVA VLAN",
+        firewall_action=firewall_action,
     )
 
 
@@ -120,6 +150,7 @@ def _configuration_from_message(message: str) -> GeneratorRequest:
 async def chat_completions(
     payload: ChatRequest,
     current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
     # First ask the user which execution path they want. The original request
     # is preserved by the frontend and resubmitted with configuration_mode.
@@ -140,17 +171,118 @@ async def chat_completions(
         )
 
     if payload.configuration_mode == "direct":
+        # Direct mode enters the existing Configuration Engine as a proposal.
+        # It deliberately does not apply changes here: the separate approval
+        # and apply endpoints enforce ownership, approval TTL, kill-switch,
+        # lab guard, drift detection, rollback, and post-apply verification.
+        interface_match = re.search(
+            r"\binterface\s+([A-Za-z][A-Za-z0-9_.-]{0,31})\b", payload.message, re.I
+        )
+        cidr_match = re.search(
+            r"\b((?:\d{1,3}\.){3}\d{1,3}/\d{1,2})\b", payload.message
+        )
+        if not interface_match or not cidr_match:
+            return ChatCompletionResult(
+                content=(
+                    "Mode konfigurasi langsung untuk saat ini menerima penambahan IP statis. "
+                    "Sebutkan interface dan IP/CIDR, misalnya: konfigurasi interface ether2 "
+                    "dengan IP 192.168.7.5/24."
+                ),
+                model_used="nova-configuration-router",
+                category=TaskCategory.CONFIGURATION_GENERATION,
+                used_fallback=False,
+                tools_used=[],
+                generated_files=[],
+            )
+
+        # Resolve only a device owned by this authenticated user. An explicit
+        # selected device wins; otherwise exactly one active MikroTik is required.
+        device_query = db.query(Device).filter(
+            Device.owner_id == current_user.id,
+            Device.platform == "mikrotik",
+            Device.status == "active",
+        )
+        if payload.device_id is not None:
+            device = device_query.filter(Device.id == payload.device_id).first()
+            if device is None:
+                return ChatCompletionResult(
+                    content="Perangkat MikroTik yang dipilih tidak ditemukan, tidak aktif, atau bukan milik akun ini.",
+                    model_used="nova-configuration-router",
+                    category=TaskCategory.CONFIGURATION_GENERATION,
+                    used_fallback=False,
+                    tools_used=[],
+                    generated_files=[],
+                )
+        else:
+            devices = device_query.order_by(Device.created_at.asc()).limit(2).all()
+            if len(devices) != 1:
+                reason = (
+                    "Tidak ada perangkat MikroTik aktif pada akun ini."
+                    if not devices else
+                    "Ada beberapa perangkat MikroTik aktif. Pilih perangkat target secara eksplisit sebelum membuat proposal."
+                )
+                return ChatCompletionResult(
+                    content=reason,
+                    model_used="nova-configuration-router",
+                    category=TaskCategory.CONFIGURATION_GENERATION,
+                    used_fallback=False,
+                    tools_used=[],
+                    generated_files=[],
+                )
+            device = devices[0]
+
+        try:
+            operation = AddIpAddressOperation(
+                interface=interface_match.group(1),
+                address=cidr_match.group(1),
+                comment=f"{interface_match.group(1)} LAN",
+            )
+            change_set = ChangeSet(
+                description=f"Add static IP {operation.address} to {operation.interface}",
+                operations=[operation],
+            )
+            proposal = await create_configuration(
+                ConfigurationCreateRequest(device_id=device.id, change_set=change_set),
+                current_user=current_user,
+                db=db,
+            )
+        except HTTPException as exc:
+            detail = exc.detail
+            if isinstance(detail, dict):
+                detail = detail.get("message", str(detail))
+            return ChatCompletionResult(
+                content=f"Proposal konfigurasi ditolak oleh validasi: {detail}",
+                model_used="nova-configuration-router",
+                category=TaskCategory.CONFIGURATION_GENERATION,
+                used_fallback=False,
+                tools_used=[],
+                generated_files=[],
+            )
+        except Exception:
+            # Avoid leaking credentials, connection strings, or adapter details.
+            return ChatCompletionResult(
+                content="NOVA gagal membaca state perangkat atau membuat proposal. Tidak ada perubahan yang diterapkan.",
+                model_used="nova-configuration-router",
+                category=TaskCategory.CONFIGURATION_GENERATION,
+                used_fallback=False,
+                tools_used=[],
+                generated_files=[],
+            )
+
         return ChatCompletionResult(
             content=(
-                "Mode konfigurasi langsung belum tersedia pada instalasi ini. "
-                "NOVA belum terhubung ke router untuk menerapkan perubahan. "
-                "Pilih pembuatan file konfigurasi, atau hubungkan dan uji tool eksekusi router terlebih dahulu."
+                f"Proposal konfigurasi dibuat untuk perangkat '{device.name}' (ID: {device.id}).\n"
+                f"Perubahan: tambahkan {operation.address} pada interface {operation.interface}.\n"
+                f"Status: {proposal.status}. Belum ada perubahan yang diterapkan.\n"
+                "Periksa preview pada kartu proposal di chat, lalu klik 'Approve & Execute' untuk menyetujui dan meminta penerapan. "
+                "Eksekusi tetap tunduk pada kill-switch, lab guard, pemeriksaan drift, dan verifikasi pasca-eksekusi."
             ),
-            model_used="nova-configuration-router",
+            model_used="nova-configuration-engine",
             category=TaskCategory.CONFIGURATION_GENERATION,
             used_fallback=False,
-            tools_used=[],
+            tools_used=["configurations.create"],
             generated_files=[],
+            configuration_proposal=proposal.model_dump(mode="json"),
         )
 
     # Configuration generation is an offline artifact flow, never a device action.

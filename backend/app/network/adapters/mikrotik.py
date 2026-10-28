@@ -30,7 +30,7 @@ from app.network.models import (
     NetworkOperation,
     RouteState,
 )
-from app.tools.mikrotik import _connect, _safe_int, _to_bool
+from app.tools.mikrotik import _api_session, _safe_int, _to_bool
 
 if TYPE_CHECKING:
     from app.database.models import Device
@@ -41,7 +41,7 @@ logger = logging.getLogger("nova.network.adapters.mikrotik")
 
 def _get_device_state_sync(device: Device, password: str | None) -> DeviceStateSnapshot:
     """Membaca state nyata router secara sync di dalam thread."""
-    with _connect(device, password) as api:
+    with _api_session(device, password) as api:
         # 1. Interface state
         iface_rows = list(api.path("interface"))
         interfaces = [
@@ -96,7 +96,7 @@ def _get_device_state_sync(device: Device, password: str | None) -> DeviceStateS
 
 def _apply_operation_sync(op: NetworkOperation, device: Device, password: str | None) -> str:
     """Menerapkan satu operasi konfigurasi ke router via librouteros."""
-    with _connect(device, password) as api:
+    with _api_session(device, password) as api:
         if isinstance(op, AddIpAddressOperation):
             kwargs: dict[str, Any] = {
                 "address": op.address,
@@ -131,7 +131,7 @@ def _apply_operation_sync(op: NetworkOperation, device: Device, password: str | 
 
 def _remove_operation_sync(op: NetworkOperation, object_id: str, device: Device, password: str | None) -> bool:
     """Menghapus objek dari router berdasarkan object_id internal (mis. *1A)."""
-    with _connect(device, password) as api:
+    with _api_session(device, password) as api:
         try:
             if isinstance(op, AddIpAddressOperation):
                 api.path("ip", "address").remove(object_id)
@@ -150,7 +150,7 @@ def _remove_operation_sync(op: NetworkOperation, object_id: str, device: Device,
 
 def _trigger_native_backup_sync(backup_name: str, device: Device, password: str | None) -> None:
     """Memicu pembuatan backup native (.backup) di flash router."""
-    with _connect(device, password) as api:
+    with _api_session(device, password) as api:
         # Eksekusi /system/backup/save =name=backup_name
         list(api.path("system", "backup")("save", **{"name": backup_name}))
 

@@ -226,7 +226,10 @@ async def apply_configuration(
                 db=db,
             )
             raise OrchestratorError(
-                "Eksekusi konfigurasi ditolak: Kill-switch CONFIG_APPLY_ENABLED sedang mati di server."
+                "Eksekusi konfigurasi ditolak: CONFIG_APPLY_ENABLED=false pada environment backend. "
+                "Untuk pengujian di MikroTik CHR yang terisolasi, set CONFIG_APPLY_ENABLED=true "
+                "di backend/.env lalu restart backend. Jangan aktifkan untuk router produksi "
+                "atau perangkat yang tidak terisolasi; kill-switch ini sengaja fail-closed."
             )
 
         # 4. Lab guard check

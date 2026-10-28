@@ -231,11 +231,13 @@ export function ChatWindow({
   onQuickAction,
   onConfigurationChoice,
   onRegenerateImage,
+  onApproveConfiguration,
 }: {
   messages: ChatMessage[];
   onQuickAction: (category: TaskCategory, prompt: string, useTools?: boolean) => void;
   onConfigurationChoice: (requestText: string, choice: "file" | "direct") => void;
   onRegenerateImage: (prompt: string) => void;
+  onApproveConfiguration: (configurationId: string) => void;
 }) {
   if (messages.length === 0) {
     return <WelcomeHero onQuickAction={onQuickAction} />;
@@ -284,6 +286,19 @@ export function ChatWindow({
                   <span className="text-signal-teal">↗</span>
                   <span><span className="block text-[13px] font-medium text-ink-100">Konfigurasi langsung</span><span className="block text-[11px] text-ink-400">Periksa koneksi dan dukungan router</span></span>
                 </button>
+              </div>
+            )}
+
+            {msg.configuration_proposal && (
+              <div className="mt-3 rounded-xl border border-signal-teal/25 bg-signal-teal/[0.06] p-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="text-[12px] font-semibold text-ink-100">Proposal konfigurasi</span>
+                  <span className="rounded-full border border-white/10 px-2 py-0.5 text-[10px] uppercase text-ink-300">{msg.configuration_proposal.status} · risiko {msg.configuration_proposal.risk_level}</span>
+                </div>
+                <p className="mt-1 text-[11px] text-ink-400">ID: {msg.configuration_proposal.id} · target: {msg.configuration_proposal.device_id}</p>
+                {msg.configuration_proposal.cli_preview && <pre className="mt-3 overflow-x-auto rounded-lg bg-black/30 p-3 font-mono text-[11px] leading-5 text-ink-200">{msg.configuration_proposal.cli_preview}</pre>}
+                <button type="button" onClick={() => onApproveConfiguration(msg.configuration_proposal!.id)} className="mt-3 rounded-lg border border-signal-teal/30 bg-signal-teal/15 px-3 py-2 text-[12px] font-semibold text-signal-teal hover:bg-signal-teal/25">Approve &amp; Execute</button>
+                <p className="mt-2 text-[10px] text-ink-500">Klik tombol ini menyetujui proposal lalu meminta backend menerapkan dan memverifikasi perubahan.</p>
               </div>
             )}
 

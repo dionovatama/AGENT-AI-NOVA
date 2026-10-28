@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { ArrowUp } from "lucide-react";
 import { ChatWindow } from "@/components/chat/ChatWindow";
@@ -31,7 +31,7 @@ function toActivitySteps(stage: ProcessingStage) {
   }));
 }
 
-export default function ChatPage() {
+function ChatPageContent() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [category, setCategory] = useState<TaskCategory>("general_chat");
@@ -60,6 +60,59 @@ export default function ChatPage() {
     if (wantsTools && TOOL_CALLING_CATEGORIES.includes(cat)) setUseTools(true);
   }
 
+  async function handleConfigurationChoice(requestText: string, choice: "file" | "direct") {
+    if (choice === "file") {
+      setSending(true);
+      try {
+        const result = await novaApi.chatCompletion(requestText, category, false, "file");
+        setMessages((prev) => [...prev, { role: "assistant", content: result.content, generated_files: result.generated_files }]);
+      } catch (err) {
+        setMessages((prev) => [...prev, { role: "assistant", content: "Gagal membuat file konfigurasi.", meta: { error: err instanceof NovaApiError ? err.message : "Unknown error" } }]);
+      } finally { setSending(false); }
+      return;
+    }
+    setSending(true);
+    try {
+      const result = await novaApi.chatCompletion(requestText, category, false, "direct");
+      setMessages((prev) => [...prev, {
+        role: "assistant",
+        content: result.content,
+        configuration_proposal: result.configuration_proposal,
+        meta: {
+          model_used: result.model_used,
+          used_fallback: result.used_fallback,
+          tools_used: result.tools_used,
+        },
+      }]);
+    } catch (err) {
+      setMessages((prev) => [...prev, {
+        role: "assistant",
+        content: "Gagal membuat proposal konfigurasi langsung.",
+        meta: { error: err instanceof NovaApiError ? err.message : "Periksa koneksi API dan kredensial router." },
+      }]);
+    } finally {
+      setSending(false);
+    }
+  }
+
+  async function handleApproveConfiguration(configurationId: string) {
+    setSending(true);
+    try {
+      await novaApi.approveConfiguration(configurationId);
+      const applied = await novaApi.applyConfiguration(configurationId);
+      setMessages((prev) => [...prev, {
+        role: "assistant",
+        content: applied.status === "VERIFIED" ? "Konfigurasi berhasil diterapkan dan status proposal telah diperbarui. Periksa hasil verifikasi pada proposal/audit log." : "Permintaan eksekusi selesai dengan status: " + applied.status,
+      }]);
+    } catch (err) {
+      setMessages((prev) => [...prev, { role: "assistant", content: "Eksekusi ditolak atau gagal. Periksa detail error dan audit log; jangan ulangi tanpa meninjau status router.", meta: { error: err instanceof NovaApiError ? err.message : "Unknown error" } }]);
+    } finally { setSending(false); }
+  }
+
+  function handleRegenerateImage(prompt: string) {
+    setInput(prompt);
+  }
+
   async function handleSend(e: React.FormEvent) {
     e.preventDefault();
     const text = input.trim();
@@ -84,6 +137,10 @@ export default function ChatPage() {
           role: "assistant",
           content: result.content,
           diagrams: result.diagrams,
+          generated_files: result.generated_files,
+          show_configuration_choices: result.configuration_choice === true,
+          configuration_proposal: result.configuration_proposal,
+          configuration_request: result.configuration_choice === true ? text : undefined,
           meta: {
             model_used: result.model_used,
             used_fallback: result.used_fallback,
@@ -112,11 +169,11 @@ export default function ChatPage() {
     <div className="mx-auto flex h-full min-h-0 w-full max-w-[944px] flex-col px-6 pb-[18px]">
       {isEmpty ? (
         <div className="flex min-h-0 flex-1 items-center justify-center overflow-hidden">
-          <ChatWindow messages={messages} onQuickAction={handleQuickAction} />
+          <ChatWindow messages={messages} onQuickAction={handleQuickAction} onConfigurationChoice={handleConfigurationChoice} onRegenerateImage={handleRegenerateImage} onApproveConfiguration={handleApproveConfiguration} />
         </div>
       ) : (
         <div className="nova-chat-scroll min-h-0 flex-1 overflow-y-auto pb-3 pt-1 pr-1">
-          <ChatWindow messages={messages} onQuickAction={handleQuickAction} />
+          <ChatWindow messages={messages} onQuickAction={handleQuickAction} onConfigurationChoice={handleConfigurationChoice} onRegenerateImage={handleRegenerateImage} onApproveConfiguration={handleApproveConfiguration} />
           {sending && (
             <div className="mx-auto mt-5 w-full max-w-4xl px-1">
               <NovaActivity activity="NOVA Operation" steps={toActivitySteps(processingStage)} />
@@ -209,5 +266,13 @@ export default function ChatPage() {
         Endpoint ini murni reasoning (Milestone 2). Untuk eksekusi command nyata, gunakan halaman Tools.
       </p>
     </div>
+  );
+}
+
+export default function ChatPage() {
+  return (
+    <Suspense fallback={null}>
+      <ChatPageContent />
+    </Suspense>
   );
 }

@@ -10,7 +10,7 @@ import NovaActivity from "@/components/chat/NovaActivity";
 import { novaApi, NovaApiError } from "@/lib/api";
 import type { ChatMessage, TaskCategory } from "@/lib/types";
 import { TOOL_CALLING_CATEGORIES } from "@/lib/types";
-import { generatePuterImage } from "@/lib/puter-image";
+import { generateImage } from "@/lib/image-generation";
 
 type ProcessingStage = "understand" | "process" | "respond";
 
@@ -76,12 +76,37 @@ export default function ChatPage() {
         role: "assistant",
         content: result.content,
         generated_files: result.generated_files,
+        configuration_proposal: result.configuration_proposal,
         meta: { model_used: result.model_used, used_fallback: result.used_fallback, tools_used: result.tools_used },
       }]);
     } catch (err) {
       setMessages((prev) => [...prev, {
         role: "assistant",
         content: "Permintaan konfigurasi gagal diproses.",
+        meta: { error: err instanceof NovaApiError ? err.message : "Unknown error" },
+      }]);
+    } finally {
+      setSending(false);
+    }
+  }
+
+  async function handleApproveConfiguration(configurationId: string) {
+    if (sending) return;
+    setSending(true);
+    setProcessingStage("process");
+    try {
+      await novaApi.approveConfiguration(configurationId);
+      const applied = await novaApi.applyConfiguration(configurationId);
+      setMessages((prev) => [...prev, {
+        role: "assistant",
+        content: applied.status === "VERIFIED"
+          ? "Konfigurasi berhasil diterapkan dan status proposal telah diperbarui. Periksa hasil verifikasi pada proposal/audit log."
+          : "Permintaan eksekusi selesai dengan status: " + applied.status,
+      }]);
+    } catch (err) {
+      setMessages((prev) => [...prev, {
+        role: "assistant",
+        content: "Eksekusi ditolak atau gagal. Periksa detail error dan audit log; jangan ulangi tanpa meninjau status router.",
         meta: { error: err instanceof NovaApiError ? err.message : "Unknown error" },
       }]);
     } finally {
@@ -97,20 +122,20 @@ export default function ChatPage() {
     setProcessingStage("process");
     const startedAt = performance.now();
     try {
-      const imageUrl = await generatePuterImage(cleanPrompt);
+      const imageUrl = (await generateImage(cleanPrompt)).imageDataUrl;
       setProcessingStage("respond");
       setMessages((prev) => [...prev, {
         role: "assistant",
         content: "",
         image_url: imageUrl,
         image_prompt: cleanPrompt,
-        meta: { model_used: "Puter.js Image Generation" },
+        meta: { model_used: "Cloudflare FLUX Image Generation" },
       }]);
       setLastLatencyMs(Math.round(performance.now() - startedAt));
     } catch (err) {
       setMessages((prev) => [...prev, {
         role: "assistant",
-        content: "Gagal membuat gambar. Periksa koneksi atau akun Puter.js, lalu coba lagi.",
+        content: "Gagal membuat gambar. Lihat detail error di bawah, lalu coba lagi.",
         meta: { error: err instanceof Error ? err.message : "Unknown error" },
       }]);
     } finally {
@@ -145,21 +170,33 @@ export default function ChatPage() {
         return;
       }
 
+      // Explicit slash command takes priority over the legacy image-intent heuristic.
+      const slashMatch = text.match(/^\/(image|img|gambar)\s+([\s\S]+)/i);
+      if (!slashMatch && /^\/(image|img|gambar)$/i.test(text)) {
+        setMessages((prev) => [...prev, {
+          role: "assistant",
+          content: "Format: /image <deskripsi gambar>",
+        }]);
+        return;
+      }
+
       // Match clear image-generation intent; normal chat stays on the existing AI Gateway.
-      const wantsImage = /\b(generate|create|draw|make|render)\b.{0,100}\b(image|picture|illustration|artwork|poster|logo|wallpaper)\b|\b(buatkan|buat|gambar|ilustrasikan|lukiskan|hasilkan|bikin)\b.{0,100}\b(gambar|ilustrasi|poster|logo|wallpaper|foto|ilustrasi)\b|\b(gambar|ilustrasi|poster|logo|wallpaper)\b.{0,80}\b(buatkan|buat|generate|bikin|desain|gambarkan)\b/i.test(text);
+      const wantsImage = Boolean(slashMatch) || /\b(generate|create|draw|make|render)\b.{0,100}\b(image|picture|illustration|artwork|poster|logo|wallpaper)\b|\b(buatkan|buat|gambar|ilustrasikan|lukiskan|hasilkan|bikin)\b.{0,100}\b(gambar|ilustrasi|poster|logo|wallpaper|foto|ilustrasi)\b|\b(gambar|ilustrasi|poster|logo|wallpaper)\b.{0,80}\b(buatkan|buat|generate|bikin|desain|gambarkan)\b/i.test(text);
       if (wantsImage) {
-        const imagePrompt = text
-          .replace(/^(tolong\s+)?(buatkan|buat|bikin|gambarkan|hasilkan|generate|create|draw|make|render)\s+(saya\s+)?(sebuah\s+)?(gambar|image|picture|ilustrasi|illustration|poster|logo|wallpaper|foto)\s*/i, "")
-          .trim();
+        const imagePrompt = slashMatch
+          ? slashMatch[2].trim()
+          : text
+              .replace(/^(tolong\s+)?(buatkan|buat|bikin|gambarkan|hasilkan|generate|create|draw|make|render)\s+(saya\s+)?(sebuah\s+)?(gambar|image|picture|ilustrasi|illustration|poster|logo|wallpaper|foto)\s*/i, "")
+              .trim();
         const prompt = imagePrompt || text;
-        const imageUrl = await generatePuterImage(prompt);
+        const imageUrl = (await generateImage(prompt)).imageDataUrl;
         setProcessingStage("respond");
         setMessages((prev) => [...prev, {
           role: "assistant",
           content: "",
           image_url: imageUrl,
           image_prompt: prompt,
-          meta: { model_used: "Puter.js Image Generation" },
+          meta: { model_used: "Cloudflare FLUX Image Generation" },
         }]);
         setLastLatencyMs(Math.round(performance.now() - startedAt));
         return;
@@ -207,11 +244,11 @@ export default function ChatPage() {
     <div className="mx-auto flex h-full min-h-0 w-full max-w-[944px] flex-col px-6 pb-[18px]">
       {isEmpty ? (
         <div className="flex min-h-0 flex-1 items-center justify-center overflow-hidden">
-          <ChatWindow messages={messages} onQuickAction={handleQuickAction} onConfigurationChoice={handleConfigurationChoice} onRegenerateImage={handleImageGeneration} />
+          <ChatWindow messages={messages} onQuickAction={handleQuickAction} onConfigurationChoice={handleConfigurationChoice} onRegenerateImage={handleImageGeneration} onApproveConfiguration={handleApproveConfiguration} />
         </div>
       ) : (
         <div className="nova-chat-scroll min-h-0 flex-1 overflow-y-auto pb-3 pt-1 pr-1">
-          <ChatWindow messages={messages} onQuickAction={handleQuickAction} onConfigurationChoice={handleConfigurationChoice} onRegenerateImage={handleImageGeneration} />
+          <ChatWindow messages={messages} onQuickAction={handleQuickAction} onConfigurationChoice={handleConfigurationChoice} onRegenerateImage={handleImageGeneration} onApproveConfiguration={handleApproveConfiguration} />
           {sending && (
             <div className="mx-auto mt-5 w-full max-w-4xl px-1">
               <NovaActivity activity="NOVA Operation" steps={toActivitySteps(processingStage)} />
@@ -312,7 +349,7 @@ export default function ChatPage() {
       </div>
 
       <p className={`mb-2 mt-1 text-center text-[10px] text-ink-500/80 ${messages.length === 0 ? "hidden" : ""}`}>
-        Chat mendukung pembuatan file konfigurasi MikroTik secara offline. File harus ditinjau sebelum diimpor; NOVA tidak menerapkannya ke router.
+        Mode file membuat konfigurasi offline untuk ditinjau sebelum diimpor. Mode langsung menampilkan proposal dan hanya menjalankan perubahan setelah persetujuan eksplisit.
       </p>
     </div>
   );
