@@ -82,7 +82,8 @@ def generate(payload: LinuxGeneratorRequest, current_user: User = Depends(get_cu
     if "bind9" in modules:
         packages += ["bind9", "dnsutils"]
         try:
-            listen = ipaddress.ip_address(payload.dns_listen_address)
+            # BIND's listen-on directive accepts IPv4 addresses only.
+            listen = ipaddress.IPv4Address(payload.dns_listen_address)
             forwarders = [
                 ipaddress.ip_address(item.strip())
                 for item in payload.dns_forwarders.split(";")
