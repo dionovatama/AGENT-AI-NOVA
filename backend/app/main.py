@@ -9,7 +9,7 @@ Client → FastAPI → Auth → PostgreSQL
 
 import asyncio
 import sys
-from app.api import auth, chat, configurations, devices, tools, mikrotik_generator, images, linux_generator
+from app.api import auth, chat, configurations, devices, tools, mikrotik_generator, images, linux_generator, bind9_generator
 
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
@@ -67,7 +67,7 @@ app.include_router(tools.router)
 app.include_router(devices.router)
 app.include_router(configurations.router)
 app.include_router(mikrotik_generator.router)
-app.include_router(linux_generator.router)
+app.include_router(linux_generator.router)\napp.include_router(bind9_generator.router)
 app.include_router(images.router)
 
 tool_manager.register(ping_tool)
