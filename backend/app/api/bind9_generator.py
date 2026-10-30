@@ -168,7 +168,7 @@ def _render_zone(p: Bind9Request, reverse: bool = False) -> str:
         for ip, host in [(p.master_ip, p.primary_ns), (p.slave_ip, p.secondary_ns)]:
             address = ipaddress.IPv4Address(ip)
             if address in network:
-                lines.append(f"{address.packed[-1]} IN PTR {host}.{p.domain}.")
+                host_octets = str(address).split(".")[network.prefixlen // 8:]\n                owner = ".".join(reversed(host_octets)) or "@"\n                lines.append(f"{owner} IN PTR {host}.{p.domain}.")
     else:
         for record in records:
             name = "@" if record.name == "@" else record.name
