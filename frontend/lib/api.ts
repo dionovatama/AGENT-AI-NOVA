@@ -62,24 +62,12 @@ export interface HealthResponse {
   environment: string;
 }
 
-export type LinuxGeneratorModule = "packages" | "ssh" | "bind9" | "firewall";
-export interface LinuxGeneratorRequest { distro: "debian" | "ubuntu"; modules: LinuxGeneratorModule[]; hostname: string; ssh_port: number; dns_listen_address: string; dns_forwarders: string; firewall_ssh: boolean; }
+export type LinuxGeneratorModule = "packages" | "ssh" | "firewall";
+export interface LinuxGeneratorRequest { distro: "debian" | "ubuntu"; modules: LinuxGeneratorModule[]; hostname: string; ssh_port: number; firewall_ssh: boolean; }
 export interface LinuxGeneratedFile { filename: string; mime_type: string; content: string; }
 export interface LinuxGeneratorResponse { distro: string; modules: string[]; files: LinuxGeneratedFile[]; warnings: string[]; }
 
 
-export type Bind9Profile = "resolver" | "master" | "slave" | "master-slave" | "custom";
-export interface Bind9Record { record_type: "A" | "AAAA" | "CNAME" | "MX" | "NS" | "PTR" | "TXT"; name: string; value: string; priority?: number | null; ttl?: number; }
-export interface Bind9GeneratorRequest {
-  profile: Bind9Profile; domain: string; master_ip: string; slave_ip: string;
-  network_cidr: string; resolver_listen: string; allow_recursion: string[];
-  forwarders: string[]; forward_first: boolean; ipv6_listen: "any" | "none";
-  primary_ns: string; secondary_ns: string; soa_contact: string;
-  records: Bind9Record[]; include_reverse_zone: boolean;
-  zone_config_target: "named.conf.local" | "named.conf.default-zones";
-}
-export interface Bind9GeneratedFile { filename: string; mime_type: string; content: string; }
-export interface Bind9GeneratorResponse { profile: Bind9Profile; files: Bind9GeneratedFile[]; warnings: string[]; }
 export type MikrotikGeneratorModule = "ip" | "dhcp" | "nat" | "firewall";
 
 export interface MikrotikGeneratorRequest {
@@ -174,8 +162,6 @@ export const novaApi = {
     request<ConfigurationProposal>(`/configurations/${configurationId}/apply`, { method: "POST" }),
 
   generateLinuxConfig: (payload: LinuxGeneratorRequest) => request<LinuxGeneratorResponse>("/linux-config-generator/generate", { method: "POST", body: JSON.stringify(payload) }),
-
-  generateBind9Config: (payload: Bind9GeneratorRequest) => request<Bind9GeneratorResponse>("/bind9-config-generator/generate", { method: "POST", body: JSON.stringify(payload) }),
 
   generateMikrotikConfig: (payload: MikrotikGeneratorRequest) =>
     request<MikrotikGeneratorResponse>("/mikrotik-config-generator/generate", {
