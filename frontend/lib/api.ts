@@ -80,7 +80,7 @@ export interface Bind9GeneratorRequest {
 }
 export interface Bind9GeneratedFile { filename: string; mime_type: string; content: string; }
 export interface Bind9GeneratorResponse { profile: Bind9Profile; files: Bind9GeneratedFile[]; warnings: string[]; }
-\nexport type MikrotikGeneratorModule = "ip" | "dhcp" | "nat" | "firewall";
+export type MikrotikGeneratorModule = "ip" | "dhcp" | "nat" | "firewall";
 
 export interface MikrotikGeneratorRequest {
   routeros_version: "6" | "7";
