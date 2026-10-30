@@ -65,6 +65,20 @@ class Bind9Request(BaseModel):
         except ValueError as exc:
             raise ValueError("Alamat harus berupa IPv4 yang valid.") from exc
 
+    @field_validator("primary_ns", "secondary_ns")
+    @classmethod
+    def valid_ns_label(cls, value: str) -> str:
+        if not re.fullmatch(r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?", value):
+            raise ValueError("Label nameserver tidak valid.")
+        return value
+
+    @field_validator("soa_contact")
+    @classmethod
+    def valid_soa_contact(cls, value: str) -> str:
+        if not re.fullmatch(r"[A-Za-z0-9-]+(?:\\.[A-Za-z0-9-]+)*", value):
+            raise ValueError("Label kontak SOA tidak valid; gunakan hostmaster atau admin.example.")
+        return value
+
     @field_validator("network_cidr")
     @classmethod
     def valid_network(cls, value: str) -> str:
