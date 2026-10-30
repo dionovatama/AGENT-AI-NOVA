@@ -5,12 +5,11 @@ import { Download, FileCode2, FileText, ShieldAlert } from "lucide-react";
 import { novaApi, NovaApiError } from "@/lib/api";
 
 type OutputFile = { filename: string; mime_type: string; content: string };
-type Module = "packages" | "ssh" | "bind9" | "firewall";
+type Module = "packages" | "ssh" | "firewall";
 
 const availableModules: { id: Module; label: string }[] = [
   { id: "packages", label: "Paket dasar" },
   { id: "ssh", label: "SSH server" },
-  { id: "bind9", label: "BIND9 DNS" },
   { id: "firewall", label: "Firewall UFW" },
 ];
 
