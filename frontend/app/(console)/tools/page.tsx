@@ -38,7 +38,8 @@ export default function ToolsPage() {
   const [platformFilter, setPlatformFilter] = useState<PlatformFilter>("all");
   const [permissionFilter, setPermissionFilter] = useState<PermissionFilter>("all");
   const [generatorOpen, setGeneratorOpen] = useState(false);
-  const [linuxGeneratorOpen, setLinuxGeneratorOpen] = useState(false);\n  const [bind9GeneratorOpen, setBind9GeneratorOpen] = useState(false);
+  const [linuxGeneratorOpen, setLinuxGeneratorOpen] = useState(false);
+  const [bind9GeneratorOpen, setBind9GeneratorOpen] = useState(false);
   const [imageStudioOpen, setImageStudioOpen] = useState(false);
 
   useEffect(() => {
