@@ -119,6 +119,32 @@ def _zone_name(name: str, domain: str) -> str:
     return name + "." + domain + "."
 
 
+def _ns_target(value: str, p: Bind9Request) -> str:
+    """Resolve an NS RDATA value to a nameserver hostname (FQDN).
+
+    NS records must point to hostnames, not IP addresses. Configured master
+    and slave IPs are mapped to their corresponding nameserver labels.
+    Unknown IP addresses are rejected rather than being treated as DNS names.
+    """
+    candidate = value.strip().rstrip(".")
+    try:
+        address = ipaddress.ip_address(candidate)
+    except ValueError:
+        return _zone_name(value, p.domain)
+
+    if address == ipaddress.ip_address(p.master_ip):
+        return _zone_name(p.primary_ns, p.domain)
+    if address == ipaddress.ip_address(p.slave_ip):
+        return _zone_name(p.secondary_ns, p.domain)
+    raise HTTPException(
+        status_code=422,
+        detail=(
+            f"Record NS harus berisi hostname nameserver (mis. "
+            f"{_zone_name(p.primary_ns, p.domain)}), bukan alamat IP '{candidate}'."
+        ),
+    )
+
+
 def _resolver_options(p: Bind9Request) -> str:
     try:
         listen = ipaddress.IPv4Address(p.resolver_listen)
@@ -194,7 +220,9 @@ def _render_zone(p: Bind9Request, reverse: bool = False) -> str:
         for record in records:
             name = "@" if record.name == "@" else record.name
             value = record.value
-            if record.record_type in ("CNAME", "NS", "PTR"):
+            if record.record_type == "NS":
+                value = _ns_target(value, p)
+            elif record.record_type in ("CNAME", "PTR"):
                 value = _zone_name(value, p.domain)
             elif record.record_type == "MX":
                 value = f"{record.priority or 10} {_zone_name(value, p.domain)}"
