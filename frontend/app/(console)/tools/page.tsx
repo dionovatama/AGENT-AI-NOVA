@@ -8,7 +8,8 @@ import { ToolCard } from "@/components/tools/ToolCard";
 import { ToolRunModal } from "@/components/tools/ToolRunModal";
 import { ImageStudio } from "@/components/tools/ImageStudio";
 import { MikrotikConfigGenerator } from "@/components/tools/MikrotikConfigGenerator";
-import { LinuxConfigGenerator } from "@/components/tools/LinuxConfigGenerator";\nimport { Bind9ConfigGenerator } from "@/components/tools/Bind9ConfigGenerator";
+import { LinuxConfigGenerator } from "@/components/tools/LinuxConfigGenerator";
+import { Bind9ConfigGenerator } from "@/components/tools/Bind9ConfigGenerator";
 import { novaApi, NovaApiError } from "@/lib/api";
 import { KNOWN_TOOLS, type KnownToolSpec, type PermissionLevel } from "@/lib/types";
 
