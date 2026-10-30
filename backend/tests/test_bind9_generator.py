@@ -72,3 +72,13 @@ def test_preview_only_manifest():
     manifest = by_name(result, "manifest.json").content
     assert '"apply_automatically": false' in manifest
     assert "restart" not in manifest.lower()
+
+
+def test_dns_record_rejects_config_injection_characters():
+    from pydantic import ValidationError
+    from app.api.bind9_generator import DNSRecord
+
+    with pytest.raises(ValidationError):
+        DNSRecord(record_type="TXT", name="bad;include", value="safe")
+    with pytest.raises(ValidationError):
+        DNSRecord(record_type="TXT", name="note", value="ok\\ninclude")
