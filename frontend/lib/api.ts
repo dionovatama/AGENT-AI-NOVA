@@ -175,7 +175,9 @@ export const novaApi = {
 
   generateLinuxConfig: (payload: LinuxGeneratorRequest) => request<LinuxGeneratorResponse>("/linux-config-generator/generate", { method: "POST", body: JSON.stringify(payload) }),
 
-  generateBind9Config: (payload: Bind9GeneratorRequest) => request<Bind9GeneratorResponse>("/bind9-config-generator/generate", { method: "POST", body: JSON.stringify(payload) }),\n\n  generateMikrotikConfig: (payload: MikrotikGeneratorRequest) =>
+  generateBind9Config: (payload: Bind9GeneratorRequest) => request<Bind9GeneratorResponse>("/bind9-config-generator/generate", { method: "POST", body: JSON.stringify(payload) }),
+
+  generateMikrotikConfig: (payload: MikrotikGeneratorRequest) =>
     request<MikrotikGeneratorResponse>("/mikrotik-config-generator/generate", {
       method: "POST",
       body: JSON.stringify(payload),
