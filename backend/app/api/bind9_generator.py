@@ -159,7 +159,12 @@ def _default_records(p: Bind9Request) -> list[DNSRecord]:
 
 def _render_zone(p: Bind9Request, reverse: bool = False) -> str:
     domain = _reverse_zone(ipaddress.IPv4Network(p.network_cidr)) if reverse else p.domain
-    records = list(p.records) if p.records else _default_records(p)\n    if not reverse and not any(record.record_type == "NS" and record.name == "@" for record in records):\n        records.extend([\n            DNSRecord(record_type="NS", name="@", value=p.primary_ns + "." + p.domain + "."),\n            DNSRecord(record_type="NS", name="@", value=p.secondary_ns + "." + p.domain + "."),\n        ])
+    records = list(p.records) if p.records else _default_records(p)
+    if not reverse and not any(record.record_type == "NS" and record.name == "@" for record in records):
+        records.extend([
+            DNSRecord(record_type="NS", name="@", value=p.primary_ns + "." + p.domain + "."),
+            DNSRecord(record_type="NS", name="@", value=p.secondary_ns + "." + p.domain + "."),
+        ])
     serial = "2026103001"
     contact = p.soa_contact.replace("@", ".")
     lines = [
@@ -182,7 +187,9 @@ def _render_zone(p: Bind9Request, reverse: bool = False) -> str:
         for ip, host in [(p.master_ip, p.primary_ns), (p.slave_ip, p.secondary_ns)]:
             address = ipaddress.IPv4Address(ip)
             if address in network:
-                host_octets = str(address).split(".")[network.prefixlen // 8:]\n                owner = ".".join(reversed(host_octets)) or "@"\n                lines.append(f"{owner} IN PTR {host}.{p.domain}.")
+                host_octets = str(address).split(".")[network.prefixlen // 8:]
+                owner = ".".join(reversed(host_octets)) or "@"
+                lines.append(f"{owner} IN PTR {host}.{p.domain}.")
     else:
         for record in records:
             name = "@" if record.name == "@" else record.name
