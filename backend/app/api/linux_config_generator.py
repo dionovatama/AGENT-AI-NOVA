@@ -24,10 +24,8 @@ _SAFE_IP = re.compile(r"^[0-9a-fA-F:.]{2,45}$")
 class LinuxGeneratorRequest(BaseModel):
     distro: Literal["debian", "ubuntu"] = "debian"
     output_mode: Literal["script", "config", "both"] = "both"
-    modules: list[Literal["ssh", "bind9", "ufw"]] = Field(min_length=1, max_length=3)
+    modules: list[Literal["ssh", "ufw"]] = Field(min_length=1, max_length=2)
     ssh_port: int = Field(default=22, ge=1, le=65535)
-    dns_listen_on: str = Field(default="127.0.0.1", min_length=2, max_length=45)
-    dns_forwarder: str = Field(default="1.1.1.1", min_length=2, max_length=45)
     ufw_allow_ssh: bool = True
 
 
@@ -45,14 +43,6 @@ class LinuxGeneratorResponse(BaseModel):
     warnings: list[str]
 
 
-def _validate_ip(value: str, field: str) -> str:
-    import ipaddress
-    try:
-        return str(ipaddress.ip_address(value))
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail=f"{field} harus berupa alamat IP yang valid.") from exc
-
-
 def _native_files(payload: LinuxGeneratorRequest) -> list[GeneratedFile]:
     files: list[GeneratedFile] = []
     if "ssh" in payload.modules:
@@ -65,26 +55,6 @@ def _native_files(payload: LinuxGeneratorRequest) -> list[GeneratedFile]:
                 "MaxAuthTries 4\n"
                 "X11Forwarding no\n"
                 "AllowTcpForwarding no\n"
-            ),
-        ))
-    if "bind9" in payload.modules:
-        listen = _validate_ip(payload.dns_listen_on, "dns_listen_on")
-        forwarder = _validate_ip(payload.dns_forwarder, "dns_forwarder")
-        files.append(GeneratedFile(
-            filename="named.conf.options",
-            mime_type="text/plain",
-            content=(
-                "// NOVA-generated BIND9 options. Review ACLs before deployment.\n"
-                "options {\n"
-                "    directory \"/var/cache/bind\";\n"
-                f"    listen-on {{ {listen}; }};\n"
-                "    listen-on-v6 { none; };\n"
-                "    recursion yes;\n"
-                "    allow-query { localhost; };\n"
-                "    allow-recursion { localhost; };\n"
-                f"    forwarders {{ {forwarder}; }};\n"
-                "    dnssec-validation auto;\n"
-                "};\n"
             ),
         ))
     if "ufw" in payload.modules:
@@ -104,8 +74,6 @@ def _script(payload: LinuxGeneratorRequest, native_files: list[GeneratedFile]) -
     packages = []
     if "ssh" in payload.modules:
         packages.append("openssh-server")
-    if "bind9" in payload.modules:
-        packages.append("bind9")
     if "ufw" in payload.modules:
         packages.append("ufw")
     lines = [
@@ -136,8 +104,7 @@ def _script(payload: LinuxGeneratorRequest, native_files: list[GeneratedFile]) -
             target = "/etc/ssh/sshd_config.d/60-nova-hardening.conf"
             service = "ssh"
         else:
-            target = "/etc/bind/named.conf.options"
-            service = "bind9"
+            continue
         lines += [
             f"target={shlex.quote(target)}",
             "install -d -m 0755 \"$(dirname \"$target\")\"",
@@ -152,10 +119,6 @@ def _script(payload: LinuxGeneratorRequest, native_files: list[GeneratedFile]) -
         if service == "ssh":
             lines += [
                 "if sshd -t; then systemctl reload ssh || systemctl restart ssh; else echo 'SSH config invalid; restore the backup before continuing.' >&2; exit 1; fi",
-            ]
-        else:
-            lines += [
-                "if named-checkconf; then systemctl reload bind9 || systemctl restart bind9; else echo 'BIND9 config invalid; restore the backup before continuing.' >&2; exit 1; fi",
             ]
         lines.append("")
     lines += ["echo 'NOVA configuration script completed. Verify each service status.'", ""]
@@ -184,8 +147,6 @@ def generate_linux_configuration(
         "Periksa isi file sebelum digunakan; generator tidak menguji konfigurasi pada host target.",
         "SSH: PermitRootLogin no dapat mengubah cara administrasi. Pastikan akun sudo non-root sudah bisa login sebelum menerapkan.",
     ]
-    if "bind9" in payload.modules:
-        warnings.append("BIND9 hanya mengizinkan query/recursion dari localhost secara default. Ubah ACL dengan hati-hati jika DNS harus diakses klien LAN.")
     if "ufw" in payload.modules:
         warnings.append("Aturan UFW hanya dibuat sebagai file review; script tidak mengaktifkan firewall untuk menghindari risiko memutus koneksi.")
     return LinuxGeneratorResponse(
