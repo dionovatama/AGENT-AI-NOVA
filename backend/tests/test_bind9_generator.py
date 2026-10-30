@@ -30,7 +30,7 @@ def test_master_generates_forward_and_reverse_zone_files():
     result = run(profile="master", domain="dio-tkj.id", master_ip="192.168.133.207",
                  slave_ip="192.168.133.107", network_cidr="192.168.133.0/24")
     names = {f.filename for f in result.files}
-    assert {"named.conf.local", "db.dio-tkj.id", "db.133", "README.txt", "manifest.json"} <= names
+    assert {"named.conf.local", "db.dio-tkj.id", "db.133.168.192", "README.txt", "manifest.json"} <= names
     assert 'type master;' in by_name(result, "named.conf.local").content
     assert "allow-transfer { 192.168.133.107; };" in by_name(result, "named.conf.local").content
 
