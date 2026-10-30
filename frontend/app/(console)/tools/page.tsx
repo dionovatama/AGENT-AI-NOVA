@@ -8,7 +8,7 @@ import { ToolCard } from "@/components/tools/ToolCard";
 import { ToolRunModal } from "@/components/tools/ToolRunModal";
 import { ImageStudio } from "@/components/tools/ImageStudio";
 import { MikrotikConfigGenerator } from "@/components/tools/MikrotikConfigGenerator";
-import { LinuxConfigGenerator } from "@/components/tools/LinuxConfigGenerator";
+import { LinuxConfigGenerator } from "@/components/tools/LinuxConfigGenerator";\nimport { Bind9ConfigGenerator } from "@/components/tools/Bind9ConfigGenerator";
 import { novaApi, NovaApiError } from "@/lib/api";
 import { KNOWN_TOOLS, type KnownToolSpec, type PermissionLevel } from "@/lib/types";
 
@@ -37,7 +37,7 @@ export default function ToolsPage() {
   const [platformFilter, setPlatformFilter] = useState<PlatformFilter>("all");
   const [permissionFilter, setPermissionFilter] = useState<PermissionFilter>("all");
   const [generatorOpen, setGeneratorOpen] = useState(false);
-  const [linuxGeneratorOpen, setLinuxGeneratorOpen] = useState(false);
+  const [linuxGeneratorOpen, setLinuxGeneratorOpen] = useState(false);\n  const [bind9GeneratorOpen, setBind9GeneratorOpen] = useState(false);
   const [imageStudioOpen, setImageStudioOpen] = useState(false);
 
   useEffect(() => {
@@ -240,6 +240,12 @@ export default function ToolsPage() {
                 <div className="mt-4 flex items-center justify-between border-t border-white/[0.06] pt-3"><span className="text-[10px] text-ink-500">.sh · native config · JSON</span><span className="text-[11px] text-ink-300 group-hover:text-ink-100">Open tool <ArrowRight size={12} className="inline"/></span></div>
               </button>
             )}
+            {(platformFilter === "all" || platformFilter === "linux") && permissionFilter === "all" && (!normalizedQuery || "bind9 dns resolver authoritative master slave generator".includes(normalizedQuery)) && (
+              <button type="button" onClick={() => setBind9GeneratorOpen(true)} className="group flex min-h-[174px] flex-col justify-between rounded-lg border border-white/[0.07] bg-[linear-gradient(145deg,rgba(18,24,35,0.96),rgba(12,15,24,0.98))] p-4 text-left transition hover:-translate-y-0.5 hover:border-signal-blue/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal-blue/50">
+                <div><div className="mb-3 flex items-start justify-between gap-3"><div className="flex items-center gap-2.5"><span className="flex h-8 w-8 items-center justify-center rounded-md border border-signal-blue/20 bg-signal-blue/[0.08] text-signal-blue"><FileCode2 size={15}/></span><div><h3 className="text-[13px] font-semibold text-ink-100">BIND9 Configuration Generator</h3><p className="mt-0.5 font-mono text-[10px] text-ink-500">DNS Resolver · Authoritative</p></div></div><span className="rounded-md border border-signal-blue/20 px-2 py-1 text-[10px] text-signal-blue">Offline</span></div><p className="text-[12px] leading-[1.65] text-ink-300">Generate Resolver, Master, Slave, Master + Slave, dan custom DNS zone files.</p></div>
+                <div className="mt-4 flex items-center justify-between border-t border-white/[0.06] pt-3"><span className="text-[10px] text-ink-500">BIND9 · Debian</span><span className="text-[11px] text-ink-300 group-hover:text-ink-100">Open tool <ArrowRight size={12} className="inline"/></span></div>
+              </button>
+            )}
             {filteredTools.map((tool) => (
               <ToolCard key={tool.name} tool={tool} onRun={setActiveTool} />
             ))}
@@ -313,6 +319,14 @@ export default function ToolsPage() {
         </div>
       )}
 
+      {bind9GeneratorOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-3 backdrop-blur-sm sm:p-6" onMouseDown={(event) => { if (event.target === event.currentTarget) setBind9GeneratorOpen(false); }}>
+          <section role="dialog" aria-modal="true" aria-labelledby="bind9-generator-title" className="max-h-[92vh] w-full max-w-6xl overflow-y-auto rounded-xl border border-base-700 bg-base-900 shadow-2xl">
+            <div className="sticky top-0 z-10 flex items-center justify-between border-b border-base-700 bg-base-900/95 px-4 py-3"><div className="flex items-center gap-2 text-sm font-semibold text-ink-100"><FileCode2 size={16} className="text-signal-blue"/><h2 id="bind9-generator-title">BIND9 Configuration Generator</h2></div><button type="button" onClick={() => setBind9GeneratorOpen(false)} aria-label="Close BIND9 generator" className="rounded-md border border-base-700 p-2 text-ink-400 hover:text-ink-100"><X size={15}/></button></div>
+            <div className="p-2 sm:p-3"><Bind9ConfigGenerator/></div>
+          </section>
+        </div>
+      )}
       {linuxGeneratorOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-3 backdrop-blur-sm sm:p-6" onMouseDown={(event) => { if (event.target === event.currentTarget) setLinuxGeneratorOpen(false); }}>
           <section role="dialog" aria-modal="true" aria-labelledby="linux-generator-title" className="max-h-[92vh] w-full max-w-6xl overflow-y-auto rounded-xl border border-base-700 bg-base-900 shadow-2xl">
