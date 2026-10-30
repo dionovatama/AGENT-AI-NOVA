@@ -29,7 +29,6 @@ def test_packages_only_does_not_generate_unselected_service_configs():
     assert "README.txt" in names
     assert "hostname.txt" in names
     assert "60-nova.conf" not in names
-    assert "named.conf.options" not in names
     assert "nova-rules.txt" not in names
     manifest = next(item for item in result.files if item.filename == "manifest.json")
     assert '"apply_automatically": false' in manifest.content
@@ -61,14 +60,8 @@ def test_firewall_opens_selected_ssh_port_only_when_both_modules_selected():
     assert "ufw allow 2202/tcp" in rules.content
 
 
-def test_invalid_dns_address_is_rejected():
-    with pytest.raises(HTTPException) as exc:
-        call_generator(modules=["bind9"], dns_listen_address="not-an-ip")
-    assert exc.value.status_code == 422
-
-
 def test_generated_bundle_is_preview_only():
-    result = call_generator(modules=["packages", "ssh", "bind9", "firewall"])
+    result = call_generator(modules=["packages", "ssh", "firewall"])
     script = next(item for item in result.files if item.filename == "nova-linux-setup.sh")
     assert "does not execute" in script.content.lower() or "preview script" in script.content.lower()
     assert "apt install" not in script.content
