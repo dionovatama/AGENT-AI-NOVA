@@ -5,7 +5,7 @@ import { novaApi } from "@/lib/api";
 import {
   Activity, Cable, CircleHelp, Cloud, Cpu, Gauge, Globe2, MessageSquare, Send, Bot, Loader2,
   Maximize2, Minus, Plus, RadioTower, Router, Save, Search, Server,
-  ShieldCheck, Wifi, X, Pencil, Trash2, Network, RefreshCw,
+  ShieldCheck, Wifi, X, Pencil, Trash2, Network, RefreshCw, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Minimize2,
 } from "lucide-react";
 
 type DeviceType = "router" | "switch" | "server" | "access-point" | "client" | "gateway";
@@ -50,6 +50,10 @@ export default function NetworkPage() {
   const [connectMode, setConnectMode] = useState(false);
   const [connectFrom, setConnectFrom] = useState<string | null>(null);
   const [query, setQuery] = useState("");
+  const [leftPanelOpen, setLeftPanelOpen] = useState(true);
+  const [rightPanelOpen, setRightPanelOpen] = useState(true);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const workspaceRef = useRef<HTMLDivElement>(null);
   const [copilotOpen, setCopilotOpen] = useState(false);
   const [copilotInput, setCopilotInput] = useState("");
   const [copilotBusy, setCopilotBusy] = useState(false);
@@ -155,6 +159,21 @@ export default function NetworkPage() {
   const nodeById = (id: string) => nodes.find((node) => node.id === id);
   const connectedCount = current ? edges.filter((edge) => edge.source === current.id || edge.target === current.id).length : 0;
 
+  useEffect(() => {
+    const syncFullscreen = () => setIsFullscreen(document.fullscreenElement === workspaceRef.current);
+    document.addEventListener("fullscreenchange", syncFullscreen);
+    return () => document.removeEventListener("fullscreenchange", syncFullscreen);
+  }, []);
+
+  const toggleFullscreen = async () => {
+    try {
+      if (document.fullscreenElement === workspaceRef.current) await document.exitFullscreen();
+      else await workspaceRef.current?.requestFullscreen();
+    } catch (error) {
+      console.error("Unable to toggle Network workspace fullscreen:", error);
+    }
+  };
+
   const sendCopilotMessage = async (event: React.FormEvent) => {
     event.preventDefault();
     const prompt = copilotInput.trim();
@@ -196,6 +215,9 @@ USER REQUEST: ${prompt}`;
             <div><p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-cyan-300">NOVA / Infrastructure</p><h1 className="text-base font-semibold tracking-wide">Network Management</h1></div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
+            <button type="button" onClick={() => setLeftPanelOpen((value) => !value)} title={leftPanelOpen ? "Hide inventory panel" : "Show inventory panel"} className="flex items-center gap-1.5 rounded-md border border-white/[0.09] px-2.5 py-2 text-[11px] text-slate-300 hover:bg-white/[0.05]">{leftPanelOpen ? <PanelLeftClose size={14}/> : <PanelLeftOpen size={14}/>} <span className="hidden sm:inline">Inventory</span></button>
+            <button type="button" onClick={() => setRightPanelOpen((value) => !value)} title={rightPanelOpen ? "Hide inspector panel" : "Show inspector panel"} className="flex items-center gap-1.5 rounded-md border border-white/[0.09] px-2.5 py-2 text-[11px] text-slate-300 hover:bg-white/[0.05]">{rightPanelOpen ? <PanelRightClose size={14}/> : <PanelRightOpen size={14}/>} <span className="hidden sm:inline">Inspector</span></button>
+            <button type="button" onClick={toggleFullscreen} title={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"} className="flex items-center gap-1.5 rounded-md border border-cyan-300/20 bg-cyan-300/[0.06] px-2.5 py-2 text-[11px] text-cyan-100 hover:bg-cyan-300/[0.12]">{isFullscreen ? <Minimize2 size={14}/> : <Maximize2 size={14}/>} <span className="hidden sm:inline">{isFullscreen ? "Exit Focus" : "Focus Mode"}</span></button>
             <span className="mr-1 flex items-center gap-1.5 rounded-md border border-white/[0.08] bg-white/[0.03] px-2.5 py-2 text-[11px] text-slate-400"><span className="h-1.5 w-1.5 rounded-full bg-amber-400" />Local inventory</span>
             <button type="button" title="Discovery belum terhubung ke backend" className="flex items-center gap-1.5 rounded-md border border-white/[0.09] px-3 py-2 text-[11px] text-slate-400"><RefreshCw size={13}/> Auto Discover <span className="text-[9px] text-amber-300">SOON</span></button>
             <button type="button" onClick={() => setConnectMode((value) => !value)} className={`flex items-center gap-1.5 rounded-md border px-3 py-2 text-[11px] transition ${connectMode ? "border-cyan-300/50 bg-cyan-300/10 text-cyan-200" : "border-white/[0.09] text-slate-300 hover:bg-white/[0.05]"}`}><Cable size={13}/>{connectMode ? "Select devices…" : "Wiring"}</button>
@@ -215,7 +237,7 @@ USER REQUEST: ${prompt}`;
       </header>
 
       <div className="flex min-h-0 flex-1">
-        <aside className="hidden w-[218px] shrink-0 flex-col border-r border-white/[0.07] bg-[#0a0d13] p-3 lg:flex">
+        {leftPanelOpen && <aside className="w-[218px] shrink-0 flex-col border-r border-white/[0.07] bg-[#0a0d13] p-3 hidden lg:flex">
           <div className="relative mb-4"><Search size={13} className="absolute left-3 top-2.5 text-slate-500"/><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search inventory…" className="w-full rounded-md border border-white/[0.09] bg-[#07090d] py-2 pl-8 pr-3 text-[11px] outline-none placeholder:text-slate-600 focus:border-cyan-400/50"/></div>
           <div className="mb-2 flex items-center justify-between text-[9px] font-semibold uppercase tracking-[0.18em] text-slate-500"><span>Inventory</span><span>{visibleNodes.length}/{nodes.length}</span></div>
           <div className="min-h-0 flex-1 space-y-1 overflow-y-auto">
@@ -244,7 +266,7 @@ USER REQUEST: ${prompt}`;
           {connectMode && <div className="absolute left-1/2 top-4 -translate-x-1/2 rounded-md border border-cyan-300/30 bg-[#0b1119] px-3 py-2 text-[10px] text-cyan-200 shadow-lg">{connectFrom ? "Select target device" : "Select source device"} · click a node</div>}
         </main>
 
-        <aside className="hidden w-[286px] shrink-0 flex-col overflow-y-auto border-l border-white/[0.07] bg-[#0a0d13] p-4 xl:flex">
+        {rightPanelOpen && <aside className="hidden w-[286px] shrink-0 flex-col overflow-y-auto border-l border-white/[0.07] bg-[#0a0d13] p-4 xl:flex">
           <div className="mb-4 flex items-center justify-between"><div><p className="text-[9px] font-semibold uppercase tracking-[0.2em] text-cyan-300">Selected resource</p><h2 className="mt-1 text-xs font-semibold text-slate-200">Device Inspector</h2></div><button type="button" onClick={() => setSelected(null)} className="rounded p-1 text-slate-500 hover:bg-white/[0.06] hover:text-white"><X size={14}/></button></div>
           {current ? <>
             <div className="mb-4 rounded-lg border border-white/[0.08] bg-white/[0.025] p-3"><div className="flex items-center gap-2.5"><div className="flex h-10 w-10 items-center justify-center rounded-lg border border-cyan-300/20 bg-cyan-300/[0.08] text-cyan-200">{(() => { const Icon = iconFor(current.type); return <Icon size={20}/>; })()}</div><div className="min-w-0"><h3 className="truncate text-sm font-semibold">{current.name}</h3><p className="text-[9px] capitalize text-slate-500">{current.type.replace("-", " ")} · {current.vendor}</p></div></div><div className="mt-3 flex items-center justify-between border-t border-white/[0.07] pt-2"><span className="text-[9px] text-slate-500">Inventory status</span><span className="rounded bg-slate-500/10 px-2 py-1 text-[9px] text-slate-400">UNKNOWN</span></div></div>
