@@ -1,6 +1,6 @@
 """Regression tests for routing direct chat configuration into the Configuration Engine."""
 
-from app.api.chat import ChatRequest, _configuration_intent
+from app.api.chat import ChatRequest, _configuration_intent, _is_nms_copilot_request
 
 
 def test_static_ip_request_is_detected_as_configuration_intent():
@@ -35,3 +35,13 @@ def test_direct_configuration_does_not_require_llm_tool_calling():
     # The direct path is handled by the Configuration Engine proposal flow,
     # not by exposing a write tool to the LLM.
     assert request.use_tools is True
+
+
+def test_nms_copilot_envelope_bypasses_generic_configuration_intent():
+    message = (
+        "Anda adalah NMS Copilot pada workspace Network Management NOVA.\\n"
+        "Analyze only this topology.\\nTOPOLOGY:{\\"devices\\":[]}\\n"
+        "USER REQUEST: Tambahkan satu server bernama File Server dengan IP 192.168.88.30."
+    )
+    assert _is_nms_copilot_request(message)
+    assert _configuration_intent(message)
