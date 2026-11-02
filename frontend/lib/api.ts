@@ -62,8 +62,8 @@ export interface HealthResponse {
   environment: string;
 }
 
-export type LinuxGeneratorModule = "packages" | "ssh" | "firewall";
-export interface LinuxGeneratorRequest { distro: "debian" | "ubuntu"; modules: LinuxGeneratorModule[]; hostname: string; ssh_port: number; firewall_ssh: boolean; }
+export type LinuxGeneratorModule = "ssh" | "ufw";
+export interface LinuxGeneratorRequest { distro: "debian" | "ubuntu"; modules: LinuxGeneratorModule[]; ssh_port: number; ufw_allow_ssh: boolean; }
 export interface LinuxGeneratedFile { filename: string; mime_type: string; content: string; }
 export interface LinuxGeneratorResponse { distro: string; modules: string[]; files: LinuxGeneratedFile[]; warnings: string[]; }
 
