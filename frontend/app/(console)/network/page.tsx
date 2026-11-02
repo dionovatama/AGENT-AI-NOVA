@@ -207,7 +207,7 @@ USER REQUEST: ${prompt}`;
   };
 
   return (
-    <div className="flex h-full min-h-0 flex-col bg-[#07090d] text-slate-100">
+    <div ref={workspaceRef} className={`relative flex h-full min-h-0 flex-col bg-[#07090d] text-slate-100 ${isFullscreen ? "h-screen w-screen" : ""}`}>
       <header className="shrink-0 border-b border-white/[0.08] bg-[#0a0d13]">
         <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-3">
           <div className="flex items-center gap-3">
@@ -245,7 +245,7 @@ USER REQUEST: ${prompt}`;
             {visibleNodes.length === 0 && <p className="px-2 py-4 text-[10px] text-slate-500">No matching devices.</p>}
           </div>
           <div className="mt-3 border-t border-white/[0.07] pt-3"><p className="mb-2 text-[9px] font-semibold uppercase tracking-[0.18em] text-slate-500">Legend</p><div className="space-y-2 text-[10px] text-slate-400"><div className="flex items-center gap-2"><span className="h-1.5 w-1.5 rounded-full bg-emerald-400"/> Online (not verified)</div><div className="flex items-center gap-2"><span className="h-1.5 w-1.5 rounded-full bg-slate-500"/> Unknown status</div><div className="flex items-center gap-2"><span className="h-px w-5 bg-cyan-400"/> Manual link</div></div></div>
-        </aside>
+        </aside>}
 
         <main className="relative min-w-0 flex-1 overflow-hidden bg-[#070b11]" ref={canvasRef}
           onPointerMove={movePointer} onPointerUp={endPointer} onPointerLeave={endPointer}
@@ -276,7 +276,7 @@ USER REQUEST: ${prompt}`;
             <div className="mt-auto flex gap-2 border-t border-white/[0.07] pt-3"><button type="button" onClick={openEdit} className="flex flex-1 items-center justify-center gap-1.5 rounded-md border border-white/[0.1] py-2 text-[10px] text-slate-300 hover:bg-white/[0.05]"><Pencil size={12}/> Edit</button><button type="button" onClick={() => removeNode(current.id)} className="flex items-center justify-center gap-1.5 rounded-md border border-rose-400/20 px-3 py-2 text-[10px] text-rose-300 hover:bg-rose-400/[0.08]"><Trash2 size={12}/> Remove</button></div>
           </> : <div className="rounded-lg border border-dashed border-white/[0.1] p-4 text-center"><RadioTower size={20} className="mx-auto mb-2 text-slate-600"/><p className="text-[10px] text-slate-500">Select a node on the canvas to inspect its properties.</p></div>}
           <div className="mt-4 flex items-center justify-between border-t border-white/[0.07] pt-3 text-[9px]"><span className="text-slate-500">{saved ? "Layout saved locally" : "Unsaved changes"}</span><span className={saved ? "text-emerald-300" : "text-amber-300"}>{saved ? "SAVED" : "MODIFIED"}</span></div>
-        </aside>
+        </aside>}
       </div>
 
 
