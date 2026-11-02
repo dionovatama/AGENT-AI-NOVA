@@ -293,9 +293,12 @@ USER REQUEST:${prompt}`;
       const isValidOperation = (item: unknown): item is Record<string, unknown> => {
         if (!isRecord(item) || !allowed.has(String(item.action))) return false;
         switch (item.action) {
-          case "add_node":
-            return isRecord(item.node) && typeof item.node.name === "string" &&
-              TYPES.some((entry) => entry.type === item.node.type);
+          case "add_node": {
+            const node = item.node;
+            if (!isRecord(node)) return false;
+            return typeof node.name === "string" &&
+              TYPES.some((entry) => entry.type === node.type);
+          }
           case "update_node":
             return typeof item.id === "string" && isRecord(item.changes);
           case "remove_node":
