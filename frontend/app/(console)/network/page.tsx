@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Activity, Cable, CircleHelp, Cloud, Cpu, Database, EthernetPort, Fit, Maximize2, Minus, Plus, Router, Save, Search, Server, Shield, Wifi, X } from "lucide-react";
+import { Activity, Cable, CircleHelp, Cloud, Cpu, Maximize2, Minus, Plus, Router, Save, Search, Server, Wifi, X } from "lucide-react";
 
 type DeviceType = "router" | "switch" | "server" | "access-point" | "client" | "gateway";
 type DeviceNode = { id: string; name: string; type: DeviceType; ip: string; vendor: string; x: number; y: number; status: "unknown" | "online" };
@@ -102,7 +102,7 @@ export default function NetworkPage() {
         <div className="min-h-0 flex-1 space-y-1 overflow-y-auto">{visibleNodes.map((node) => { const Icon = iconFor(node.type); return <button key={node.id} onClick={() => setSelected(node.id)} className={`flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left ${selected === node.id ? "bg-signal-blue/10 text-ink-100" : "text-ink-300 hover:bg-white/[0.04]"}`}><Icon size={15} className="text-signal-blue"/><span className="min-w-0 flex-1"><span className="block truncate text-xs">{node.name}</span><span className="block truncate text-[10px] text-ink-500">{node.ip}</span></span><span className="h-1.5 w-1.5 rounded-full bg-ink-500"/></button>; })}</div>
         <div className="mt-3 border-t border-white/[0.07] pt-3 text-[10px] leading-5 text-ink-500">Manual topology<br/>Discovery: not connected<br/>Monitoring: not connected</div>
       </aside>
-      <section className="relative min-w-0 flex-1 overflow-hidden bg-[#080d16]" ref={canvasRef} onPointerMove={movePointer} onPointerUp={endPointer} onPointerLeave={endPointer} onPointerDown={(event) => { if (event.target === canvasRef.current) panRef.current = { ...pan, sx: event.clientX, sy: event.clientY }; }} onWheel={(event) => { if (event.ctrlKey || event.metaKey) { event.preventDefault(); setZoom((v) => Math.min(1.6, Math.max(.45, v - event.deltaY * .001))); } }} style={{ touchAction: "none" }}>
+      <section className="relative min-w-0 flex-1 overflow-hidden bg-[#080d16]" ref={canvasRef} onPointerMove={movePointer} onPointerUp={endPointer} onPointerLeave={endPointer} onPointerDown={(event) => { if (!(event.target as HTMLElement).closest("button")) panRef.current = { ...pan, sx: event.clientX, sy: event.clientY }; }} onWheel={(event) => { if (event.ctrlKey || event.metaKey) { event.preventDefault(); setZoom((v) => Math.min(1.6, Math.max(.45, v - event.deltaY * .001))); } }} style={{ touchAction: "none" }}>
         <div className="pointer-events-none absolute inset-0 opacity-30" style={{ backgroundImage: "radial-gradient(#40536b 1px, transparent 1px)", backgroundSize: `${24 * zoom}px ${24 * zoom}px`, backgroundPosition: `${pan.x}px ${pan.y}px` }}/>
         <div className="absolute inset-0" style={{ transform: `translate(${pan.x}px,${pan.y}px) scale(${zoom})`, transformOrigin: "0 0" }}>
           <svg className="pointer-events-none absolute inset-0 h-[1200px] w-[1200px] overflow-visible">{edges.map((edge) => { const a = nodeById(edge.source), b = nodeById(edge.target); if (!a || !b) return null; return <g key={edge.id}><path d={`M ${a.x + 100} ${a.y + 43} C ${a.x + 100} ${(a.y + b.y) / 2}, ${b.x + 100} ${(a.y + b.y) / 2}, ${b.x + 100} ${b.y + 43}`} fill="none" stroke="#3b82f6" strokeOpacity=".55" strokeWidth="2"/><circle cx={b.x + 100} cy={b.y + 43} r="3" fill="#60a5fa"/></g>; })}</svg>
