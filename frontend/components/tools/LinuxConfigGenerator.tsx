@@ -5,18 +5,16 @@ import { Download, FileCode2, FileText, ShieldAlert } from "lucide-react";
 import { novaApi, NovaApiError } from "@/lib/api";
 
 type OutputFile = { filename: string; mime_type: string; content: string };
-type Module = "packages" | "ssh" | "firewall";
+type Module = "ssh" | "ufw";
 
 const availableModules: { id: Module; label: string }[] = [
-  { id: "packages", label: "Paket dasar" },
   { id: "ssh", label: "SSH server" },
-  { id: "firewall", label: "Firewall UFW" },
+  { id: "ufw", label: "Firewall UFW" },
 ];
 
 export function LinuxConfigGenerator() {
   const [distro, setDistro] = useState<"debian" | "ubuntu">("debian");
-  const [modules, setModules] = useState<Module[]>(["packages", "ssh"]);
-  const [hostname, setHostname] = useState("nova-server");
+  const [modules, setModules] = useState<Module[]>(["ssh"]);
   const [sshPort, setSshPort] = useState("22");
   const [files, setFiles] = useState<OutputFile[]>([]);
   const [warnings, setWarnings] = useState<string[]>([]);
@@ -38,11 +36,6 @@ export function LinuxConfigGenerator() {
       setError("Port SSH harus berupa bilangan bulat antara 1 dan 65535.");
       return;
     }
-    if (!hostname.trim()) {
-      setError("Hostname wajib diisi.");
-      return;
-    }
-
     setBusy(true);
     setError("");
     setFiles([]);
@@ -52,11 +45,8 @@ export function LinuxConfigGenerator() {
       const result = await novaApi.generateLinuxConfig({
         distro,
         modules,
-        hostname: hostname.trim(),
         ssh_port: parsedPort,
-        dns_listen_address: "127.0.0.1",
-        dns_forwarders: "1.1.1.1; 8.8.8.8",
-        firewall_ssh: modules.includes("firewall") && modules.includes("ssh"),
+        ufw_allow_ssh: modules.includes("ufw") && modules.includes("ssh"),
       });
       setFiles(result.files);
       setWarnings(result.warnings);
@@ -134,20 +124,6 @@ export function LinuxConfigGenerator() {
               ))}
             </div>
           </fieldset>
-
-          <div>
-            <label className="mb-1 block text-xs text-ink-300">Hostname</label>
-            <input
-              value={hostname}
-              onChange={(event) => setHostname(event.target.value)}
-              maxLength={253}
-              autoComplete="off"
-              className="h-10 w-full rounded-md border border-base-700 bg-base-950 px-3 font-mono text-xs text-ink-100"
-            />
-            <p className="mt-1 text-[10px] text-ink-500">
-              Contoh: nova-server atau lab.nova-server. Validasi akhir dilakukan backend.
-            </p>
-          </div>
 
           {modules.includes("ssh") && (
             <div>
