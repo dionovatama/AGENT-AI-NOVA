@@ -58,6 +58,7 @@ export default function NetworkPage() {
   const [copilotInput, setCopilotInput] = useState("");
   const [copilotBusy, setCopilotBusy] = useState(false);
   const [pendingOperations, setPendingOperations] = useState<Array<Record<string, unknown>> | null>(null);
+  const [copilotError, setCopilotError] = useState<string | null>(null);
   const [copilotMessages, setCopilotMessages] = useState<{ role: "user" | "assistant"; content: string }[]>([
     { role: "assistant", content: "NMS Copilot siap. Saya dapat menganalisis inventory dan koneksi pada topology lokal ini. Status perangkat dan telemetry live belum tersedia." },
   ]);
@@ -261,20 +262,81 @@ USER REQUEST:${prompt}`;
     setCopilotMessages((items) => [...items, { role: "user", content: prompt }]);
     setCopilotInput("");
     setCopilotBusy(true);
+    setCopilotError(null);
+    setPendingOperations(null);
     try {
       const result = await novaApi.chatCompletion(systemPrompt, "troubleshooting", false);
-      const raw = result.content.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
-      const parsed = JSON.parse(raw) as { message?: string; operations?: Array<Record<string, unknown>> };
+      const raw = typeof result?.content === "string" ? result.content.trim() : "";
+      console.info("🔎 Raw NMS Copilot /chat/completions response:", result);
+      const cleaned = raw.replace(/^\`\`\`(?:json)?\\s*/i, "").replace(/\\s*\`\`\`$/, "").trim();
+
+      let parsed: { message?: string; operations?: Array<Record<string, unknown>> };
+      try {
+        parsed = JSON.parse(cleaned);
+      } catch (parseError) {
+        console.warn("🟠 NMS Copilot response is not valid JSON:", raw, parseError);
+        setCopilotError("Respons Copilot tidak dapat diproses sebagai JSON. Tidak ada perubahan topology yang diterapkan.");
+        setCopilotMessages((items) => [...items, { role: "assistant", content: "Maaf, respons Copilot tidak dapat diproses. Silakan coba ulangi perintah." }]);
+        return;
+      }
+
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+        console.warn("⚠️ Unexpected NMS Copilot payload:", parsed);
+        setCopilotError("Format respons Copilot tidak dikenali. Tidak ada perubahan topology yang diterapkan.");
+        setCopilotMessages((items) => [...items, { role: "assistant", content: "Format respons Copilot tidak dikenali. Silakan coba ulangi perintah." }]);
+        return;
+      }
+
       const allowed = new Set(["add_node", "update_node", "remove_node", "create_link", "remove_link", "arrange_topology"]);
-      const operations = Array.isArray(parsed.operations) ? parsed.operations.filter((item) => allowed.has(String(item.action))) : [];
-      setCopilotMessages((items) => [...items, { role: "assistant", content: parsed.message || "Analisis selesai." }]);
-      setPendingOperations(operations.length ? operations : null);
+      const isRecord = (value: unknown): value is Record<string, unknown> =>
+        typeof value === "object" && value !== null && !Array.isArray(value);
+      const isValidOperation = (item: unknown): item is Record<string, unknown> => {
+        if (!isRecord(item) || !allowed.has(String(item.action))) return false;
+        switch (item.action) {
+          case "add_node":
+            return isRecord(item.node) && typeof item.node.name === "string" &&
+              TYPES.some((entry) => entry.type === item.node.type);
+          case "update_node":
+            return typeof item.id === "string" && isRecord(item.changes);
+          case "remove_node":
+          case "remove_link":
+            return typeof item.id === "string" && item.id.trim().length > 0;
+          case "create_link":
+            return typeof item.source === "string" && typeof item.target === "string" &&
+              item.source !== item.target;
+          case "arrange_topology":
+            return true;
+          default:
+            return false;
+        }
+      };
+
+      if (parsed.operations !== undefined && !Array.isArray(parsed.operations)) {
+        console.warn("⚠️ NMS Copilot operations must be an array:", parsed);
+        setCopilotError("Daftar operasi Copilot tidak valid. Tidak ada perubahan topology yang diterapkan.");
+        setCopilotMessages((items) => [...items, { role: "assistant", content: "Daftar operasi yang diterima tidak valid. Silakan coba ulangi perintah." }]);
+        return;
+      }
+      const proposed = parsed.operations ?? [];
+      if (!proposed.every(isValidOperation)) {
+        console.warn("⚠️ NMS Copilot contains unsupported or malformed operations:", proposed);
+        setCopilotError("Satu atau lebih operasi topology tidak valid. Seluruh proposal dibatalkan.");
+        setCopilotMessages((items) => [...items, { role: "assistant", content: "Proposal berisi operasi yang tidak valid. Tidak ada perubahan yang diterapkan." }]);
+        return;
+      }
+
+      if (typeof parsed.message === "string" && parsed.message.trim()) {
+        setCopilotMessages((items) => [...items, { role: "assistant", content: parsed.message!.trim() }]);
+      } else if (proposed.length === 0) {
+        setCopilotMessages((items) => [...items, { role: "assistant", content: "Copilot tidak memberikan pesan atau usulan perubahan yang dapat diproses." }]);
+      }
+      setPendingOperations(proposed.length ? proposed : null);
     } catch (error) {
-      setCopilotMessages((items) => [...items, { role: "assistant", content: error instanceof SyntaxError
-        ? "Respons AI tidak mengikuti format operasi JSON. Coba jelaskan perubahan dengan lebih spesifik."
-        : `Permintaan gagal: ${error instanceof Error ? error.message : "Unknown error"}` }]);
+      console.error("NMS Copilot request failed:", error);
+      setCopilotError("Permintaan Copilot gagal. Periksa koneksi API dan coba kembali.");
+      setCopilotMessages((items) => [...items, { role: "assistant", content: `Permintaan gagal: ${error instanceof Error ? error.message : "Unknown error"}` }]);
       setPendingOperations(null);
-    } finally { setCopilotBusy(false); }
+    }    } finally { setCopilotBusy(false); }
   };
 
   return (
@@ -363,6 +425,7 @@ USER REQUEST:${prompt}`;
         <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3">
           {copilotMessages.map((message, index) => <div key={index} className={`max-w-[92%] whitespace-pre-wrap rounded-lg px-3 py-2.5 text-[11px] leading-5 ${message.role === "user" ? "ml-auto border border-cyan-300/15 bg-cyan-300/[0.08] text-cyan-50" : "border border-white/[0.07] bg-white/[0.035] text-slate-300"}`}>{message.content}</div>)}
           {copilotBusy && <div className="flex items-center gap-2 px-2 text-[10px] text-cyan-200"><Loader2 size={13} className="animate-spin"/> Menganalisis topology…</div>}
+          {copilotError && <div role="alert" className="rounded-lg border border-rose-400/25 bg-rose-400/[0.07] px-3 py-2 text-[10px] leading-4 text-rose-200">{copilotError}</div>}
           {pendingOperations && <div className="rounded-lg border border-amber-300/25 bg-amber-300/[0.05] p-3">
             <div className="mb-2 flex items-center justify-between"><p className="text-[10px] font-semibold text-amber-200">Proposed topology changes</p><span className="text-[9px] text-slate-500">{pendingOperations.length} operation(s)</span></div>
             <div className="mb-3 space-y-1.5">{pendingOperations.map((op, index) => <div key={index} className="rounded border border-white/[0.07] bg-black/20 px-2 py-1.5 text-[9px] text-slate-300"><span className="font-mono text-cyan-200">{String(op.action)}</span><span className="ml-2 text-slate-400">{String(op.id || (op.node as Record<string, unknown> | undefined)?.name || (op.source && op.target ? `${op.source} → ${op.target}` : ""))}</span></div>)}</div>
