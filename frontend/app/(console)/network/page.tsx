@@ -336,7 +336,7 @@ USER REQUEST:${prompt}`;
       setCopilotError("Permintaan Copilot gagal. Periksa koneksi API dan coba kembali.");
       setCopilotMessages((items) => [...items, { role: "assistant", content: `Permintaan gagal: ${error instanceof Error ? error.message : "Unknown error"}` }]);
       setPendingOperations(null);
-    }    } finally { setCopilotBusy(false); }
+    } finally { setCopilotBusy(false); }
   };
 
   return (
