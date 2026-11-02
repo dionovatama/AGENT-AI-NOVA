@@ -2,9 +2,9 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  Activity, Cable, CircleHelp, Cloud, Cpu, Database, Gauge, Globe2,
+  Activity, Cable, CircleHelp, Cloud, Cpu, Gauge, Globe2,
   Maximize2, Minus, Plus, RadioTower, Router, Save, Search, Server,
-  ShieldCheck, Wifi, X, Zap, Pencil, Trash2, Network, RefreshCw,
+  ShieldCheck, Wifi, X, Pencil, Trash2, Network, RefreshCw,
 } from "lucide-react";
 
 type DeviceType = "router" | "switch" | "server" | "access-point" | "client" | "gateway";
@@ -157,7 +157,7 @@ export default function NetworkPage() {
             <div><p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-cyan-300">NOVA / Infrastructure</p><h1 className="text-base font-semibold tracking-wide">Network Management</h1></div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <span className="mr-1 flex items-center gap-1.5 rounded-md border border-white/[0.08] bg-white/[0.03] px-2.5 py-2 text-[11px] text-slate-400"><span className="h-1.5 w-1.5 rounded-full bg-amber-400"/ >Local inventory</span>
+            <span className="mr-1 flex items-center gap-1.5 rounded-md border border-white/[0.08] bg-white/[0.03] px-2.5 py-2 text-[11px] text-slate-400"><span className="h-1.5 w-1.5 rounded-full bg-amber-400" />Local inventory</span>
             <button type="button" title="Discovery belum terhubung ke backend" className="flex items-center gap-1.5 rounded-md border border-white/[0.09] px-3 py-2 text-[11px] text-slate-400"><RefreshCw size={13}/> Auto Discover <span className="text-[9px] text-amber-300">SOON</span></button>
             <button type="button" onClick={() => setConnectMode((value) => !value)} className={`flex items-center gap-1.5 rounded-md border px-3 py-2 text-[11px] transition ${connectMode ? "border-cyan-300/50 bg-cyan-300/10 text-cyan-200" : "border-white/[0.09] text-slate-300 hover:bg-white/[0.05]"}`}><Cable size={13}/>{connectMode ? "Select devices…" : "Wiring"}</button>
             <button type="button" onClick={openAdd} className="flex items-center gap-1.5 rounded-md bg-gradient-to-r from-cyan-500 to-blue-600 px-3 py-2 text-[11px] font-semibold text-white shadow-[0_0_18px_rgba(6,182,212,.15)]"><Plus size={14}/> Node</button>
