@@ -57,6 +57,7 @@ export default function NetworkPage() {
   const [copilotOpen, setCopilotOpen] = useState(false);
   const [copilotInput, setCopilotInput] = useState("");
   const [copilotBusy, setCopilotBusy] = useState(false);
+  const [pendingOperations, setPendingOperations] = useState<Array<Record<string, unknown>> | null>(null);
   const [copilotMessages, setCopilotMessages] = useState<{ role: "user" | "assistant"; content: string }[]>([
     { role: "assistant", content: "NMS Copilot siap. Saya dapat menganalisis inventory dan koneksi pada topology lokal ini. Status perangkat dan telemetry live belum tersedia." },
   ]);
@@ -174,36 +175,106 @@ export default function NetworkPage() {
     }
   };
 
+  const applyCopilotOperations = () => {
+    if (!pendingOperations?.length) return;
+    let nextNodes = [...nodes];
+    let nextEdges = [...edges];
+    const getString = (value: unknown) => typeof value === "string" ? value.trim() : "";
+    for (const operation of pendingOperations) {
+      const action = getString(operation.action);
+      if (action === "add_node") {
+        const node = operation.node as Record<string, unknown> | undefined;
+        if (!node) continue;
+        const id = getString(node.id) || `nova-${Date.now()}-${nextNodes.length}`;
+        const nodeType = getString(node.type) as DeviceType;
+        if (!getString(node.name) || !TYPES.some((item) => item.type === nodeType) || nextNodes.some((item) => item.id === id)) continue;
+        nextNodes.push({
+          id, name: getString(node.name), type: nodeType,
+          ip: getString(node.ip) || "Not assigned", vendor: getString(node.vendor) || "AI Copilot",
+          x: Number.isFinite(Number(node.x)) ? Number(node.x) : 180 + (nextNodes.length % 3) * 250,
+          y: Number.isFinite(Number(node.y)) ? Number(node.y) : 160 + Math.floor(nextNodes.length / 3) * 160,
+          status: "unknown",
+        });
+      } else if (action === "update_node") {
+        const id = getString(operation.id), patch = (operation.changes ?? {}) as Record<string, unknown>;
+        nextNodes = nextNodes.map((node) => node.id !== id ? node : ({
+          ...node,
+          ...(getString(patch.name) ? { name: getString(patch.name) } : {}),
+          ...(getString(patch.ip) ? { ip: getString(patch.ip) } : {}),
+          ...(getString(patch.vendor) ? { vendor: getString(patch.vendor) } : {}),
+          ...(TYPES.some((item) => item.type === patch.type) ? { type: patch.type as DeviceType } : {}),
+          ...(Number.isFinite(Number(patch.x)) ? { x: Number(patch.x) } : {}),
+          ...(Number.isFinite(Number(patch.y)) ? { y: Number(patch.y) } : {}),
+        }));
+      } else if (action === "remove_node") {
+        const id = getString(operation.id);
+        nextNodes = nextNodes.filter((node) => node.id !== id);
+        nextEdges = nextEdges.filter((edge) => edge.source !== id && edge.target !== id);
+      } else if (action === "create_link") {
+        const source = getString(operation.source), target = getString(operation.target);
+        if (source !== target && nextNodes.some((node) => node.id === source) && nextNodes.some((node) => node.id === target)
+          && !nextEdges.some((edge) => (edge.source === source && edge.target === target) || (edge.source === target && edge.target === source))) {
+          nextEdges.push({ id: `nova-edge-${Date.now()}-${nextEdges.length}`, source, target });
+        }
+      } else if (action === "remove_link") {
+        const id = getString(operation.id);
+        nextEdges = nextEdges.filter((edge) => edge.id !== id);
+      } else if (action === "arrange_topology") {
+        nextNodes = nextNodes.map((node, index) => ({
+          ...node, x: 160 + (index % 3) * 280, y: 140 + Math.floor(index / 3) * 180,
+        }));
+      }
+    }
+    setNodes(nextNodes);
+    setEdges(nextEdges);
+    setSelected((id) => id && nextNodes.some((node) => node.id === id) ? id : null);
+    setSaved(false);
+    setPendingOperations(null);
+    setCopilotMessages((items) => [...items, { role: "assistant", content: "Operasi diterapkan ke canvas lokal. Perubahan belum tersimpan permanen; tekan Save untuk menyimpan topology." }]);
+  };
+
   const sendCopilotMessage = async (event: React.FormEvent) => {
     event.preventDefault();
     const prompt = copilotInput.trim();
     if (!prompt || copilotBusy) return;
     const topologyContext = {
-      source: "local-manual-topology",
-      telemetry_available: false,
-      devices: nodes.map(({ id, name, type, ip, vendor, status }) => ({ id, name, type, ip, vendor, status })),
+      source: "local-manual-topology", telemetry_available: false,
+      devices: nodes.map(({ id, name, type, ip, vendor, status, x, y }) => ({ id, name, type, ip, vendor, status, x, y })),
       links: edges.map(({ id, source, target }) => ({ id, source, target })),
       selected_device: current ? { id: current.id, name: current.name } : null,
     };
-    const contextPrompt = `Anda adalah NMS Copilot di workspace Network Management NOVA.
-Gunakan hanya fakta topology dalam JSON. Status semua perangkat tidak terverifikasi dan telemetry live tidak tersedia.
-Bedakan fakta, dugaan, dan rekomendasi. Jangan mengklaim ping, CPU, traffic, routing, firewall, atau status perangkat telah diperiksa.
-Anda hanya boleh memberi analisis dan instruksi perubahan topology; jangan mengklaim sudah mengubah canvas atau perangkat.
-Jika permintaan mengubah topology, jelaskan perubahan yang disarankan dan minta konfirmasi. Jangan mengarang hasil eksekusi.
-TOPOLOGY CONTEXT:
-${JSON.stringify(topologyContext)}
-USER REQUEST: ${prompt}`;
+    const systemPrompt = `Anda adalah NMS Copilot pada workspace Network Management NOVA.
+Analisis hanya JSON topology berikut. Tidak ada live telemetry; jangan klaim ping, CPU, traffic, routing, firewall atau status aktual telah diperiksa.
+Jika user meminta perubahan diagram, keluarkan operasi JSON yang diusulkan. Jangan pernah mengklaim operasi telah diterapkan.
+Balas WAJIB dalam JSON valid saja, tanpa markdown:
+{"message":"ringkasan singkat dalam Bahasa Indonesia","operations":[]}
+Operasi yang diizinkan:
+- {"action":"add_node","node":{"id":"opsional","name":"...","type":"router|switch|server|access-point|client|gateway","ip":"opsional","vendor":"opsional","x":180,"y":160}}
+- {"action":"update_node","id":"ID_NODE","changes":{"name":"opsional","type":"opsional","ip":"opsional","vendor":"opsional","x":180,"y":160}}
+- {"action":"remove_node","id":"ID_NODE"}
+- {"action":"create_link","source":"ID_SUMBER","target":"ID_TUJUAN"}
+- {"action":"remove_link","id":"ID_LINK"}
+- {"action":"arrange_topology"}
+Aturan: gunakan ID persis dari context; jangan buat operasi untuk permintaan yang ambigu atau tidak didukung; operations harus [] untuk analisis/pertanyaan biasa. Jangan pernah mengubah konfigurasi perangkat fisik. Semua operasi hanya mengubah diagram lokal setelah user menekan Approve.
+TOPOLOGY:${JSON.stringify(topologyContext)}
+USER REQUEST:${prompt}`;
     setCopilotMessages((items) => [...items, { role: "user", content: prompt }]);
     setCopilotInput("");
     setCopilotBusy(true);
     try {
-      const result = await novaApi.chatCompletion(contextPrompt, "troubleshooting", false);
-      setCopilotMessages((items) => [...items, { role: "assistant", content: result.content }]);
+      const result = await novaApi.chatCompletion(systemPrompt, "troubleshooting", false);
+      const raw = result.content.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
+      const parsed = JSON.parse(raw) as { message?: string; operations?: Array<Record<string, unknown>> };
+      const allowed = new Set(["add_node", "update_node", "remove_node", "create_link", "remove_link", "arrange_topology"]);
+      const operations = Array.isArray(parsed.operations) ? parsed.operations.filter((item) => allowed.has(String(item.action))) : [];
+      setCopilotMessages((items) => [...items, { role: "assistant", content: parsed.message || "Analisis selesai." }]);
+      setPendingOperations(operations.length ? operations : null);
     } catch (error) {
-      setCopilotMessages((items) => [...items, { role: "assistant", content: `Permintaan gagal: ${error instanceof Error ? error.message : "Unknown error"}` }]);
-    } finally {
-      setCopilotBusy(false);
-    }
+      setCopilotMessages((items) => [...items, { role: "assistant", content: error instanceof SyntaxError
+        ? "Respons AI tidak mengikuti format operasi JSON. Coba jelaskan perubahan dengan lebih spesifik."
+        : `Permintaan gagal: ${error instanceof Error ? error.message : "Unknown error"}` }]);
+      setPendingOperations(null);
+    } finally { setCopilotBusy(false); }
   };
 
   return (
@@ -292,6 +363,12 @@ USER REQUEST: ${prompt}`;
         <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3">
           {copilotMessages.map((message, index) => <div key={index} className={`max-w-[92%] whitespace-pre-wrap rounded-lg px-3 py-2.5 text-[11px] leading-5 ${message.role === "user" ? "ml-auto border border-cyan-300/15 bg-cyan-300/[0.08] text-cyan-50" : "border border-white/[0.07] bg-white/[0.035] text-slate-300"}`}>{message.content}</div>)}
           {copilotBusy && <div className="flex items-center gap-2 px-2 text-[10px] text-cyan-200"><Loader2 size={13} className="animate-spin"/> Menganalisis topology…</div>}
+          {pendingOperations && <div className="rounded-lg border border-amber-300/25 bg-amber-300/[0.05] p-3">
+            <div className="mb-2 flex items-center justify-between"><p className="text-[10px] font-semibold text-amber-200">Proposed topology changes</p><span className="text-[9px] text-slate-500">{pendingOperations.length} operation(s)</span></div>
+            <div className="mb-3 space-y-1.5">{pendingOperations.map((op, index) => <div key={index} className="rounded border border-white/[0.07] bg-black/20 px-2 py-1.5 text-[9px] text-slate-300"><span className="font-mono text-cyan-200">{String(op.action)}</span><span className="ml-2 text-slate-400">{String(op.id || (op.node as Record<string, unknown> | undefined)?.name || (op.source && op.target ? `${op.source} → ${op.target}` : ""))}</span></div>)}</div>
+            <p className="mb-3 text-[9px] leading-4 text-slate-500">Belum diterapkan. Approve hanya mengubah canvas lokal, bukan perangkat fisik.</p>
+            <div className="flex gap-2"><button type="button" onClick={applyCopilotOperations} className="flex-1 rounded-md bg-cyan-500 px-3 py-2 text-[10px] font-semibold text-slate-950">Approve & Apply</button><button type="button" onClick={() => setPendingOperations(null)} className="rounded-md border border-white/10 px-3 py-2 text-[10px] text-slate-300">Reject</button></div>
+          </div>}
         </div>
         <div className="border-t border-white/[0.08] p-3">
           <div className="mb-2 flex flex-wrap gap-1.5">{["Ringkas topology", "Perangkat belum terhubung", "Analisis jalur server ke gateway"].map((suggestion) => <button key={suggestion} type="button" onClick={() => setCopilotInput(suggestion)} className="rounded-full border border-white/[0.09] px-2 py-1 text-[9px] text-slate-400 hover:border-cyan-300/30 hover:text-cyan-100">{suggestion}</button>)}</div>
