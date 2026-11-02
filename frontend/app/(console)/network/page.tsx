@@ -1,8 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { novaApi } from "@/lib/api";
 import {
-  Activity, Cable, CircleHelp, Cloud, Cpu, Gauge, Globe2,
+  Activity, Cable, CircleHelp, Cloud, Cpu, Gauge, Globe2, MessageSquare, Send, Bot, Loader2,
   Maximize2, Minus, Plus, RadioTower, Router, Save, Search, Server,
   ShieldCheck, Wifi, X, Pencil, Trash2, Network, RefreshCw,
 } from "lucide-react";
@@ -49,6 +50,12 @@ export default function NetworkPage() {
   const [connectMode, setConnectMode] = useState(false);
   const [connectFrom, setConnectFrom] = useState<string | null>(null);
   const [query, setQuery] = useState("");
+  const [copilotOpen, setCopilotOpen] = useState(false);
+  const [copilotInput, setCopilotInput] = useState("");
+  const [copilotBusy, setCopilotBusy] = useState(false);
+  const [copilotMessages, setCopilotMessages] = useState<{ role: "user" | "assistant"; content: string }[]>([
+    { role: "assistant", content: "NMS Copilot siap. Saya dapat menganalisis inventory dan koneksi pada topology lokal ini. Status perangkat dan telemetry live belum tersedia." },
+  ]);
   const canvasRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<{ id: string; dx: number; dy: number } | null>(null);
   const panRef = useRef<{ x: number; y: number; sx: number; sy: number } | null>(null);
@@ -148,6 +155,38 @@ export default function NetworkPage() {
   const nodeById = (id: string) => nodes.find((node) => node.id === id);
   const connectedCount = current ? edges.filter((edge) => edge.source === current.id || edge.target === current.id).length : 0;
 
+  const sendCopilotMessage = async (event: React.FormEvent) => {
+    event.preventDefault();
+    const prompt = copilotInput.trim();
+    if (!prompt || copilotBusy) return;
+    const topologyContext = {
+      source: "local-manual-topology",
+      telemetry_available: false,
+      devices: nodes.map(({ id, name, type, ip, vendor, status }) => ({ id, name, type, ip, vendor, status })),
+      links: edges.map(({ id, source, target }) => ({ id, source, target })),
+      selected_device: current ? { id: current.id, name: current.name } : null,
+    };
+    const contextPrompt = `Anda adalah NMS Copilot di workspace Network Management NOVA.
+Gunakan hanya fakta topology dalam JSON. Status semua perangkat tidak terverifikasi dan telemetry live tidak tersedia.
+Bedakan fakta, dugaan, dan rekomendasi. Jangan mengklaim ping, CPU, traffic, routing, firewall, atau status perangkat telah diperiksa.
+Anda hanya boleh memberi analisis dan instruksi perubahan topology; jangan mengklaim sudah mengubah canvas atau perangkat.
+Jika permintaan mengubah topology, jelaskan perubahan yang disarankan dan minta konfirmasi. Jangan mengarang hasil eksekusi.
+TOPOLOGY CONTEXT:
+${JSON.stringify(topologyContext)}
+USER REQUEST: ${prompt}`;
+    setCopilotMessages((items) => [...items, { role: "user", content: prompt }]);
+    setCopilotInput("");
+    setCopilotBusy(true);
+    try {
+      const result = await novaApi.chatCompletion(contextPrompt, "troubleshooting", false);
+      setCopilotMessages((items) => [...items, { role: "assistant", content: result.content }]);
+    } catch (error) {
+      setCopilotMessages((items) => [...items, { role: "assistant", content: `Permintaan gagal: ${error instanceof Error ? error.message : "Unknown error"}` }]);
+    } finally {
+      setCopilotBusy(false);
+    }
+  };
+
   return (
     <div className="flex h-full min-h-0 flex-col bg-[#07090d] text-slate-100">
       <header className="shrink-0 border-b border-white/[0.08] bg-[#0a0d13]">
@@ -217,6 +256,27 @@ export default function NetworkPage() {
           <div className="mt-4 flex items-center justify-between border-t border-white/[0.07] pt-3 text-[9px]"><span className="text-slate-500">{saved ? "Layout saved locally" : "Unsaved changes"}</span><span className={saved ? "text-emerald-300" : "text-amber-300"}>{saved ? "SAVED" : "MODIFIED"}</span></div>
         </aside>
       </div>
+
+
+      <button type="button" onClick={() => setCopilotOpen((value) => !value)} aria-label={copilotOpen ? "Close NMS Copilot" : "Open NMS Copilot"} className="fixed bottom-6 right-6 z-[60] flex h-12 items-center gap-2 rounded-full border border-cyan-300/30 bg-[#10202c] px-4 text-xs font-semibold text-cyan-100 shadow-2xl hover:bg-[#163044]">
+        {copilotOpen ? <X size={16}/> : <Bot size={17}/>} {copilotOpen ? "Close Copilot" : "NMS Copilot"}
+      </button>
+      {copilotOpen && <section className="fixed bottom-20 right-6 z-[60] flex h-[min(620px,calc(100vh-120px))] w-[min(420px,calc(100vw-32px))] flex-col overflow-hidden rounded-xl border border-cyan-300/20 bg-[#0a111a] shadow-2xl shadow-black/60">
+        <header className="flex items-center justify-between border-b border-white/[0.08] px-4 py-3">
+          <div className="flex items-center gap-2"><span className="flex h-8 w-8 items-center justify-center rounded-lg border border-cyan-300/20 bg-cyan-300/10 text-cyan-200"><Bot size={17}/></span><div><p className="text-xs font-semibold text-slate-100">NMS Copilot</p><p className="text-[9px] text-slate-500">Workspace-aware · Local topology</p></div></div>
+          <button type="button" onClick={() => setCopilotMessages([{ role: "assistant", content: "Percakapan dibersihkan. Konteks topology terbaru akan digunakan." }])} className="rounded-md border border-white/10 px-2 py-1 text-[10px] text-slate-400 hover:bg-white/5">Clear chat</button>
+        </header>
+        <div className="flex items-center gap-2 border-b border-amber-300/10 bg-amber-300/[0.04] px-4 py-2 text-[9px] text-amber-200"><ShieldCheck size={12}/> Inventory lokal saja — live discovery & telemetry belum aktif</div>
+        <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3">
+          {copilotMessages.map((message, index) => <div key={index} className={`max-w-[92%] whitespace-pre-wrap rounded-lg px-3 py-2.5 text-[11px] leading-5 ${message.role === "user" ? "ml-auto border border-cyan-300/15 bg-cyan-300/[0.08] text-cyan-50" : "border border-white/[0.07] bg-white/[0.035] text-slate-300"}`}>{message.content}</div>)}
+          {copilotBusy && <div className="flex items-center gap-2 px-2 text-[10px] text-cyan-200"><Loader2 size={13} className="animate-spin"/> Menganalisis topology…</div>}
+        </div>
+        <div className="border-t border-white/[0.08] p-3">
+          <div className="mb-2 flex flex-wrap gap-1.5">{["Ringkas topology", "Perangkat belum terhubung", "Analisis jalur server ke gateway"].map((suggestion) => <button key={suggestion} type="button" onClick={() => setCopilotInput(suggestion)} className="rounded-full border border-white/[0.09] px-2 py-1 text-[9px] text-slate-400 hover:border-cyan-300/30 hover:text-cyan-100">{suggestion}</button>)}</div>
+          <form onSubmit={sendCopilotMessage} className="flex items-end gap-2"><textarea value={copilotInput} onChange={(event) => setCopilotInput(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); (event.currentTarget.form as HTMLFormElement)?.requestSubmit(); } }} rows={2} placeholder="Tanyakan kondisi topology…" className="min-h-[42px] flex-1 resize-none rounded-lg border border-white/10 bg-[#070b11] px-3 py-2 text-[11px] text-slate-100 outline-none placeholder:text-slate-600 focus:border-cyan-300/40"/>
+            <button type="submit" disabled={copilotBusy || !copilotInput.trim()} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-cyan-500 text-slate-950 disabled:opacity-40"><Send size={15}/></button></form>
+        </div>
+      </section>}
 
       {adding && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm"><form onSubmit={submitDevice} className="w-full max-w-md rounded-xl border border-white/[0.12] bg-[#0c1119] p-5 shadow-2xl"><div className="mb-4 flex items-center justify-between"><div><p className="text-[9px] uppercase tracking-[0.2em] text-cyan-300">Inventory</p><h2 className="mt-1 text-sm font-semibold">{editing ? "Edit device" : "Add network device"}</h2></div><button type="button" onClick={() => setAdding(false)} className="rounded p-1 text-slate-500 hover:bg-white/[0.06]"><X size={16}/></button></div><label className="mb-1 block text-[10px] text-slate-400">Device name</label><input autoFocus value={name} onChange={(event) => setName(event.target.value)} required placeholder="e.g. Distribution Switch" className="mb-3 w-full rounded-md border border-white/[0.1] bg-[#07090d] px-3 py-2.5 text-xs outline-none focus:border-cyan-400/50"/><label className="mb-1 block text-[10px] text-slate-400">Device type</label><select value={type} onChange={(event) => setType(event.target.value as DeviceType)} className="mb-3 w-full rounded-md border border-white/[0.1] bg-[#07090d] px-3 py-2.5 text-xs">{TYPES.map((item) => <option key={item.type} value={item.type}>{item.label}</option>)}</select><label className="mb-1 block text-[10px] text-slate-400">Management IP</label><input value={ip} onChange={(event) => setIp(event.target.value)} placeholder="192.168.1.1" className="mb-3 w-full rounded-md border border-white/[0.1] bg-[#07090d] px-3 py-2.5 font-mono text-xs outline-none focus:border-cyan-400/50"/><label className="mb-1 block text-[10px] text-slate-400">Vendor / Platform</label><input value={vendor} onChange={(event) => setVendor(event.target.value)} placeholder="MikroTik, Linux, Cisco…" className="mb-5 w-full rounded-md border border-white/[0.1] bg-[#07090d] px-3 py-2.5 text-xs outline-none focus:border-cyan-400/50"/><div className="flex justify-end gap-2"><button type="button" onClick={() => setAdding(false)} className="rounded-md border border-white/[0.1] px-3 py-2 text-[11px] text-slate-300">Cancel</button><button type="submit" className="rounded-md bg-cyan-500 px-4 py-2 text-[11px] font-semibold text-slate-950">{editing ? "Save changes" : "Add device"}</button></div></form></div>}
     </div>
