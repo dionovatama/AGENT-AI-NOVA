@@ -39,6 +39,15 @@ class ChatRequest(BaseModel):
     device_id: uuid.UUID | None = None  # explicit selected device; never supplied by the model
 
 
+def _is_nms_copilot_request(message: str) -> bool:
+    """Identify the workspace-scoped NMS Copilot envelope before generic intent routing."""
+    return (
+        message.startswith("Anda adalah NMS Copilot pada workspace Network Management NOVA.")
+        and "\\nTOPOLOGY:" in message
+        and "\\nUSER REQUEST:" in message
+    )
+
+
 def _configuration_intent(message: str) -> bool:
     text = message.lower()
     # Require an explicit configuration action; "check/show/explain" stays read-only.
@@ -158,6 +167,7 @@ async def chat_completions(
     # even when tools are enabled. Require an explicit mode choice before routing.
     if (
         payload.configuration_mode is None
+        and not _is_nms_copilot_request(payload.message)
         and _configuration_intent(payload.message)
     ):
         return ChatCompletionResult(
