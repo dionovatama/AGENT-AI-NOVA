@@ -43,8 +43,8 @@ def _is_nms_copilot_request(message: str) -> bool:
     """Identify the workspace-scoped NMS Copilot envelope before generic intent routing."""
     return (
         message.startswith("Anda adalah NMS Copilot pada workspace Network Management NOVA.")
-        and "\\nTOPOLOGY:" in message
-        and "\\nUSER REQUEST:" in message
+        and "\nTOPOLOGY:" in message
+        and "\nUSER REQUEST:" in message
     )
 
 
