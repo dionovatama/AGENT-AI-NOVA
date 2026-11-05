@@ -39,8 +39,8 @@ def test_direct_configuration_does_not_require_llm_tool_calling():
 
 def test_nms_copilot_envelope_bypasses_generic_configuration_intent():
     message = (
-        "Anda adalah NMS Copilot pada workspace Network Management NOVA.\\n"
-        "Analyze only this topology.\\nTOPOLOGY:{\\"devices\\":[]}\\n"
+        "Anda adalah NMS Copilot pada workspace Network Management NOVA.\n"
+        "Analyze only this topology.\nTOPOLOGY:{\"devices\":[]}\n"
         "USER REQUEST: Tambahkan satu server bernama File Server dengan IP 192.168.88.30."
     )
     assert _is_nms_copilot_request(message)
