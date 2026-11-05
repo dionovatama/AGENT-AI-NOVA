@@ -256,7 +256,13 @@ Operasi yang diizinkan:
 - {"action":"create_link","source":"ID_SUMBER","target":"ID_TUJUAN"}
 - {"action":"remove_link","id":"ID_LINK"}
 - {"action":"arrange_topology"}
-Aturan: gunakan ID persis dari context; jangan buat operasi untuk permintaan yang ambigu atau tidak didukung; operations harus [] untuk analisis/pertanyaan biasa. Jangan pernah mengubah konfigurasi perangkat fisik. Semua operasi hanya mengubah diagram lokal setelah user menekan Approve.
+Aturan:
+- Gunakan ID persis dari context untuk semua perangkat yang sudah ada.
+- Jika user menyebut nama perangkat tujuan, cocokkan dengan nama perangkat di context dan gunakan ID perangkat itu secara persis.
+- DILARANG mengganti target yang diminta dengan perangkat lain yang dianggap mirip. Jika target tidak ditemukan, kembalikan operations:[] dan jelaskan perangkat tujuan tidak ditemukan.
+- Untuk create_link, source dan target wajib berupa ID perangkat yang benar-benar ada di context atau ID add_node yang dibuat dalam proposal yang sama.
+- Jangan membuat operasi untuk permintaan ambigu atau tidak didukung; operations harus [] untuk analisis/pertanyaan biasa.
+- Jangan pernah mengubah konfigurasi perangkat fisik. Semua operasi hanya mengubah diagram lokal setelah user menekan Approve.
 TOPOLOGY:${JSON.stringify(topologyContext)}
 USER REQUEST:${prompt}`;
     setCopilotMessages((items) => [...items, { role: "user", content: prompt }]);
@@ -325,6 +331,29 @@ USER REQUEST:${prompt}`;
         console.warn("⚠️ NMS Copilot contains unsupported or malformed operations:", proposed);
         setCopilotError("Satu atau lebih operasi topology tidak valid. Seluruh proposal dibatalkan.");
         setCopilotMessages((items) => [...items, { role: "assistant", content: "Proposal berisi operasi yang tidak valid. Tidak ada perubahan yang diterapkan." }]);
+        return;
+      }
+
+      // Guard against the model linking to a different existing device than the one named by the user.
+      const addedIds = new Set(proposed
+        .filter((item) => item.action === "add_node" && isRecord(item.node))
+        .map((item) => typeof (item.node as Record<string, unknown>).id === "string"
+          ? String((item.node as Record<string, unknown>).id).trim() : ""));
+      const validDeviceIds = new Set([...nodes.map((node) => node.id), ...addedIds].filter(Boolean));
+      const mentionedExistingIds = nodes
+        .filter((node) => prompt.toLocaleLowerCase().includes(node.name.toLocaleLowerCase()))
+        .map((node) => node.id);
+      const invalidLink = proposed.find((item) => {
+        if (item.action !== "create_link") return false;
+        const source = String(item.source).trim();
+        const target = String(item.target).trim();
+        if (!validDeviceIds.has(source) || !validDeviceIds.has(target)) return true;
+        return mentionedExistingIds.some((id) => id !== source && id !== target);
+      });
+      if (invalidLink) {
+        console.warn("NMS Copilot proposed an unresolved or mismatched device link:", invalidLink);
+        setCopilotError("Target koneksi tidak cocok dengan perangkat yang disebutkan. Proposal dibatalkan agar tidak menghubungkan ke perangkat yang salah.");
+        setCopilotMessages((items) => [...items, { role: "assistant", content: "Saya belum bisa memastikan perangkat tujuan yang tepat. Pastikan perangkat tersebut tersedia di inventory, lalu ulangi perintah. Tidak ada perubahan topology yang diterapkan." }]);
         return;
       }
 
