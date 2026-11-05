@@ -41,9 +41,14 @@ class ConfigError(ValueError):
 
 
 def config_path() -> Path:
+    # XDG_CONFIG_HOME is honored on Windows as an explicit test/development
+    # override; normal Windows installs continue to use ProgramData.
+    xdg_home = os.environ.get("XDG_CONFIG_HOME")
+    if xdg_home:
+        return Path(xdg_home) / "nova-agent" / "config.json"
     if os.name == "nt":
         return Path(os.environ.get("PROGRAMDATA", r"C:\ProgramData")) / "NOVA" / "Agent" / "config.json"
-    return Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / "nova-agent" / "config.json"
+    return Path(Path.home() / ".config") / "nova-agent" / "config.json"
 
 
 # ---------------------------------------------------------------------------
