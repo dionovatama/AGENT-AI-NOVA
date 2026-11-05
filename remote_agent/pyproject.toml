@@ -4,13 +4,14 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "nova-remote-agent"
-version = "0.1.0"
-description = "NOVA Remote Agent connectivity service"
+version = "0.2.0"
+description = "NOVA Remote Agent connectivity service (protocol v1)"
 requires-python = ">=3.11"
 dependencies = ["websockets>=13.1,<16"]
 
 [project.optional-dependencies]
 windows = ["pywin32>=306"]
+dev = ["pytest>=8"]
 
 [project.scripts]
 nova-agent = "nova_agent.cli:main"
