@@ -10,6 +10,7 @@ benar-benar terjadi dalam test.
 from __future__ import annotations
 
 import asyncio
+import hmac
 import json
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -26,6 +27,10 @@ class FakeStore:
         self.agents: dict[uuid.UUID, dict] = {}
         self.fail_on: set[str] = set()
         self.calls: list[str] = []
+        # hooks[name]() dijalankan SEBELUM operasi `name` mengeksekusi logikanya,
+        # memodelkan commit transaksi lain (REST rotate/delete/deactivate) yang
+        # menyelip tepat di antara verifikasi token dan claim.
+        self.hooks: dict[str, object] = {}
 
     # ---- helper test ----
     def add_agent(self, owner_active: bool = True) -> tuple[uuid.UUID, str]:
@@ -44,9 +49,21 @@ class FakeStore:
     def row(self, agent_id: uuid.UUID) -> dict:
         return self.agents[agent_id]
 
+    def rotate_token(self, agent_id: uuid.UUID) -> str:
+        """Meniru REST rotate-token: hash baru + kepemilikan koneksi direset."""
+        token = generate_agent_token()
+        self.agents[agent_id].update(
+            token_hash=hash_agent_token(token), connection_id=None,
+            worker_id=None, status="offline",
+        )
+        return token
+
     async def _enter(self, name: str) -> None:
         self.calls.append(name)
         await asyncio.sleep(0)
+        hook = self.hooks.pop(name, None)
+        if hook is not None:
+            hook()
         if name in self.fail_on:
             raise RuntimeError(f"simulated store failure in {name}")
 
@@ -58,11 +75,17 @@ class FakeStore:
             return None
         return AuthRecord(agent_id, r["owner_id"], r["token_hash"], r["owner_active"])
 
-    async def claim_connection(self, agent_id, connection_id, worker_id, os, agent_version, now):
+    async def claim_connection(self, agent_id, connection_id, worker_id, os, agent_version, now,
+                               expected_token_hash):
         await self._enter("claim_connection")
         r = self.agents.get(agent_id)
         if r is None:
-            return ClaimResult(False)
+            return ClaimResult(False, reject_reason="not_found")
+        # Revalidasi atomik (meniru SELECT ... FOR UPDATE di SqlAgentStore).
+        if not hmac.compare_digest(r["token_hash"].encode(), expected_token_hash.encode()):
+            return ClaimResult(False, reject_reason="token_revoked")
+        if not r["owner_active"]:
+            return ClaimResult(False, reject_reason="owner_inactive")
         was_live = r["status"] in LIVE
         replaced = (r["connection_id"], r["worker_id"]) if was_live else (None, None)
         r.update(status="connecting", connection_id=connection_id, worker_id=worker_id,
@@ -85,7 +108,7 @@ class FakeStore:
     async def record_heartbeat(self, agent_id, connection_id, now):
         await self._enter("record_heartbeat")
         r = self._owned(agent_id, connection_id)
-        if r is None:
+        if r is None or not r["owner_active"]:
             return False
         r["last_heartbeat_at"] = now
         r["status"] = "online"

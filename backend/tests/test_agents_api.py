@@ -13,15 +13,18 @@ APP_ENV=production, set AGENT_REQUIRE_TLS=false hanya untuk test.
 from __future__ import annotations
 
 import asyncio
+import threading
 import time
 import uuid
 from datetime import datetime, timedelta, timezone
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import select, update
 from starlette.websockets import WebSocketDisconnect
 
 from app.agents.sql_store import SqlAgentStore
+from app.agents.tokens import generate_agent_token, hash_agent_token
 from app.agents.wiring import agent_manager
 from app.database.models import Agent, User
 from app.database.session import SessionLocal
@@ -29,6 +32,17 @@ from app.main import app
 from app.security.hashing import create_access_token
 
 client = TestClient(app)
+
+
+@pytest.fixture(autouse=True)
+def _reset_agent_rate_limits():
+    """agent_manager adalah singleton proses dan TestClient selalu datang dari IP
+    yang sama; tanpa reset, kegagalan auth antar-test saling memblokir."""
+    agent_manager.auth_failures._events.clear()
+    agent_manager._pending_auth.clear()
+    yield
+    agent_manager.auth_failures._events.clear()
+    agent_manager._pending_auth.clear()
 
 
 def _user(label: str) -> dict[str, str]:
@@ -227,11 +241,12 @@ def test_sql_store_conditional_writes_follow_connection_ownership():
     agent_id = uuid.UUID(agent["id"])
     store, now = SqlAgentStore(), datetime.now(timezone.utc)
     conn_a, conn_b = uuid.uuid4(), uuid.uuid4()
+    th = hash_agent_token(agent["token"])
 
     async def scenario():
-        assert (await store.claim_connection(agent_id, conn_a, "w1", "Windows 10 x64", "0.1.0", now)).claimed
+        assert (await store.claim_connection(agent_id, conn_a, "w1", "Windows 10 x64", "0.1.0", now, th)).claimed
         assert await store.mark_online(agent_id, conn_a, now)
-        second = await store.claim_connection(agent_id, conn_b, "w2", "Windows 11 x64", "0.2.0", now)
+        second = await store.claim_connection(agent_id, conn_b, "w2", "Windows 11 x64", "0.2.0", now, th)
         assert second.claimed and second.replaced_connection_id == conn_a and second.replaced_worker_id == "w1"
 
         # pemilik lama ditolak di semua jalur tulis
@@ -249,3 +264,126 @@ def test_sql_store_conditional_writes_follow_connection_ownership():
         row = db.get(Agent, agent_id)
         assert row.status == "offline" and row.connection_id is None
         assert row.os == "Windows 11 x64" and row.agent_version == "0.2.0"
+
+
+# ------------------------------------------------------------------ keamanan: claim atomik & ownership
+
+def _owner_id(agent: dict) -> uuid.UUID:
+    return uuid.UUID(agent["owner_id"])
+
+
+def test_sql_store_claim_rejects_revoked_hash_and_leaves_row_untouched():
+    h = _user("revoked")
+    agent = _create_agent(h)
+    agent_id = uuid.UUID(agent["id"])
+    old_hash = hash_agent_token(agent["token"])
+    assert client.post(f"/agents/{agent['id']}/rotate-token", headers=h).status_code == 200
+
+    result = asyncio.run(SqlAgentStore().claim_connection(
+        agent_id, uuid.uuid4(), "w1", "Windows 10 x64", "0.1.0", datetime.now(timezone.utc), old_hash,
+    ))
+    assert not result.claimed and result.reject_reason == "token_revoked"
+    with SessionLocal() as db:
+        row = db.get(Agent, agent_id)
+        assert row.connection_id is None and row.status == "offline" and row.os is None
+
+
+def test_sql_store_claim_is_atomic_with_a_concurrent_rotation():
+    """Deterministik: transaksi 'rotate' memegang lock baris, claim (diverifikasi
+    terhadap hash LAMA) dimulai dan harus MENUNGGU lock, lalu menolak setelah
+    rotate commit. Tanpa revalidasi dalam transaksi claim, claim ini sukses."""
+    h = _user("atomic")
+    agent = _create_agent(h)
+    agent_id = uuid.UUID(agent["id"])
+    old_hash = hash_agent_token(agent["token"])
+    outcome: dict = {}
+
+    def claim():
+        outcome["result"] = asyncio.run(SqlAgentStore().claim_connection(
+            agent_id, uuid.uuid4(), "w1", "Windows 10 x64", "0.1.0",
+            datetime.now(timezone.utc), old_hash,
+        ))
+
+    with SessionLocal() as rotator:
+        rotator.execute(select(Agent).where(Agent.id == agent_id).with_for_update()).first()
+        worker = threading.Thread(target=claim)
+        worker.start()
+        time.sleep(0.5)
+        assert worker.is_alive(), "claim harus menunggu lock baris yang dipegang rotate"
+        rotator.execute(
+            update(Agent).where(Agent.id == agent_id).values(
+                token_hash=hash_agent_token(generate_agent_token()),
+                connection_id=None, worker_id=None, status="offline",
+            )
+        )
+        rotator.commit()
+    worker.join(10)
+    assert not worker.is_alive()
+
+    assert not outcome["result"].claimed and outcome["result"].reject_reason == "token_revoked"
+    with SessionLocal() as db:
+        row = db.get(Agent, agent_id)
+        assert row.connection_id is None and row.status == "offline"
+
+
+def test_sql_store_claim_and_heartbeat_reject_inactive_owner():
+    h = _user("inactive")
+    agent = _create_agent(h)
+    agent_id = uuid.UUID(agent["id"])
+    th = hash_agent_token(agent["token"])
+    store, now, conn = SqlAgentStore(), datetime.now(timezone.utc), uuid.uuid4()
+
+    async def scenario():
+        assert (await store.claim_connection(agent_id, conn, "w1", "Windows 10 x64", "0.1.0", now, th)).claimed
+        assert await store.record_heartbeat(agent_id, conn, now)
+        with SessionLocal() as db:
+            db.get(User, _owner_id(agent)).is_active = False
+            db.commit()
+        assert not await store.record_heartbeat(agent_id, conn, now)
+        denied = await store.claim_connection(agent_id, uuid.uuid4(), "w1", "Windows 10 x64", "0.1.0", now, th)
+        assert not denied.claimed and denied.reject_reason == "owner_inactive"
+
+    asyncio.run(scenario())
+
+
+def test_revoked_token_over_real_websocket_never_registers_and_row_stays_unclaimed():
+    h = _user("wsrevoked")
+    agent = _create_agent(h)
+    assert client.post(f"/agents/{agent['id']}/rotate-token", headers=h).status_code == 200
+    with client.websocket_connect(agent["connect_path"]) as ws:
+        ws.send_json(_auth(agent["token"]))
+        with pytest.raises(WebSocketDisconnect) as exc:
+            ws.receive_json()
+        assert exc.value.code == 4401
+    with SessionLocal() as db:
+        assert db.get(Agent, uuid.UUID(agent["id"])).connection_id is None
+
+
+def test_rotate_and_delete_are_owner_scoped_and_do_not_leak_existence():
+    a, b = _user("own-a"), _user("own-b")
+    created = _create_agent(a)
+    missing = uuid.uuid4()
+    for method, path in (("get", f"/agents/{created['id']}"), ("get", f"/agents/{missing}"),
+                         ("post", f"/agents/{created['id']}/rotate-token"),
+                         ("post", f"/agents/{missing}/rotate-token"),
+                         ("delete", f"/agents/{created['id']}"), ("delete", f"/agents/{missing}")):
+        res = getattr(client, method)(path, headers=b)
+        assert res.status_code == 404 and res.json() == {"detail": "Agent not found."}, (method, path)
+    # agent milik A tidak berubah oleh percobaan B
+    with SessionLocal() as db:
+        assert hash_agent_token(created["token"]) == db.get(Agent, uuid.UUID(created["id"])).token_hash
+
+
+def test_ip_blocked_after_repeated_auth_failures_over_real_websocket():
+    h = _user("flood")
+    agent = _create_agent(h)
+    for _ in range(agent_manager.cfg.auth_fail_limit):
+        with client.websocket_connect(agent["connect_path"]) as ws:
+            ws.send_json(_auth("nova_agt_" + "A" * 43))
+            with pytest.raises(WebSocketDisconnect) as exc:
+                ws.receive_json()
+            assert exc.value.code == 4401
+    with pytest.raises(WebSocketDisconnect) as exc:
+        with client.websocket_connect(agent["connect_path"]):
+            pass
+    assert exc.value.code == 4429

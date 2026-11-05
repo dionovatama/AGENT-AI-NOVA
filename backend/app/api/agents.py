@@ -53,8 +53,18 @@ def _created_response(agent: Agent, token: str) -> AgentCreatedResponse:
     )
 
 
-def _get_owned_agent(db: Session, agent_id: uuid.UUID, owner: User) -> Agent:
-    agent = db.query(Agent).filter(Agent.id == agent_id, Agent.owner_id == owner.id).first()
+def _get_owned_agent(db: Session, agent_id: uuid.UUID, owner: User, lock: bool = False) -> Agent:
+    """Ambil agent milik `owner`; agent milik user lain diperlakukan tidak ada (404).
+
+    lock=True mengunci baris (FOR UPDATE) sampai commit. WAJIB untuk operasi yang
+    mencabut kredensial (rotate/delete): kunci ini diserialkan dengan
+    claim_connection di SqlAgentStore sehingga token yang dicabut tidak bisa
+    menyelip membuka koneksi baru, dan state ORM yang basi tidak membuat
+    `connection_id = None` dianggap 'tidak berubah' lalu tidak ditulis."""
+    query = db.query(Agent).filter(Agent.id == agent_id, Agent.owner_id == owner.id)
+    if lock:
+        query = query.with_for_update().populate_existing()
+    agent = query.first()
     if agent is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Agent not found.")
     return agent
@@ -119,7 +129,7 @@ def rotate_agent_token(
     """Token lama langsung tidak berlaku. Koneksi aktif diputus: seketika bila
     ada di worker ini, selambatnya satu interval heartbeat bila di worker lain
     (kepemilikan koneksi di-reset sehingga heartbeat berikutnya ditolak)."""
-    agent = _get_owned_agent(db, agent_id, current_user)
+    agent = _get_owned_agent(db, agent_id, current_user, lock=True)
     token = generate_agent_token()
     now = datetime.now(timezone.utc)
     agent.token_hash = hash_agent_token(token)
@@ -142,7 +152,7 @@ def delete_agent(
     agent_id: uuid.UUID,
     current_user: User = Depends(get_current_user), db: Session = Depends(get_db),
 ) -> Response:
-    agent = _get_owned_agent(db, agent_id, current_user)
+    agent = _get_owned_agent(db, agent_id, current_user, lock=True)
     deleted_id = agent.id
     db.delete(agent)
     db.commit()

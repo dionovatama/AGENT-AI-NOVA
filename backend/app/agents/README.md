@@ -14,6 +14,7 @@ menghubungi jaringan lokal secara langsung.
 | `tokens.py` | Generate/hash/verify token (constant-time) | stdlib saja |
 | `store.py` | Kontrak `AgentStore` (semua tulis kondisional) | stdlib saja |
 | `registry.py` | Socket yang dipegang proses ini | stdlib saja |
+| `ratelimit.py` | Sliding-window limiter (auth gagal per IP, pesan per koneksi) | stdlib saja |
 | `sql_store.py` | `AgentStore` di PostgreSQL | SQLAlchemy |
 | `starlette_adapter.py` | Starlette `WebSocket` -> `SocketLike` | Starlette |
 | `wiring.py` | Instance produksi dari `settings` | semua di atas |
@@ -43,6 +44,13 @@ PostgreSQL yang sudah ada menjadi sumber kebenaran. Tiga aturan:
    meng-claim baris agent (last-writer-wins). Semua tulis berikutnya
    (`mark_online`, heartbeat, `release`) memakai `WHERE connection_id = :mine`.
    Koneksi lama atau milik worker lain tidak bisa menimpa koneksi baru.
+   **Claim divalidasi ulang secara atomik:** `claim_connection` mengunci baris
+   (`SELECT ... FOR UPDATE OF agents`) dan, di transaksi yang sama, memastikan
+   `token_hash` masih sama dengan hash yang baru diverifikasi manager serta owner
+   masih aktif. REST rotate/delete mengunci baris yang sama, jadi keduanya
+   terserialisasi: rotate commit duluan -> claim ditolak; claim commit duluan ->
+   rotate me-NULL-kan `connection_id` sehingga koneksi itu ditolak di heartbeat
+   berikutnya. Token yang sudah dicabut tidak pernah menghasilkan koneksi.
 2. **Status dibaca lewat `effective_status()`**, bukan dari memori worker:
    `online`/`connecting` dengan heartbeat lebih tua dari
    `AGENT_HEARTBEAT_TIMEOUT_SECONDS` dilaporkan `disconnected`. Worker B tidak
@@ -56,6 +64,8 @@ worker lain. Itu butuh pub/sub (PostgreSQL `LISTEN/NOTIFY` atau Redis) dan
 diputuskan terpisah saat fitur command masuk. Sampai itu, jalankan 1 worker
 atau pakai sticky routing untuk jalur command.
 
+Heartbeat juga ditolak (close 4009) jika owner agent dinonaktifkan.
+
 Efek samping yang perlu diketahui: setelah token di-rotate / agent dihapus,
 koneksi di **worker lain** baru tertutup pada heartbeat berikutnya (maks. satu
 interval, default 30 dtk); koneksi di worker yang sama tertutup seketika.
@@ -68,9 +78,31 @@ interval, default 30 dtk); koneksi di worker yang sama tertutup seketika.
 - Semua kegagalan auth (agent tak ada, token salah, owner nonaktif) ->
   respons identik `4401 authentication failed`; alasan hanya di log server.
 - Token tidak pernah masuk log/audit/`repr` (ada tes khusus).
+- **Rate limiting** (per proses/worker, in-memory; `AGENT_AUTH_FAIL_*`,
+  `AGENT_MAX_PENDING_AUTH_PER_IP`, `AGENT_MAX_MESSAGES_PER_WINDOW`):
+  - kegagalan auth per IP (token salah, agent tak ada, owner nonaktif, token
+    dicabut, frame rusak, timeout) dihitung; IP yang mencapai batas (default 10
+    per 60 dtk) ditolak dengan close `4429` SEBELUM `accept` dan tanpa query DB;
+    auth sukses tidak dihitung;
+  - koneksi yang sudah di-accept tapi belum terautentikasi dibatasi per IP
+    (default 20) agar tidak bisa menahan banyak socket sampai timeout;
+  - pesan per koneksi terautentikasi dibatasi (default 20 per 10 dtk); heartbeat
+    normal 1 per 30 dtk. Pelanggaran -> close `4429`, status `disconnected`.
+  Dengan N worker, batas efektif per IP bisa sampai N x limit (limiter tidak
+  dibagi antar proses). IP klien hanya benar di belakang proxy jika uvicorn
+  memakai `--proxy-headers` dengan `--forwarded-allow-ips` yang tepat.
 - Kegagalan auth **tidak** ditulis ke tabel `audit_logs` (supaya trafik
   tak terautentikasi tidak bisa membanjiri DB); hanya ke logger.
 - TLS: `AGENT_REQUIRE_TLS` (otomatis `true` bila `APP_ENV=production`).
+
+## Hubungan dengan gateway lama (`/agent/ws`)
+
+`app/api/agent.py` (Phase 1: token statis dari `NOVA_AGENT_TOKENS_JSON`, dipakai
+oleh `remote_agent/`) **tidak diubah** dan tetap aktif di `/agent/ws`. Phase A
+menambah jalur terpisah `/ws/agent/{agent_id}` + REST `/agents` dengan token
+per-agent di database. Gateway lama tidak punya rate limiting dan tidak memakai
+kepemilikan koneksi DB; migrasi klien `remote_agent/` ke protokol Phase A dan
+pensiun gateway lama adalah pekerjaan Phase B.
 
 ## Deployment WSS
 
@@ -103,7 +135,7 @@ level protokol, melengkapi heartbeat aplikasi.
 ## Catatan untuk Phase B (Windows Agent)
 
 - Reconnect dengan exponential backoff + jitter; **jangan** retry cepat pada
-  close `4401` dan `4009`. `4009` berulang = dua instance agent memakai
+  close `4401`, `4429`, dan `4009`. `4009` berulang = dua instance agent memakai
   kredensial yang sama.
 - Kirim `bye` + close 1000 saat service di-stop agar status jadi `offline`
   (bukan `disconnected`).
@@ -114,6 +146,6 @@ level protokol, melengkapi heartbeat aplikasi.
 ```bash
 cd backend
 alembic upgrade head                    # membuat tabel agents
-pytest tests/test_agents_core.py -v     # tanpa DB
+pytest tests/test_agents_core.py tests/test_agents_security.py -v   # tanpa DB
 pytest tests/test_agents_api.py -v      # butuh PostgreSQL aktif
 ```

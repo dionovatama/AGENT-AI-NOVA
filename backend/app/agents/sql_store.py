@@ -8,14 +8,13 @@ Setiap operasi tulis = SATU statement UPDATE ... WHERE connection_id = :cid
 SELECT ... FOR UPDATE agar bisa melaporkan koneksi yang digantikan.
 Tidak membutuhkan Redis atau lock terdistribusi.
 
-STATUS: ditulis mengikuti kontrak AgentStore yang sudah diuji lewat
-FakeStore; test terhadap PostgreSQL sungguhan ada di
-tests/test_agents_api.py (perlu DB aktif).
+Test terhadap PostgreSQL sungguhan: tests/test_agents_api.py (perlu DB aktif).
 """
 
 from __future__ import annotations
 
 import asyncio
+import hmac
 import uuid
 from datetime import datetime
 
@@ -34,9 +33,12 @@ class SqlAgentStore:
     async def get_auth_record(self, agent_id: uuid.UUID) -> AuthRecord | None:
         return await asyncio.to_thread(self._get_auth_record, agent_id)
 
-    async def claim_connection(self, agent_id, connection_id, worker_id, os, agent_version, now) -> ClaimResult:
+    async def claim_connection(
+        self, agent_id, connection_id, worker_id, os, agent_version, now, expected_token_hash
+    ) -> ClaimResult:
         return await asyncio.to_thread(
-            self._claim_connection, agent_id, connection_id, worker_id, os, agent_version, now
+            self._claim_connection, agent_id, connection_id, worker_id, os, agent_version, now,
+            expected_token_hash,
         )
 
     async def mark_online(self, agent_id, connection_id, now) -> bool:
@@ -65,13 +67,34 @@ class SqlAgentStore:
         return AuthRecord(row[0], row[1], row[2], bool(row[3]))
 
     @staticmethod
-    def _claim_connection(agent_id, connection_id, worker_id, os, agent_version, now) -> ClaimResult:
+    def _claim_connection(
+        agent_id, connection_id, worker_id, os, agent_version, now, expected_token_hash
+    ) -> ClaimResult:
+        # Validasi ulang ATOMIK: baris agent dikunci (FOR UPDATE) lalu token_hash
+        # dan status owner dibaca di dalam transaksi yang sama dengan penulisan
+        # claim. REST rotate/delete mengambil lock baris yang sama, jadi salah
+        # satu pasti terjadi lebih dulu secara utuh:
+        #   - rotate commit duluan -> hash berubah -> claim ditolak;
+        #   - claim commit duluan  -> rotate meng-NULL-kan connection_id -> koneksi
+        #     ini kehilangan kepemilikan di heartbeat/tulis berikutnya.
         with SessionLocal() as db:
-            agent = db.execute(
-                select(Agent).where(Agent.id == agent_id).with_for_update()
-            ).scalar_one_or_none()
-            if agent is None:
-                return ClaimResult(False)
+            row = db.execute(
+                select(Agent, User.is_active)
+                .join(User, User.id == Agent.owner_id)
+                .where(Agent.id == agent_id)
+                .with_for_update(of=Agent)
+                .execution_options(populate_existing=True)
+            ).first()
+            if row is None:
+                return ClaimResult(False, reject_reason="not_found")
+            agent, owner_active = row
+            if not hmac.compare_digest(
+                agent.token_hash.encode("ascii", "ignore"),
+                expected_token_hash.encode("ascii", "ignore"),
+            ):
+                return ClaimResult(False, reject_reason="token_revoked")
+            if not owner_active:
+                return ClaimResult(False, reject_reason="owner_inactive")
             replaced_cid, replaced_wid = (
                 (agent.connection_id, agent.worker_id) if agent.status in _LIVE else (None, None)
             )
@@ -105,7 +128,12 @@ class SqlAgentStore:
         with SessionLocal() as db:
             result = db.execute(
                 update(Agent)
-                .where(Agent.id == agent_id, Agent.connection_id == connection_id)
+                .where(
+                    Agent.id == agent_id,
+                    Agent.connection_id == connection_id,
+                    # Owner yang dinonaktifkan kehilangan koneksi pada heartbeat berikutnya.
+                    Agent.owner_id.in_(select(User.id).where(User.is_active.is_(True))),
+                )
                 .values(
                     status=AgentStatus.ONLINE.value,
                     last_heartbeat_at=now,

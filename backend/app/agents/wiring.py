@@ -24,6 +24,11 @@ def build_runtime_config() -> AgentRuntimeConfig:
         require_tls=require_tls,
         heartbeat_min_db_interval_seconds=settings.agent_heartbeat_min_db_interval_seconds,
         sweep_interval_seconds=settings.agent_sweep_interval_seconds,
+        auth_fail_limit=settings.agent_auth_fail_limit,
+        auth_fail_window_seconds=settings.agent_auth_fail_window_seconds,
+        max_pending_auth_per_ip=settings.agent_max_pending_auth_per_ip,
+        max_messages_per_window=settings.agent_max_messages_per_window,
+        message_window_seconds=settings.agent_message_window_seconds,
     )
 
 

@@ -271,7 +271,10 @@ async def test_cross_worker_takeover_old_worker_closes_itself_and_never_clobbers
     task, sock, agent_id, _ = await connect(manager_a, store)
 
     new_conn = uuid.uuid4()
-    await store.claim_connection(agent_id, new_conn, "worker-B", "Windows 10 x64", "0.1.0", utc())
+    await store.claim_connection(
+        agent_id, new_conn, "worker-B", "Windows 10 x64", "0.1.0", utc(),
+        store.row(agent_id)["token_hash"],
+    )
     await store.mark_online(agent_id, new_conn, utc())
 
     sock.client_send({"type": "heartbeat"})

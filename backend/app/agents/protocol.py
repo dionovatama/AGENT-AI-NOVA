@@ -26,8 +26,9 @@ Close code (4000-4999 = privat aplikasi):
     4400       pelanggaran protokol
     4401       autentikasi gagal
     4408       timeout (auth atau heartbeat)
+    4429       rate limit terlampaui (percobaan auth gagal / pesan terlalu sering)
 
-Catatan untuk Agent: 4401 dan 4009 JANGAN di-retry agresif. 4009 yang
+Catatan untuk Agent: 4401, 4009, dan 4429 JANGAN di-retry agresif. 4009 yang
 berulang biasanya berarti dua instance agent memakai kredensial yang
 sama dan saling mengusir.
 """
@@ -54,6 +55,7 @@ class CloseCode:
     PROTOCOL = 4400
     AUTH_FAILED = 4401
     TIMEOUT = 4408
+    RATE_LIMITED = 4429
 
 
 # Close code yang dianggap "agent pamit baik-baik" -> status offline.

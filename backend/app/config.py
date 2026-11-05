@@ -145,6 +145,12 @@ class Settings(BaseSettings):
     agent_max_message_bytes: int = 65536
     agent_heartbeat_min_db_interval_seconds: float = 5.0
     agent_sweep_interval_seconds: float = 30.0
+    # Rate limiting (per proses/worker; lihat app/agents/ratelimit.py).
+    agent_auth_fail_limit: int = 10                 # auth gagal per IP per jendela -> IP ditolak
+    agent_auth_fail_window_seconds: float = 60.0
+    agent_max_pending_auth_per_ip: int = 20         # koneksi belum terautentikasi serentak per IP
+    agent_max_messages_per_window: int = 20         # pesan per koneksi per jendela
+    agent_message_window_seconds: float = 10.0
     # None = otomatis: wajib TLS (wss) jika APP_ENV=production. Set false/true untuk override.
     agent_require_tls: bool | None = None
 

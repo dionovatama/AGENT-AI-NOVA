@@ -52,6 +52,7 @@ from app.agents.protocol import (
     parse_client_message,
     registered_message,
 )
+from app.agents.ratelimit import SlidingWindowLimiter
 from app.agents.registry import LiveConnection, LocalConnectionRegistry
 from app.agents.states import AgentStatus
 from app.agents.store import AgentStore
@@ -92,6 +93,19 @@ class AgentRuntimeConfig:
     # tetap di-ack tapi tidak menulis DB (anti write-amplification).
     heartbeat_min_db_interval_seconds: float = 5.0
     sweep_interval_seconds: float = 30.0
+    # Rate limit autentikasi: per IP, hanya KEGAGALAN yang dihitung (auth
+    # salah, timeout, frame rusak). IP yang mencapai batas ditolak SEBELUM
+    # accept dan tanpa menyentuh DB. Agent sah yang berhasil auth tidak
+    # terpengaruh.
+    auth_fail_limit: int = 10
+    auth_fail_window_seconds: float = 60.0
+    # Batas koneksi yang sudah di-accept tapi belum selesai autentikasi per IP
+    # (menahan slow-loris: tiap socket bisa menggantung sampai auth_timeout).
+    max_pending_auth_per_ip: int = 20
+    # Rate limit pesan per koneksi terautentikasi (heartbeat normal = 1 per
+    # 30 dtk; default mengizinkan 20 pesan / 10 dtk).
+    max_messages_per_window: int = 20
+    message_window_seconds: float = 10.0
 
     def __post_init__(self) -> None:
         if self.heartbeat_timeout_seconds <= self.heartbeat_interval_seconds:
@@ -101,6 +115,12 @@ class AgentRuntimeConfig:
             )
         if self.auth_timeout_seconds <= 0 or self.max_message_bytes <= 0:
             raise ValueError("auth_timeout_seconds dan max_message_bytes harus > 0")
+        if (
+            self.auth_fail_limit <= 0 or self.auth_fail_window_seconds <= 0
+            or self.max_pending_auth_per_ip <= 0
+            or self.max_messages_per_window <= 0 or self.message_window_seconds <= 0
+        ):
+            raise ValueError("parameter rate limit harus > 0")
 
 
 def _utcnow() -> datetime:
@@ -128,6 +148,7 @@ class AgentConnectionManager:
         audit: AuditSink | None = None,
         worker_id: str | None = None,
         clock: Callable[[], datetime] = _utcnow,
+        mono_clock: Callable[[], float] = time.monotonic,
     ) -> None:
         self.store = store
         self.cfg = cfg
@@ -136,6 +157,11 @@ class AgentConnectionManager:
         self._audit_sink = audit
         self._clock = clock
         self._sweeper: asyncio.Task | None = None
+        self._mono = mono_clock
+        self.auth_failures = SlidingWindowLimiter(
+            cfg.auth_fail_limit, cfg.auth_fail_window_seconds, clock=mono_clock
+        )
+        self._pending_auth: dict[str, int] = {}
 
     # ------------------------------------------------------------------
     # Entry point
@@ -166,12 +192,33 @@ class AgentConnectionManager:
             await sock.close(CloseCode.POLICY, "TLS required")
             return
 
+        ip = sock.client_ip
+        if self.auth_failures.is_limited(ip):
+            logger.warning("agent ws ditolak: terlalu banyak auth gagal ip=%s", ip)
+            await sock.close(CloseCode.RATE_LIMITED, "rate limited")
+            return
+        if self._pending_auth.get(ip, 0) >= self.cfg.max_pending_auth_per_ip:
+            logger.warning("agent ws ditolak: terlalu banyak koneksi belum terautentikasi ip=%s", ip)
+            await sock.close(CloseCode.RATE_LIMITED, "rate limited")
+            return
+
         await sock.accept()
 
-        session = await self._authenticate(sock, agent_id)
+        self._pending_auth[ip] = self._pending_auth.get(ip, 0) + 1
+        try:
+            session = await self._authenticate(sock, agent_id)
+        finally:
+            remaining = self._pending_auth.get(ip, 1) - 1
+            if remaining > 0:
+                self._pending_auth[ip] = remaining
+            else:
+                self._pending_auth.pop(ip, None)
         if session is None:
             return
         await self._run_session(sock, session)
+
+    def _auth_failed(self, ip: str) -> None:
+        self.auth_failures.hit(ip)
 
     # ------------------------------------------------------------------
     # Fase 1: autentikasi + registrasi
@@ -184,18 +231,22 @@ class AgentConnectionManager:
             auth = parse_auth(raw, self.cfg.max_message_bytes)
         except asyncio.TimeoutError:
             logger.info("agent auth timeout agent=%s ip=%s", agent_id, ip)
+            self._auth_failed(ip)
             await sock.close(CloseCode.TIMEOUT, "authentication timeout")
             return None
         except SocketClosed:
             return None
         except UnsupportedFrame:
+            self._auth_failed(ip)
             await sock.close(CloseCode.UNSUPPORTED, "text frames only")
             return None
         except MessageTooLarge:
+            self._auth_failed(ip)
             await sock.close(CloseCode.TOO_BIG, "message too large")
             return None
         except ProtocolError:
             logger.info("agent auth malformed agent=%s ip=%s", agent_id, ip)
+            self._auth_failed(ip)
             await sock.close(CloseCode.PROTOCOL, "invalid authentication message")
             return None
 
@@ -214,15 +265,26 @@ class AgentConnectionManager:
             )
             # Alasan hanya masuk log server; peer menerima pesan seragam.
             logger.warning("agent auth gagal agent=%s reason=%s ip=%s", agent_id, reason, ip)
+            self._auth_failed(ip)
             await sock.close(CloseCode.AUTH_FAILED, "authentication failed")
             return None
 
+        # Token lolos verifikasi di atas, tapi itu terjadi SEBELUM claim. Antara
+        # keduanya REST bisa me-rotate token / menghapus agent / menonaktifkan
+        # owner. Karena itu hash yang baru diverifikasi dikirim ke store, yang
+        # memvalidasi ulang secara atomik di dalam transaksi claim; token yang
+        # sudah dicabut tidak akan pernah menghasilkan koneksi.
         connection_id = uuid.uuid4()
         claim = await self.store.claim_connection(
-            agent_id, connection_id, self.worker_id, auth.os, auth.agent_version, self._clock()
+            agent_id, connection_id, self.worker_id, auth.os, auth.agent_version,
+            self._clock(), stored_hash,
         )
         if not claim.claimed:
-            logger.warning("agent claim gagal (agent dihapus?) agent=%s ip=%s", agent_id, ip)
+            logger.warning(
+                "agent claim ditolak agent=%s reason=%s ip=%s",
+                agent_id, claim.reject_reason or "unknown", ip,
+            )
+            self._auth_failed(ip)
             await sock.close(CloseCode.AUTH_FAILED, "authentication failed")
             return None
 
@@ -277,6 +339,9 @@ class AgentConnectionManager:
             connected_audited = True
 
             last_db_write = time.monotonic()
+            msg_limiter = SlidingWindowLimiter(
+                cfg.max_messages_per_window, cfg.message_window_seconds, clock=self._mono
+            )
             while True:
                 try:
                     raw = await sock.receive_text(cfg.heartbeat_timeout_seconds)
@@ -284,6 +349,15 @@ class AgentConnectionManager:
                     disconnect_reason = "heartbeat_timeout"
                     logger.warning("agent heartbeat timeout agent=%s conn=%s", s.agent_id, s.connection_id)
                     await sock.close(CloseCode.TIMEOUT, "heartbeat timeout")
+                    return
+
+                if not msg_limiter.hit("msg"):
+                    disconnect_reason = "message_rate_limited"
+                    logger.warning(
+                        "agent message flood agent=%s conn=%s ip=%s",
+                        s.agent_id, s.connection_id, sock.client_ip,
+                    )
+                    await sock.close(CloseCode.RATE_LIMITED, "rate limited")
                     return
 
                 msg = parse_client_message(raw, cfg.max_message_bytes)
@@ -393,6 +467,7 @@ class AgentConnectionManager:
         cutoff = datetime.fromtimestamp(
             now.timestamp() - self.cfg.heartbeat_timeout_seconds, tz=timezone.utc
         )
+        self.auth_failures.prune()
         swept = await self.store.mark_stale(cutoff, now)
         if swept:
             logger.warning("agent sweeper: %d agent heartbeat basi -> disconnected", swept)

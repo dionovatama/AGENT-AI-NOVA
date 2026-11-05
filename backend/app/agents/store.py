@@ -30,6 +30,9 @@ class ClaimResult:
     claimed: bool
     replaced_connection_id: uuid.UUID | None = None
     replaced_worker_id: str | None = None
+    # Hanya untuk log server ("not_found" | "token_revoked" | "owner_inactive");
+    # TIDAK pernah dikirim ke peer.
+    reject_reason: str | None = None
 
 
 class AgentStore(Protocol):
@@ -43,9 +46,18 @@ class AgentStore(Protocol):
         os: str,
         agent_version: str,
         now: datetime,
+        expected_token_hash: str,
     ) -> ClaimResult:
         """Ambil alih kepemilikan koneksi (last-writer-wins): status
-        'connecting', connection_id/worker_id baru, heartbeat = now."""
+        'connecting', connection_id/worker_id baru, heartbeat = now.
+
+        WAJIB atomik terhadap rotate/delete/nonaktif-owner: di dalam SATU
+        transaksi dan dengan baris agent terkunci, implementasi harus
+        memastikan (a) agent masih ada, (b) token_hash saat ini sama dengan
+        `expected_token_hash` (hash yang barusan diverifikasi manager), dan
+        (c) owner masih aktif. Jika salah satu gagal -> ClaimResult(False,
+        reject_reason=...) tanpa mengubah baris. Tanpa ini, token yang
+        di-rotate di antara verifikasi dan claim tetap bisa membuka koneksi."""
 
     async def mark_online(
         self, agent_id: uuid.UUID, connection_id: uuid.UUID, now: datetime
@@ -56,7 +68,7 @@ class AgentStore(Protocol):
         self, agent_id: uuid.UUID, connection_id: uuid.UUID, now: datetime
     ) -> bool:
         """Perbarui last_heartbeat_at. False = bukan pemilik lagi
-        (digantikan, token di-rotate, atau agent dihapus)."""
+        (digantikan, token di-rotate, agent dihapus, atau owner dinonaktifkan)."""
 
     async def release_connection(
         self,
