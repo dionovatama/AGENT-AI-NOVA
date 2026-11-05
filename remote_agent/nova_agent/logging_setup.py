@@ -63,3 +63,11 @@ def setup_logging(console: bool = False) -> None:
         root.addHandler(handler)
     root.setLevel(level)
     logging.getLogger("websockets").setLevel(logging.WARNING)
+
+
+def shutdown_logging() -> None:
+    """Remove and close NOVA-owned handlers so temporary paths can be deleted."""
+    root = logging.getLogger()
+    for handler in [h for h in root.handlers if getattr(h, _HANDLER_TAG, False)]:
+        root.removeHandler(handler)
+        handler.close()
