@@ -12,7 +12,7 @@ py -3.11 -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip
 pip install -e ".[windows]"
-nova-agent init --server-url https://YOUR-NOVA-HOST --agent-id YOUR-AGENT-UUID --token YOUR-PREPROVISIONED-TOKEN
+nova-agent init --server-url https://YOUR-NOVA-HOST --agent-id YOUR-AGENT-UUID
 nova-agent install-service
 nova-agent start
 nova-agent status  # queries Windows Service Control Manager
@@ -38,7 +38,7 @@ nova-agent init --server-url https://YOUR-NOVA-HOST --agent-id YOUR-AGENT-UUID -
 nova-agent run
 ```
 
-## Backend provisioning
+The `init` command securely prompts for the token with hidden input; do not pass production tokens as command-line arguments.\n\n## Backend provisioning
 
 Set the backend secret `NOVA_AGENT_TOKENS_JSON` to a JSON object mapping the exact UUID to a random token of at least 32 characters. Example shape only:
 
