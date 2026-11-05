@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import asyncio
 import enum
+import json
 import logging
 import platform
 import random
@@ -26,6 +27,7 @@ from typing import Awaitable, Callable
 from . import __version__
 from .config import AgentConfig
 from .logging_setup import register_secret
+from .relay_protocol import RelayProtocolViolation, build_tunnel_error, parse_server_relay_message
 from .protocol import (
     BYE_MESSAGE,
     CloseCode,
@@ -175,6 +177,11 @@ class _SessionState:
     registered: bool = False
     healthy: bool = False
     peer_closed: bool = False
+    relay_sessions: set[str] | None = None
+
+    def __post_init__(self) -> None:
+        if self.relay_sessions is None:
+            self.relay_sessions = set()
 
 
 # ---------------------------------------------------------------------------
@@ -431,6 +438,29 @@ class AgentClient:
             raise _Timeout("registration timeout")
         return parse_registered(raw, self.config.agent_id)
 
+    async def _dispatch_relay_message(self, transport: Transport, raw: object, st: _SessionState) -> None:
+        try:
+            msg = parse_server_relay_message(raw)
+        except RelayProtocolViolation as exc:
+            raise ProtocolViolation(f"invalid relay message ({exc})") from None
+        if msg.type == "OPEN_TUNNEL":
+            st.relay_sessions.add(msg.session_id)
+            await transport.send(json.dumps(build_tunnel_error(
+                request_id=msg.request_id,
+                session_id=msg.session_id,
+                code="TARGET_UNAVAILABLE",
+                message="TCP connector is not enabled on this Agent",
+            ), separators=(",", ":")))
+            st.relay_sessions.discard(msg.session_id)
+            return
+        if msg.session_id not in st.relay_sessions:
+            raise ProtocolViolation("relay session is not active")
+        if msg.type == "CLOSE_TUNNEL":
+            st.relay_sessions.discard(msg.session_id)
+            return
+        if msg.type == "DATA":
+            raise ProtocolViolation("relay DATA received without TCP connector")
+
     def _check_unsolicited(self, raw: object) -> None:
         data = decode_message(raw)
         raise_if_error(data)
@@ -450,7 +480,7 @@ class AgentClient:
             while (remaining := next_due - time.monotonic()) > 0:
                 kind, raw = await self._next(queue, remaining)
                 if kind == "msg":
-                    self._check_unsolicited(raw)
+                    await self._dispatch_relay_message(transport, raw, st)
 
             seq += 1
             await transport.send(build_heartbeat_message(seq))
@@ -470,6 +500,9 @@ class AgentClient:
                     validate_heartbeat_ack(data, seq)
                     break
                 ignored += 1
+                if data["type"] in {"OPEN_TUNNEL", "DATA", "CLOSE_TUNNEL"}:
+                    await self._dispatch_relay_message(transport, raw, st)
+                    continue
                 if ignored > MAX_IGNORED_MESSAGES:
                     raise ProtocolViolation("too many unexpected messages")
             if not st.healthy:
