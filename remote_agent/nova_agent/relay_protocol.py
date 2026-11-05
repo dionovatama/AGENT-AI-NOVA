@@ -1,0 +1,45 @@
+"""Remote Agent relay frame validation. TCP connector is added in Phase 4."""
+from __future__ import annotations
+import base64,binascii,json,uuid
+from dataclasses import dataclass
+MAX_RELAY_DATA_BYTES=32*1024
+MAX_RELAY_FRAME_BYTES=48*1024
+_ALLOWED_CLOSE_REASONS=frozenset({"requested","peer_closed","timeout","agent_disconnect","backend_shutdown","error"})
+class RelayProtocolViolation(ValueError): pass
+def _uuid(v,field):
+    if not isinstance(v,str) or len(v)!=36: raise RelayProtocolViolation(f"{field} must be a UUID")
+    try: p=uuid.UUID(v)
+    except ValueError: raise RelayProtocolViolation(f"{field} must be a UUID") from None
+    if p.version!=4 or str(p)!=v.lower(): raise RelayProtocolViolation(f"{field} must be a canonical UUID v4")
+    return str(p)
+@dataclass(frozen=True)
+class RelayCommand:
+    type:str; request_id:str|None=None; session_id:str|None=None; target_id:str|None=None; port:int|None=None; seq:int|None=None; data:bytes|None=None; reason:str|None=None
+def parse_server_relay_message(raw:object)->RelayCommand:
+    if not isinstance(raw,str) or len(raw.encode("utf-8"))>MAX_RELAY_FRAME_BYTES: raise RelayProtocolViolation("invalid or oversized relay frame")
+    try: item=json.loads(raw)
+    except (ValueError,TypeError): raise RelayProtocolViolation("malformed relay JSON") from None
+    if not isinstance(item,dict) or not isinstance(item.get("type"),str): raise RelayProtocolViolation("invalid relay message")
+    kind=item["type"]
+    if kind=="OPEN_TUNNEL":
+        port=item.get("port")
+        if isinstance(port,bool) or not isinstance(port,int) or not 1<=port<=65535: raise RelayProtocolViolation("invalid relay target port")
+        return RelayCommand(kind,_uuid(item.get("request_id"),"request_id"),_uuid(item.get("session_id"),"session_id"),_uuid(item.get("target_id"),"target_id"),port=port)
+    if kind=="DATA":
+        seq=item.get("seq"); encoded=item.get("data")
+        if isinstance(seq,bool) or not isinstance(seq,int) or not 0<=seq<2**53: raise RelayProtocolViolation("invalid relay sequence")
+        if not isinstance(encoded,str) or len(encoded)>((MAX_RELAY_DATA_BYTES+2)//3)*4: raise RelayProtocolViolation("invalid relay payload")
+        try: payload=base64.b64decode(encoded,validate=True)
+        except (binascii.Error,ValueError): raise RelayProtocolViolation("invalid relay payload encoding") from None
+        if len(payload)>MAX_RELAY_DATA_BYTES: raise RelayProtocolViolation("relay payload exceeds limit")
+        return RelayCommand(kind,session_id=_uuid(item.get("session_id"),"session_id"),seq=seq,data=payload)
+    if kind=="CLOSE_TUNNEL":
+        reason=item.get("reason","requested")
+        if reason not in _ALLOWED_CLOSE_REASONS: raise RelayProtocolViolation("invalid relay close reason")
+        return RelayCommand(kind,session_id=_uuid(item.get("session_id"),"session_id"),reason=reason)
+    raise RelayProtocolViolation("unsupported server relay message")
+def build_tunnel_opened(*,request_id,session_id): return {"type":"TUNNEL_OPENED","request_id":_uuid(request_id,"request_id"),"session_id":_uuid(session_id,"session_id")}
+def build_tunnel_error(*,request_id,session_id,code,message=""):
+    allowed={"TARGET_NOT_ALLOWED","TARGET_UNAVAILABLE","CONNECT_FAILED","TIMEOUT","RESOURCE_LIMIT","PROTOCOL_ERROR","CANCELLED"}
+    if code not in allowed or not isinstance(message,str) or len(message)>160 or not message.isprintable(): raise RelayProtocolViolation("invalid relay error")
+    return {"type":"TUNNEL_ERROR","request_id":_uuid(request_id,"request_id"),"session_id":_uuid(session_id,"session_id"),"code":code,"message":message}
