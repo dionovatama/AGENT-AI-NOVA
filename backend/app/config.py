@@ -124,6 +124,12 @@ class Settings(BaseSettings):
     config_apply_enabled: bool = False
 
     audit_log_retention_days: int = 90
+
+    # --- NOVA Remote Agent Gateway (Phase 1) ---
+    # JSON object mapping pre-provisioned agent UUIDs to high-entropy tokens.
+    # Keep this value in the deployment secret store; never commit real tokens.
+    nova_agent_tokens_json: str = "{}"
+    nova_agent_heartbeat_interval_seconds: int = 30
         # --- Image Generation (Cloudflare Workers AI) ---
     # Opsional: kalau kosong, POST /images/generate menjawab 503 [CONFIG]
     # (bukan membuat seluruh backend gagal start).
