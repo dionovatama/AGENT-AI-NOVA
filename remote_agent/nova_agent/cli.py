@@ -1,5 +1,5 @@
 from __future__ import annotations
-import argparse, asyncio, json, os, subprocess, uuid
+import argparse, asyncio, getpass, json, os, subprocess, uuid
 from .config import config_path
 
 def write_config(server_url: str, agent_id: str, token: str):
@@ -17,13 +17,14 @@ def write_config(server_url: str, agent_id: str, token: str):
 def main():
     p=argparse.ArgumentParser(prog="nova-agent")
     sub=p.add_subparsers(dest="command",required=True)
-    init=sub.add_parser("init"); init.add_argument("--server-url",required=True); init.add_argument("--agent-id",required=True); init.add_argument("--token",required=True)
+    init=sub.add_parser("init"); init.add_argument("--server-url",required=True); init.add_argument("--agent-id",required=True); init.add_argument("--token", help="Avoid this option in production; prompted securely when omitted.")
     sub.add_parser("run")
     for cmd in ("install-service","uninstall-service","start","stop","status"): sub.add_parser(cmd)
     a=p.parse_args()
     if a.command=="init":
-        if len(a.token)<32: p.error("token must be at least 32 characters")
-        write_config(a.server_url,a.agent_id,a.token); return
+        token = a.token or getpass.getpass("Agent token (input hidden): ")
+        if len(token)<32: p.error("token must be at least 32 characters")
+        write_config(a.server_url,a.agent_id,token); return
     if a.command=="run":
         from .client import AgentClient
         from .config import AgentConfig
