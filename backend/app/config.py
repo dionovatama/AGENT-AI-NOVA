@@ -130,7 +130,7 @@ class Settings(BaseSettings):
     # Keep this value in the deployment secret store; never commit real tokens.
     nova_agent_tokens_json: str = "{}"
     nova_agent_heartbeat_interval_seconds: int = 30
-        # --- Image Generation (Cloudflare Workers AI) ---
+    # --- Image Generation (Cloudflare Workers AI) ---
     # Opsional: kalau kosong, POST /images/generate menjawab 503 [CONFIG]
     # (bukan membuat seluruh backend gagal start).
     cloudflare_account_id: str | None = None
