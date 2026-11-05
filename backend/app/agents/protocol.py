@@ -96,7 +96,7 @@ class AuthMessage:
 
 @dataclass(frozen=True)
 class ClientMessage:
-    type: str  # "heartbeat" | "bye"
+    type: str  # "heartbeat" | "bye" | relay message type
     seq: int | None = None
 
 
@@ -161,6 +161,8 @@ def parse_client_message(raw: str, max_bytes: int) -> ClientMessage:
     msg_type = data["type"]
     if msg_type == "bye":
         return ClientMessage(type="bye")
+    if msg_type in {"OPEN_TUNNEL", "TUNNEL_OPENED", "TUNNEL_ERROR", "DATA", "CLOSE_TUNNEL"}:
+        return ClientMessage(type=msg_type)
     if msg_type == "heartbeat":
         seq = data.get("seq")
         if seq is not None and (
