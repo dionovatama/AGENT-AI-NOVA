@@ -15,7 +15,7 @@ pip install -e ".[windows]"
 nova-agent init --server-url https://YOUR-NOVA-HOST --agent-id YOUR-AGENT-UUID --token YOUR-PREPROVISIONED-TOKEN
 nova-agent install-service
 nova-agent start
-nova-agent status
+nova-agent status  # queries Windows Service Control Manager
 ```
 
 Service name: `NOVARemoteAgent` (display name: NOVA Remote Agent). Config: `%ProgramData%\NOVA\Agent\config.json`. Logs: `%ProgramData%\NOVA\Agent\logs\agent.log`.
