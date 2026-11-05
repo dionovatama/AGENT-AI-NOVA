@@ -137,6 +137,17 @@ class Settings(BaseSettings):
     cloudflare_api_token: str | None = None
     image_model: str = "@cf/black-forest-labs/flux-1-schnell"
 
+    # --- Remote Agent (Phase A) ---
+    # Semua punya default aman; tidak ada env wajib baru.
+    agent_auth_timeout_seconds: float = 10.0        # batas waktu frame 'auth' setelah handshake
+    agent_heartbeat_interval_seconds: float = 30.0  # interval yang diminta server ke agent
+    agent_heartbeat_timeout_seconds: float = 90.0   # tanpa pesan sebanyak ini -> putus (harus > interval)
+    agent_max_message_bytes: int = 65536
+    agent_heartbeat_min_db_interval_seconds: float = 5.0
+    agent_sweep_interval_seconds: float = 30.0
+    # None = otomatis: wajib TLS (wss) jika APP_ENV=production. Set false/true untuk override.
+    agent_require_tls: bool | None = None
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

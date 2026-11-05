@@ -6,6 +6,7 @@ Tabel:
 - Credential: Abstraksi referensi secret (SSH key, token, dll), tidak menyimpan plaintext secret.
 - Device: Perangkat target yang dikelola (Linux, Windows, MikroTik, Cisco) dengan isolasi owner.
 - AuditLog: Catatan audit persisten atas semua lifecycle eksekusi tool/tindakan sistem.
+- Agent: Remote Agent di jaringan lokal user (Phase A) -- identitas, hash token, dan state koneksi.
 """
 
 from __future__ import annotations
@@ -13,7 +14,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, JSON, String, Text
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Index, Integer, JSON, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -284,3 +285,61 @@ class ConfigurationVersion(Base):
 
     def __repr__(self) -> str:
         return f"<ConfigurationVersion id={self.id} config_id={self.configuration_id} version={self.version_number}>"
+
+
+class Agent(Base):
+    """
+    Remote Agent (Phase A) -- jembatan aman NOVA Cloud <-> jaringan lokal user.
+
+    State koneksi disimpan di DB (bukan dict memori) supaya semua worker
+    backend melihat kebenaran yang sama:
+    - 'connection_id' = kepemilikan koneksi saat ini. Semua penulisan state
+      oleh handler WebSocket kondisional pada kolom ini, sehingga koneksi
+      lama / worker lain tidak bisa menimpa koneksi baru.
+    - 'status' hanyalah klaim terakhir pemilik koneksi; status yang
+      ditampilkan dihitung lewat app.agents.states.effective_status()
+      (kesegaran 'last_heartbeat_at').
+    - Hanya HASH token yang disimpan; token plaintext tampil sekali saat
+      dibuat/di-rotate.
+    """
+    __tablename__ = "agents"
+    __table_args__ = (
+        UniqueConstraint("owner_id", "name", name="uq_agents_owner_name"),
+        Index("ix_agents_status_last_heartbeat", "status", "last_heartbeat_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        PG_UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    owner_id: Mapped[uuid.UUID] = mapped_column(
+        PG_UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+
+    token_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+
+    os: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    agent_version: Mapped[str | None] = mapped_column(String(32), nullable=True)
+
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="offline")
+    connection_id: Mapped[uuid.UUID | None] = mapped_column(PG_UUID(as_uuid=True), nullable=True)
+    worker_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
+
+    last_heartbeat_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_connected_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_disconnected_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_error: Mapped[str | None] = mapped_column(String(500), nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )
+
+    def __repr__(self) -> str:
+        # Sengaja tanpa token_hash.
+        return f"<Agent id={self.id} name={self.name} status={self.status} owner_id={self.owner_id}>"

@@ -1,0 +1,452 @@
+"""
+Agent Connection Manager -- inti logika WebSocket Remote Agent (Phase A).
+
+Modul ini sengaja TIDAK bergantung pada FastAPI/Starlette/SQLAlchemy:
+socket dan store disuntikkan (lihat SocketLike dan store.AgentStore).
+Hasilnya logika koneksi bisa diuji dengan socket/store palsu, termasuk
+skenario race antar-worker.
+
+Alur satu koneksi:
+
+    handshake -> [cek UUID, cek TLS] -> accept
+              -> frame 'auth' (timeout) -> verifikasi token constant-time
+              -> claim_connection (status 'connecting', ambil alih kepemilikan)
+              -> registry lokal (tutup koneksi lokal lama bila ada)
+              -> kirim 'registered' -> mark_online ('online')
+              -> loop heartbeat (timeout) -> release_connection(status akhir)
+
+Prinsip multi-worker (tanpa Redis):
+  * Kepemilikan koneksi = kolom connection_id di DB. Semua tulis state
+    kondisional pada connection_id, jadi koneksi lama/worker lain tidak
+    bisa menimpa koneksi baru.
+  * Heartbeat ditulis ke DB oleh worker pemilik; status dibaca lewat
+    effective_status() (kesegaran heartbeat), bukan dict memori worker.
+  * Koneksi yang kehilangan kepemilikan (record_heartbeat -> False)
+    menutup dirinya sendiri dengan kode 4009.
+  * Pengiriman command lintas-worker butuh pub/sub (LISTEN/NOTIFY atau
+    Redis) -- sengaja di luar scope Phase A.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import logging
+import socket
+import time
+import uuid
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from typing import Any, Awaitable, Callable, Protocol
+
+from app.agents.protocol import (
+    CLEAN_CLOSE_CODES,
+    CloseCode,
+    MessageTooLarge,
+    ProtocolError,
+    SocketClosed,
+    UnsupportedFrame,
+    error_message,
+    heartbeat_ack_message,
+    parse_agent_id,
+    parse_auth,
+    parse_client_message,
+    registered_message,
+)
+from app.agents.registry import LiveConnection, LocalConnectionRegistry
+from app.agents.states import AgentStatus
+from app.agents.store import AgentStore
+from app.agents.tokens import DUMMY_TOKEN_HASH, verify_agent_token
+from app.security.sanitization import sanitize_error_message
+
+logger = logging.getLogger("nova.agents")
+
+AuditSink = Callable[..., Awaitable[None]]
+
+
+class SocketLike(Protocol):
+    """Antarmuka minimum socket. Adapter Starlette: starlette_adapter.py."""
+
+    is_secure: bool
+    client_ip: str
+
+    async def accept(self) -> None: ...
+
+    async def receive_text(self, timeout: float) -> str:
+        """Raise asyncio.TimeoutError / SocketClosed / UnsupportedFrame."""
+
+    async def send_json(self, payload: dict) -> None:
+        """Raise SocketClosed jika socket sudah mati."""
+
+    async def close(self, code: int, reason: str = "") -> None:
+        """Tidak pernah raise."""
+
+
+@dataclass(frozen=True)
+class AgentRuntimeConfig:
+    auth_timeout_seconds: float = 10.0
+    heartbeat_interval_seconds: float = 30.0
+    heartbeat_timeout_seconds: float = 90.0
+    max_message_bytes: int = 65536
+    require_tls: bool = False
+    # Batas tulis DB per koneksi: heartbeat yang datang lebih rapat dari ini
+    # tetap di-ack tapi tidak menulis DB (anti write-amplification).
+    heartbeat_min_db_interval_seconds: float = 5.0
+    sweep_interval_seconds: float = 30.0
+
+    def __post_init__(self) -> None:
+        if self.heartbeat_timeout_seconds <= self.heartbeat_interval_seconds:
+            raise ValueError(
+                "heartbeat_timeout_seconds harus lebih besar dari "
+                "heartbeat_interval_seconds"
+            )
+        if self.auth_timeout_seconds <= 0 or self.max_message_bytes <= 0:
+            raise ValueError("auth_timeout_seconds dan max_message_bytes harus > 0")
+
+
+def _utcnow() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def default_worker_id() -> str:
+    return f"{socket.gethostname()}:{uuid.uuid4().hex[:8]}"
+
+
+@dataclass
+class _Session:
+    agent_id: uuid.UUID
+    owner_id: uuid.UUID
+    connection_id: uuid.UUID
+    os: str
+    agent_version: str
+
+
+class AgentConnectionManager:
+    def __init__(
+        self,
+        store: AgentStore,
+        cfg: AgentRuntimeConfig,
+        audit: AuditSink | None = None,
+        worker_id: str | None = None,
+        clock: Callable[[], datetime] = _utcnow,
+    ) -> None:
+        self.store = store
+        self.cfg = cfg
+        self.worker_id = worker_id or default_worker_id()
+        self.registry = LocalConnectionRegistry()
+        self._audit_sink = audit
+        self._clock = clock
+        self._sweeper: asyncio.Task | None = None
+
+    # ------------------------------------------------------------------
+    # Entry point
+    # ------------------------------------------------------------------
+
+    async def handle(self, sock: SocketLike, agent_id_raw: str) -> None:
+        """Menangani satu koneksi sampai selesai. Tidak pernah raise
+        (kecuali CancelledError, yang sengaja diteruskan)."""
+        try:
+            await self._handle(sock, agent_id_raw)
+        except asyncio.CancelledError:
+            raise
+        except Exception:  # noqa: BLE001 -- jaring pengaman terakhir
+            # Tidak ada pesan/frame klien di scope ini, jadi token tidak
+            # mungkin ikut tercatat di traceback.
+            logger.exception("agent ws: error tak terduga sebelum sesi aktif")
+            await sock.close(CloseCode.INTERNAL, "internal error")
+
+    async def _handle(self, sock: SocketLike, agent_id_raw: str) -> None:
+        agent_id = parse_agent_id(agent_id_raw)
+        if agent_id is None:
+            logger.warning("agent ws ditolak: format agent id tidak valid ip=%s", sock.client_ip)
+            await sock.close(CloseCode.POLICY, "invalid request")
+            return
+
+        if self.cfg.require_tls and not sock.is_secure:
+            logger.warning("agent ws ditolak: koneksi non-TLS agent=%s ip=%s", agent_id, sock.client_ip)
+            await sock.close(CloseCode.POLICY, "TLS required")
+            return
+
+        await sock.accept()
+
+        session = await self._authenticate(sock, agent_id)
+        if session is None:
+            return
+        await self._run_session(sock, session)
+
+    # ------------------------------------------------------------------
+    # Fase 1: autentikasi + registrasi
+    # ------------------------------------------------------------------
+
+    async def _authenticate(self, sock: SocketLike, agent_id: uuid.UUID) -> _Session | None:
+        ip = sock.client_ip
+        try:
+            raw = await sock.receive_text(self.cfg.auth_timeout_seconds)
+            auth = parse_auth(raw, self.cfg.max_message_bytes)
+        except asyncio.TimeoutError:
+            logger.info("agent auth timeout agent=%s ip=%s", agent_id, ip)
+            await sock.close(CloseCode.TIMEOUT, "authentication timeout")
+            return None
+        except SocketClosed:
+            return None
+        except UnsupportedFrame:
+            await sock.close(CloseCode.UNSUPPORTED, "text frames only")
+            return None
+        except MessageTooLarge:
+            await sock.close(CloseCode.TOO_BIG, "message too large")
+            return None
+        except ProtocolError:
+            logger.info("agent auth malformed agent=%s ip=%s", agent_id, ip)
+            await sock.close(CloseCode.PROTOCOL, "invalid authentication message")
+            return None
+
+        record = await self.store.get_auth_record(agent_id)
+
+        # Selalu jalankan perbandingan constant-time, juga saat agent tidak
+        # ada (pakai hash dummy), supaya timing tidak membocorkan keberadaan.
+        stored_hash = record.token_hash if record is not None else DUMMY_TOKEN_HASH
+        token_ok = verify_agent_token(auth.token, stored_hash)
+
+        if record is None or not token_ok or not record.owner_active:
+            reason = (
+                "unknown_agent" if record is None
+                else "bad_token" if not token_ok
+                else "owner_inactive"
+            )
+            # Alasan hanya masuk log server; peer menerima pesan seragam.
+            logger.warning("agent auth gagal agent=%s reason=%s ip=%s", agent_id, reason, ip)
+            await sock.close(CloseCode.AUTH_FAILED, "authentication failed")
+            return None
+
+        connection_id = uuid.uuid4()
+        claim = await self.store.claim_connection(
+            agent_id, connection_id, self.worker_id, auth.os, auth.agent_version, self._clock()
+        )
+        if not claim.claimed:
+            logger.warning("agent claim gagal (agent dihapus?) agent=%s ip=%s", agent_id, ip)
+            await sock.close(CloseCode.AUTH_FAILED, "authentication failed")
+            return None
+
+        session = _Session(agent_id, record.owner_id, connection_id, auth.os, auth.agent_version)
+
+        # Duplicate di worker yang sama: koneksi baru menang, yang lama ditutup.
+        # (Duplicate lintas-worker ditangani lewat connection_id di DB.)
+        previous = self.registry.register(
+            LiveConnection(agent_id, connection_id, record.owner_id, sock)
+        )
+        if previous is not None:
+            logger.info("agent duplicate: koneksi lokal lama digantikan agent=%s", agent_id)
+            await previous.sock.close(CloseCode.REPLACED, "replaced by a newer connection")
+        if claim.replaced_connection_id is not None:
+            logger.info(
+                "agent mengambil alih koneksi sebelumnya agent=%s replaced_worker=%s",
+                agent_id, claim.replaced_worker_id,
+            )
+        return session
+
+    # ------------------------------------------------------------------
+    # Fase 2: sesi aktif
+    # ------------------------------------------------------------------
+
+    async def _run_session(self, sock: SocketLike, s: _Session) -> None:
+        cfg = self.cfg
+        final_status = AgentStatus.DISCONNECTED
+        final_error: str | None = None
+        disconnect_reason = "connection_lost"
+        superseded = False
+        connected_audited = False
+
+        try:
+            await sock.send_json(
+                registered_message(
+                    s.agent_id, s.connection_id,
+                    cfg.heartbeat_interval_seconds, cfg.heartbeat_timeout_seconds,
+                    self._clock(),
+                )
+            )
+            if not await self.store.mark_online(s.agent_id, s.connection_id, self._clock()):
+                superseded = True
+                disconnect_reason = "superseded"
+                await sock.close(CloseCode.REPLACED, "connection superseded")
+                return
+
+            logger.info(
+                "agent online agent=%s conn=%s worker=%s os=%s version=%s",
+                s.agent_id, s.connection_id, self.worker_id, s.os, s.agent_version,
+            )
+            await self._audit("agent.connected", "SUCCESS", s, {"os": s.os, "agent_version": s.agent_version})
+            connected_audited = True
+
+            last_db_write = time.monotonic()
+            while True:
+                try:
+                    raw = await sock.receive_text(cfg.heartbeat_timeout_seconds)
+                except asyncio.TimeoutError:
+                    disconnect_reason = "heartbeat_timeout"
+                    logger.warning("agent heartbeat timeout agent=%s conn=%s", s.agent_id, s.connection_id)
+                    await sock.close(CloseCode.TIMEOUT, "heartbeat timeout")
+                    return
+
+                msg = parse_client_message(raw, cfg.max_message_bytes)
+
+                if msg.type == "bye":
+                    final_status = AgentStatus.OFFLINE
+                    disconnect_reason = "bye"
+                    await sock.close(CloseCode.NORMAL, "bye")
+                    return
+
+                # heartbeat
+                now_mono = time.monotonic()
+                if now_mono - last_db_write >= cfg.heartbeat_min_db_interval_seconds:
+                    if not await self.store.record_heartbeat(s.agent_id, s.connection_id, self._clock()):
+                        superseded = True
+                        disconnect_reason = "superseded"
+                        logger.info("agent kehilangan kepemilikan koneksi agent=%s conn=%s", s.agent_id, s.connection_id)
+                        await sock.close(CloseCode.REPLACED, "connection superseded")
+                        return
+                    last_db_write = now_mono
+                await sock.send_json(heartbeat_ack_message(msg.seq, self._clock()))
+
+        except SocketClosed as exc:
+            if exc.code in CLEAN_CLOSE_CODES:
+                final_status = AgentStatus.OFFLINE
+                disconnect_reason = "clean_close"
+            else:
+                disconnect_reason = f"socket_closed_{exc.code}"
+        except UnsupportedFrame:
+            disconnect_reason = "unsupported_frame"
+            await sock.close(CloseCode.UNSUPPORTED, "text frames only")
+        except MessageTooLarge:
+            disconnect_reason = "message_too_large"
+            await sock.close(CloseCode.TOO_BIG, "message too large")
+        except ProtocolError as exc:
+            disconnect_reason = "protocol_error"
+            try:
+                await sock.send_json(error_message("protocol_error", str(exc)))
+            except SocketClosed:
+                pass
+            await sock.close(CloseCode.PROTOCOL, "protocol error")
+        except asyncio.CancelledError:
+            disconnect_reason = "server_cancelled"
+            raise
+        except Exception as exc:  # noqa: BLE001
+            final_status = AgentStatus.ERROR
+            disconnect_reason = "backend_error"
+            final_error = (
+                f"{type(exc).__name__}: {sanitize_error_message(str(exc)) or ''}"
+            )[:200]
+            logger.exception("agent session error agent=%s conn=%s", s.agent_id, s.connection_id)
+            await sock.close(CloseCode.INTERNAL, "internal error")
+        finally:
+            self.registry.unregister(s.agent_id, s.connection_id)
+            if not superseded:
+                try:
+                    await asyncio.shield(
+                        self.store.release_connection(
+                            s.agent_id, s.connection_id, final_status.value,
+                            self._clock(), final_error,
+                        )
+                    )
+                except Exception:  # noqa: BLE001
+                    logger.exception("agent release gagal agent=%s conn=%s", s.agent_id, s.connection_id)
+            if connected_audited:
+                await self._audit(
+                    "agent.disconnected",
+                    "SUCCESS" if final_status != AgentStatus.ERROR else "FAILED",
+                    s,
+                    {"reason": disconnect_reason, "final_status": final_status.value},
+                    error=final_error,
+                )
+            logger.info(
+                "agent keluar agent=%s conn=%s reason=%s status=%s",
+                s.agent_id, s.connection_id, disconnect_reason,
+                "superseded" if superseded else final_status.value,
+            )
+
+    # ------------------------------------------------------------------
+    # Audit (best effort -- tidak boleh menjatuhkan koneksi)
+    # ------------------------------------------------------------------
+
+    async def _audit(
+        self, action: str, result_status: str, s: _Session, metadata: dict[str, Any],
+        error: str | None = None,
+    ) -> None:
+        if self._audit_sink is None:
+            return
+        try:
+            await self._audit_sink(
+                action=action,
+                result_status=result_status,
+                owner_id=s.owner_id,
+                agent_id=s.agent_id,
+                metadata={"connection_id": str(s.connection_id), "worker_id": self.worker_id, **metadata},
+                error=error,
+            )
+        except Exception:  # noqa: BLE001
+            logger.warning("audit agent gagal action=%s", action, exc_info=True)
+
+    # ------------------------------------------------------------------
+    # Sweeper + lifecycle
+    # ------------------------------------------------------------------
+
+    async def sweep_once(self) -> int:
+        now = self._clock()
+        cutoff = datetime.fromtimestamp(
+            now.timestamp() - self.cfg.heartbeat_timeout_seconds, tz=timezone.utc
+        )
+        swept = await self.store.mark_stale(cutoff, now)
+        if swept:
+            logger.warning("agent sweeper: %d agent heartbeat basi -> disconnected", swept)
+        return swept
+
+    async def _sweeper_loop(self) -> None:
+        while True:
+            try:
+                await self.sweep_once()
+            except asyncio.CancelledError:
+                raise
+            except Exception:  # noqa: BLE001
+                logger.exception("agent sweeper iterasi gagal")
+            await asyncio.sleep(self.cfg.sweep_interval_seconds)
+
+    def start(self) -> None:
+        if self._sweeper is None or self._sweeper.done():
+            self._sweeper = asyncio.create_task(self._sweeper_loop())
+
+    async def disconnect_local(
+        self, agent_id: uuid.UUID, code: int = CloseCode.REPLACED,
+        reason: str = "connection revoked",
+    ) -> bool:
+        """Tutup koneksi agent yang dipegang proses ini (dipakai REST saat
+        agent dihapus/token di-rotate). Koneksi di worker lain baru tertutup
+        pada heartbeat berikutnya -- tanpa pub/sub itu batas terbaiknya."""
+        live = self.registry.get(agent_id)
+        if live is None:
+            return False
+        await live.sock.close(code, reason)
+        return True
+
+    async def shutdown(self) -> None:
+        """Graceful shutdown backend: hentikan sweeper, tutup semua koneksi
+        lokal dengan 1001, tandai 'disconnected' (agent tidak pamit, jadi
+        BUKAN 'offline') supaya agent reconnect begitu backend naik lagi."""
+        if self._sweeper is not None:
+            self._sweeper.cancel()
+            try:
+                await self._sweeper
+            except asyncio.CancelledError:
+                pass
+            self._sweeper = None
+
+        for live in self.registry.all():
+            await live.sock.close(CloseCode.GOING_AWAY, "server shutting down")
+            try:
+                await asyncio.wait_for(
+                    self.store.release_connection(
+                        live.agent_id, live.connection_id,
+                        AgentStatus.DISCONNECTED.value, self._clock(),
+                    ),
+                    timeout=5.0,
+                )
+            except Exception:  # noqa: BLE001
+                logger.warning("release saat shutdown gagal agent=%s", live.agent_id, exc_info=True)
+            self.registry.unregister(live.agent_id, live.connection_id)

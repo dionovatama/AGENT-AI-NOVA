@@ -9,7 +9,7 @@ Client → FastAPI → Auth → PostgreSQL
 
 import asyncio
 import sys
-from app.api import auth, chat, configurations, devices, tools, mikrotik_generator, images, linux_generator, agent
+from app.api import auth, chat, configurations, devices, tools, mikrotik_generator, images, linux_generator, agent, agents
 
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
@@ -42,6 +42,7 @@ from app.tools.mikrotik import (
 from app.tools.web import web_search_tool, web_read_page_tool
 from app.tools.diagram import diagram_create_tool
 from app.security.audit_retention import audit_retention_loop
+from app.agents.wiring import agent_manager
 
 app = FastAPI(
     title=settings.app_name,
@@ -68,7 +69,8 @@ app.include_router(configurations.router)
 app.include_router(mikrotik_generator.router)
 app.include_router(linux_generator.router)
 app.include_router(images.router)
-app.include_router(agent.router)
+app.include_router(agent.router)   # legacy Phase 1 static-token gateway (/agent/ws), unchanged
+app.include_router(agents.router)  # Phase A: DB-backed agents (REST /agents + WS /ws/agent/{id})
 
 tool_manager.register(ping_tool)
 tool_manager.register(system_info_tool)
@@ -114,6 +116,14 @@ async def start_background_tasks():
     rasional kenapa ini otomatis, bukan tombol hapus manual.
     """
     asyncio.create_task(audit_retention_loop())
+    # Remote Agent Phase A: sweeper untuk status agent basi (idempoten, per worker).
+    agent_manager.start()
+
+
+@app.on_event("shutdown")
+async def stop_agent_manager():
+    """Tutup koneksi agent lokal dengan 1001 dan tandai 'disconnected'."""
+    await agent_manager.shutdown()
 
 
 @app.get("/health", tags=["system"])
