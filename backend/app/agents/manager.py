@@ -54,6 +54,8 @@ from app.agents.protocol import (
 )
 from app.agents.ratelimit import SlidingWindowLimiter
 from app.agents.registry import LiveConnection, LocalConnectionRegistry
+from app.agents.relay_protocol import RELAY_MESSAGE_TYPES, RelayProtocolError, open_tunnel_message, parse_relay_message
+from app.agents.relay_sessions import RelaySessionError, RelaySessionRegistry
 from app.agents.states import AgentStatus
 from app.agents.store import AgentStore
 from app.agents.tokens import DUMMY_TOKEN_HASH, verify_agent_token
@@ -154,6 +156,7 @@ class AgentConnectionManager:
         self.cfg = cfg
         self.worker_id = worker_id or default_worker_id()
         self.registry = LocalConnectionRegistry()
+        self.relay_sessions = RelaySessionRegistry(max_per_agent=8, idle_timeout=60.0)
         self._audit_sink = audit
         self._clock = clock
         self._sweeper: asyncio.Task | None = None
@@ -362,6 +365,10 @@ class AgentConnectionManager:
 
                 msg = parse_client_message(raw, cfg.max_message_bytes)
 
+                if msg.type in RELAY_MESSAGE_TYPES:
+                    await self._handle_relay_message(raw, s)
+                    continue
+
                 if msg.type == "bye":
                     final_status = AgentStatus.OFFLINE
                     disconnect_reason = "bye"
@@ -411,6 +418,7 @@ class AgentConnectionManager:
             logger.exception("agent session error agent=%s conn=%s", s.agent_id, s.connection_id)
             await sock.close(CloseCode.INTERNAL, "internal error")
         finally:
+            self.relay_sessions.cleanup_connection(agent_id=s.agent_id, connection_id=s.connection_id)
             self.registry.unregister(s.agent_id, s.connection_id)
             if not superseded:
                 try:
@@ -435,6 +443,53 @@ class AgentConnectionManager:
                 s.agent_id, s.connection_id, disconnect_reason,
                 "superseded" if superseded else final_status.value,
             )
+
+    async def _handle_relay_message(self, raw: str, s: _Session) -> None:
+        """Dispatch Agent->Backend relay frames through the existing single reader."""
+        try:
+            msg = parse_relay_message(raw, direction="agent_to_server")
+            common = {"agent_id": s.agent_id, "owner_id": s.owner_id, "connection_id": s.connection_id}
+            if msg.type == "TUNNEL_OPENED":
+                session = self.relay_sessions.mark_open(uuid.UUID(msg.session_id), **common)
+                if session.request_id != uuid.UUID(msg.request_id):
+                    raise RelayProtocolError("relay request/session mismatch")
+            elif msg.type == "TUNNEL_ERROR":
+                self.relay_sessions.fail(uuid.UUID(msg.session_id), code=msg.code or "PROTOCOL_ERROR", **common)
+            elif msg.type == "DATA":
+                self.relay_sessions.touch(uuid.UUID(msg.session_id), **common)
+            elif msg.type == "CLOSE_TUNNEL":
+                self.relay_sessions.close(uuid.UUID(msg.session_id), **common)
+            logger.debug("relay frame agent=%s type=%s session=%s", s.agent_id, msg.type, msg.session_id)
+        except (RelayProtocolError, RelaySessionError, ValueError) as exc:
+            logger.warning("invalid relay frame agent=%s: %s", s.agent_id, exc)
+            await self._audit("agent.relay.protocol_error", "FAILED", s, {"reason": "invalid_relay_frame"}, error=str(exc)[:160])
+            raise ProtocolError("invalid relay frame")
+
+    async def open_relay_tunnel(
+        self, *, agent_id: uuid.UUID, owner_id: uuid.UUID, connection_id: uuid.UUID,
+        target_id: uuid.UUID, port: int,
+    ) -> dict[str, Any]:
+        """Create an owned relay session and send OPEN_TUNNEL on the live Agent socket."""
+        live = self.registry.get(agent_id)
+        if live is None or live.connection_id != connection_id or live.owner_id != owner_id:
+            raise RelaySessionError("agent connection not found")
+        session = self.relay_sessions.create(
+            agent_id=agent_id, owner_id=owner_id, connection_id=connection_id,
+            target_id=target_id, port=port,
+        )
+        payload = open_tunnel_message(
+            request_id=session.request_id, session_id=session.session_id,
+            target_id=target_id, port=port,
+        )
+        try:
+            await live.sock.send_json(payload)
+        except Exception:
+            self.relay_sessions.fail(
+                session.session_id, agent_id=agent_id, owner_id=owner_id,
+                connection_id=connection_id, code="CONNECT_FAILED",
+            )
+            raise
+        return payload
 
     # ------------------------------------------------------------------
     # Audit (best effort -- tidak boleh menjatuhkan koneksi)
