@@ -98,8 +98,8 @@ def save_state_snapshot(
     
     CATATAN GAP KEAMANAN EKSPLISIT:
     File backup saat ini disimpan ter-sanitasi dan diproteksi permission OS (0600/icacls),
-    namun belum dienkripsi at-rest menggunakan kunci vault/KMS. Enkripsi at-rest
-    adalah item backlog terpisah bersamaan dengan pengamanan secret_reference.
+    namun belum dienkripsi at-rest menggunakan kunci vault/KMS. Enkripsi backup
+    at-rest tetap menjadi item backlog terpisah dari enkripsi credential perangkat.
     """
     device_dir = get_device_backup_dir(owner_id, device_id)
 

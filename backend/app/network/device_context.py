@@ -6,6 +6,8 @@ from sqlalchemy.orm import Session
 
 from app.database.models import Credential, Device, User
 from app.tools.context import ExecutionContext
+from app.security.credential_resolver import resolve_credential_secret
+from app.security.credential_encryption import CredentialEncryptionError
 
 
 def build_device_context(device: Device, user: User, db: Session) -> ExecutionContext:
@@ -21,4 +23,11 @@ def build_device_context(device: Device, user: User, db: Session) -> ExecutionCo
     )
     if credential is None:
         raise ValueError("Credential device tidak ditemukan atau bukan milik pengguna ini.")
-    return ExecutionContext(user=user, db=db, device=device, credential_plaintext=credential.secret_reference)
+    try:
+        secret = resolve_credential_secret(credential)
+    except CredentialEncryptionError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="Credential encryption is unavailable or the credential needs migration.",
+        ) from exc
+    return ExecutionContext(user=user, db=db, device=device, credential_plaintext=secret)

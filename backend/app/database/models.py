@@ -51,9 +51,8 @@ class Credential(Base):
     Abstraksi referensi credential aman.
 
     PENTING:
-    - Tidak menyimpan password/private key plaintext di dalam kolom ini.
-    - 'secret_reference' adalah referensi ke secret manager/keystore terkontrol
-      (misal: path file yang diproteksi atau ID vault).
+    - Secret baru disimpan sebagai ciphertext AES-256-GCM.
+    - secret_reference hanya dipertahankan nullable untuk migrasi data lama.
     - Konten credential tidak pernah dikirim ke LLM.
     """
     __tablename__ = "credentials"
@@ -68,7 +67,11 @@ class Credential(Base):
 
     name: Mapped[str] = mapped_column(String(100), nullable=False)
     type: Mapped[str] = mapped_column(String(50), nullable=False)  # ssh_key, password, api_token
-    secret_reference: Mapped[str] = mapped_column(String(255), nullable=False)
+    # Kolom legacy; harus NULL setelah migrasi. Tidak digunakan untuk eksekusi.
+    secret_reference: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    encrypted_secret: Mapped[str | None] = mapped_column(Text, nullable=True)
+    encryption_nonce: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    encryption_key_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False

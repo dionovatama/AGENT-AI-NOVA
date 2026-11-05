@@ -24,6 +24,8 @@ from sqlalchemy.orm import Session
 from app.database.models import Credential, Device, User
 from app.database.session import SessionLocal
 from app.security.audit import log_tool_execution, record_audit_event, update_audit_event
+from app.security.credential_resolver import resolve_credential_secret
+from app.security.credential_encryption import CredentialEncryptionError
 from app.security.authorization import (
     ApprovalContext,
     AuthorizationError,
@@ -291,19 +293,13 @@ class ToolManager:
                             "Credential yang direferensikan device ini tidak "
                             "ditemukan atau bukan milik pengguna ini."
                         )
-                    # CATATAN KEAMANAN — GAP YANG DISENGAJA TETAP TERLIHAT:
-                    # app/database/models.py mendokumentasikan secret_reference
-                    # sebagai "referensi ke secret manager/keystore terkontrol",
-                    # tapi belum ada layer enkripsi/vault sungguhan yang
-                    # menuliskannya di app/api/devices.py — kolom itu saat ini
-                    # menyimpan nilai secret secara langsung. Untuk batch
-                    # mikrotik.* ini, kolom tsb dipakai apa adanya sebagai slot
-                    # plaintext sementara. Migrasi ke secret manager/enkripsi-
-                    # at-rest sungguhan adalah pekerjaan terpisah di luar scope
-                    # batch ini — sengaja TIDAK "diselesaikan" diam-diam di sini
-                    # supaya gap ini tetap eksplisit (sama semangatnya dengan
-                    # known_hosts=None di app/tools/linux.py).
-                    credential_plaintext = credential.secret_reference
+                    try:
+                        credential_plaintext = resolve_credential_secret(credential)
+                    except CredentialEncryptionError as exc:
+                        raise ToolCredentialError(
+                            "Credential belum terenkripsi atau kunci enkripsinya tidak tersedia. "
+                            "Jalankan migrasi credential dan periksa konfigurasi keyring."
+                        ) from exc
                 else:
                     # Semua tool mikrotik.* pada batch ini butuh autentikasi API
                     # RouterOS — device tanpa credential tidak bisa dieksekusi.

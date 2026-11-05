@@ -25,6 +25,7 @@ from app.schemas.devices import (
     DeviceUpdateRequest,
 )
 from app.security.dependencies import get_current_user
+from app.security.credential_encryption import CredentialEncryptionError, encrypt_credential
 
 router = APIRouter(tags=["devices", "credentials", "audit"])
 
@@ -188,13 +189,30 @@ def create_credential(
 ) -> Credential:
     """
     Membuat referensi credential baru yang terikat secara eksklusif ke owner_id pengguna saat ini.
-    Plaintext password/key tidak disimpan langsung di sini.
+    Secret dienkripsi dengan AES-256-GCM sebelum disimpan.
     """
+    credential_id = uuid.uuid4()
+    try:
+        encrypted = encrypt_credential(
+            payload.secret_reference,
+            owner_id=current_user.id,
+            credential_id=credential_id,
+        )
+    except CredentialEncryptionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Credential encryption is unavailable or misconfigured.",
+        ) from exc
+
     credential = Credential(
+        id=credential_id,
         owner_id=current_user.id,
         name=payload.name,
         type=payload.type,
-        secret_reference=payload.secret_reference,
+        encrypted_secret=encrypted.ciphertext,
+        encryption_nonce=encrypted.nonce,
+        encryption_key_id=encrypted.key_id,
+        secret_reference=None,
     )
     db.add(credential)
     db.commit()

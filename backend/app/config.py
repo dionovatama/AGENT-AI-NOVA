@@ -125,6 +125,12 @@ class Settings(BaseSettings):
 
     audit_log_retention_days: int = 90
 
+    # --- Credential encryption at rest ---
+    # JSON keyring: {"key-id":"base64-encoded-32-byte-key"}.
+    # Keep keys in deployment secret storage, never in the database/repository.
+    credential_encryption_keys_json: str | None = None
+    credential_encryption_active_key_id: str | None = None
+
     # --- NOVA Remote Agent Gateway (Phase 1) ---
     # JSON object mapping pre-provisioned agent UUIDs to high-entropy tokens.
     # Keep this value in the deployment secret store; never commit real tokens.

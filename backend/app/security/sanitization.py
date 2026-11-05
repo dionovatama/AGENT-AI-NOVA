@@ -25,6 +25,9 @@ _SENSITIVE_KEY_PATTERNS = {
     "bearer",
     "credential",
     "secret_reference",
+    "encryption_nonce",
+    "encryption_key_id",
+    "encrypted_secret",
 }
 
 # Regex to detect JWT strings (header.payload.signature)

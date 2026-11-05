@@ -46,7 +46,7 @@ class DeviceResponse(BaseModel):
 class CredentialCreateRequest(BaseModel):
     name: str = Field(min_length=1, max_length=100)
     type: str = Field(min_length=1, max_length=50)  # ssh_key, password, api_token
-    secret_reference: str = Field(min_length=1, max_length=255)
+    secret_reference: str = Field(min_length=1, max_length=4096, repr=False, description="Secret plaintext input; encrypted before persistence. Legacy field name retained for API compatibility.")
 
 
 class CredentialResponse(BaseModel):

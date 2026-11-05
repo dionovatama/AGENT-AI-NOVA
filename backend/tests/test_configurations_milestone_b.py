@@ -34,6 +34,7 @@ from fastapi.testclient import TestClient
 from app.config import settings
 from app.database.models import AuditLog, Configuration, Credential, Device, User
 from app.database.session import SessionLocal
+from app.security.credential_encryption import encrypt_credential
 from app.main import app
 from app.network.adapters.fake import FakeNetworkAdapter
 from app.network.models import (
@@ -82,12 +83,21 @@ def _create_user_and_headers() -> tuple[dict[str, str], User]:
 def _create_lab_device(user: User, lab: bool = True) -> Device:
     db = SessionLocal()
     try:
+        credential_id = uuid.uuid4()
+        encrypted = encrypt_credential(
+            "lab_password_secret",
+            owner_id=user.id,
+            credential_id=credential_id,
+        )
         cred = Credential(
-            id=uuid.uuid4(),
+            id=credential_id,
             owner_id=user.id,
             name="test-cred",
             type="password",
-            secret_reference="lab_password_secret",
+            encrypted_secret=encrypted.ciphertext,
+            encryption_nonce=encrypted.nonce,
+            encryption_key_id=encrypted.key_id,
+            secret_reference=None,
         )
         db.add(cred)
         db.commit()
