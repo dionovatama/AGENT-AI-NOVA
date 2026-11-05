@@ -30,9 +30,13 @@ def main():
         from .logging_setup import setup_logging
         setup_logging(); asyncio.run(AgentClient(AgentConfig.load()).run()); return
     if os.name!="nt": p.error("Windows service commands are only supported on Windows")
+    if a.command == "status":
+        result = subprocess.run(["sc.exe", "query", "NOVARemoteAgent"], text=True, capture_output=True)
+        print(result.stdout or result.stderr)
+        raise SystemExit(result.returncode)
     import win32serviceutil
     from .windows_service import NovaAgentService
-    actions={"install-service":"install","uninstall-service":"remove","start":"start","stop":"stop","status":"status"}
+    actions={"install-service":"install","uninstall-service":"remove","start":"start","stop":"stop"}
     win32serviceutil.HandleCommandLine(NovaAgentService, argv=["nova-agent",actions[a.command]])
 
 if __name__=="__main__": main()
