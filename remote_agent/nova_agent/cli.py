@@ -75,14 +75,17 @@ def _cmd_init(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
 
 
 def _cmd_run() -> int:
-    from .logging_setup import setup_logging
+    from .logging_setup import setup_logging, shutdown_logging
     from .runner import run_blocking
 
     setup_logging(console=True)
-    reason = run_blocking(AgentConfig.load, handle_signals=True)
-    if reason.exit_code:
-        print(f"Agent exited: {reason.name}. See the log for details.", file=sys.stderr)
-    return reason.exit_code
+    try:
+        reason = run_blocking(AgentConfig.load, handle_signals=True)
+        if reason.exit_code:
+            print(f"Agent exited: {reason.name}. See the log for details.", file=sys.stderr)
+        return reason.exit_code
+    finally:
+        shutdown_logging()
 
 
 def main(argv: list[str] | None = None) -> int:
