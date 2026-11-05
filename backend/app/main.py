@@ -9,7 +9,7 @@ Client → FastAPI → Auth → PostgreSQL
 
 import asyncio
 import sys
-from app.api import auth, chat, configurations, devices, tools, mikrotik_generator, images, linux_generator
+from app.api import auth, chat, configurations, devices, tools, mikrotik_generator, images, linux_generator, agent
 
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
@@ -18,7 +18,6 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
-from app.api import auth, chat, configurations, devices, tools, mikrotik_generator, agent
 from app.tools.manager import tool_manager
 from app.tools.network import ping_tool
 from app.tools.linux import (
