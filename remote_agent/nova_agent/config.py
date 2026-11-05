@@ -171,12 +171,31 @@ class AgentConfig:
 # Secure persistence
 # ---------------------------------------------------------------------------
 
-_WIN_ACL = ["/inheritance:r", "/grant:r", "*S-1-5-18:F", "*S-1-5-32-544:F"]  # SYSTEM, Administrators
+def _current_windows_principal() -> str:
+    """Return the account running init so a non-elevated user can read the config."""
+    try:
+        result = subprocess.run(
+            ["whoami"], check=True, capture_output=True, text=True,
+        )
+    except (OSError, subprocess.CalledProcessError):
+        raise ConfigError("could not determine the current Windows account") from None
+    principal = result.stdout.strip()
+    if not principal or any(ch in principal for ch in "\r\n"):
+        raise ConfigError("could not determine the current Windows account")
+    return principal
 
 
 def _restrict_windows(path: Path) -> None:
     try:
-        subprocess.run(["icacls", str(path), *_WIN_ACL], check=True, capture_output=True)
+        principal = _current_windows_principal()
+        acl = [
+            "/inheritance:r",
+            "/grant:r",
+            f"{principal}:F",
+            "*S-1-5-18:F",       # SYSTEM
+            "*S-1-5-32-544:F",   # Administrators
+        ]
+        subprocess.run(["icacls", str(path), *acl], check=True, capture_output=True)
     except (OSError, subprocess.CalledProcessError):
         raise ConfigError("could not restrict config file permissions (icacls failed)") from None
 
