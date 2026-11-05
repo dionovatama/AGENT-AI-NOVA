@@ -94,6 +94,27 @@ export interface MikrotikGeneratorResponse {
   warnings: string[];
 }
 
+
+export interface RemoteAgent {
+  id: string;
+  owner_id: string;
+  name: string;
+  status: "offline" | "connecting" | "online" | "disconnected" | "error" | string;
+  os: string | null;
+  hostname: string | null;
+  agent_version: string | null;
+  last_heartbeat_at: string | null;
+  last_connected_at: string | null;
+  last_disconnected_at: string | null;
+  last_error: string | null;
+  created_at: string;
+}
+
+export interface RemoteAgentProvisioned extends RemoteAgent {
+  token: string;
+  connect_path: string;
+}
+
 export const novaApi = {
   health: () => request<HealthResponse>("/health", {}, false),
 
@@ -217,6 +238,21 @@ export const novaApi = {
       method: "POST",
       body: JSON.stringify(payload),
     }),
+
+  // --- Remote Agent management ----------------------------------
+  // Token hanya dikembalikan pada create/rotate; backend menyimpan hash.
+  listAgents: () => request<RemoteAgent[]>("/agents"),
+  createAgent: (name: string) =>
+    request<RemoteAgentProvisioned>("/agents", {
+      method: "POST",
+      body: JSON.stringify({ name }),
+    }),
+  rotateAgentToken: (agentId: string) =>
+    request<RemoteAgentProvisioned>(`/agents/${agentId}/rotate-token`, { method: "POST" }),
+  disconnectAgent: (agentId: string) =>
+    request<{ disconnected: boolean }>(`/agents/${agentId}/disconnect`, { method: "POST" }),
+  deleteAgent: (agentId: string) =>
+    request<void>(`/agents/${agentId}`, { method: "DELETE" }),
 
   listAuditLogs: () => request<AuditLogEntry[]>("/audit-logs"),
 };

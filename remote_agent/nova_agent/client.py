@@ -350,7 +350,7 @@ class AgentClient:
 
         try:
             await transport.send(build_auth_message(
-                self.config.token, self._os_name, __version__))
+                self.config.token, self._os_name, __version__, platform.node()))
             registered = await self._handshake(queue)
             st.registered = True
             log.info("Registered with NOVA backend (connection %s)", registered.connection_id)

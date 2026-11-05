@@ -113,10 +113,11 @@ def test_agent_connects_heartbeats_and_goes_offline_on_bye():
     h = _user("ws")
     agent = _create_agent(h)
     with client.websocket_connect(agent["connect_path"]) as ws:
-        ws.send_json(_auth(agent["token"]))
+        ws.send_json({**_auth(agent["token"]), "hostname": "lab-host-01"})
         registered = ws.receive_json()
         assert registered["type"] == "registered" and registered["agent_id"] == agent["id"]
         _wait_status(h, agent["id"], "online")
+        assert client.get(f"/agents/{agent['id']}", headers=h).json()["hostname"] == "lab-host-01"
 
         ws.send_json({"type": "heartbeat", "seq": 1})
         ack = ws.receive_json()
@@ -186,6 +187,26 @@ def test_rotate_token_invalidates_old_token_and_drops_live_connection():
         assert exc.value.code == 4401
     with client.websocket_connect(agent["connect_path"]) as ws:
         ws.send_json(_auth(rotated["token"]))             # token baru
+        assert ws.receive_json()["type"] == "registered"
+        ws.send_json({"type": "bye"})
+
+
+def test_disconnect_agent_closes_current_session_without_revoking_token():
+    h = _user("disconnect")
+    agent = _create_agent(h)
+    with client.websocket_connect(agent["connect_path"]) as ws:
+        ws.send_json(_auth(agent["token"]))
+        assert ws.receive_json()["type"] == "registered"
+        result = client.post(f"/agents/{agent['id']}/disconnect", headers=h)
+        assert result.status_code == 200
+        assert result.json() == {"disconnected": True}
+        with pytest.raises(WebSocketDisconnect) as exc:
+            ws.receive_json()
+        assert exc.value.code == 4009
+
+    # Disconnect tidak mencabut token; agent boleh reconnect dengan token sama.
+    with client.websocket_connect(agent["connect_path"]) as ws:
+        ws.send_json(_auth(agent["token"]))
         assert ws.receive_json()["type"] == "registered"
         ws.send_json({"type": "bye"})
 

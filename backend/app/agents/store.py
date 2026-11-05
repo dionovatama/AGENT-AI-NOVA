@@ -47,6 +47,7 @@ class AgentStore(Protocol):
         agent_version: str,
         now: datetime,
         expected_token_hash: str,
+        hostname: str | None = None,
     ) -> ClaimResult:
         """Ambil alih kepemilikan koneksi (last-writer-wins): status
         'connecting', connection_id/worker_id baru, heartbeat = now.

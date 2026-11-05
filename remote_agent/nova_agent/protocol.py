@@ -118,14 +118,19 @@ def _dump(payload: dict) -> str:
     return json.dumps(payload, separators=(",", ":"))
 
 
-def build_auth_message(token: str, os_name: str, agent_version: str) -> str:
-    return _dump({
+def build_auth_message(
+    token: str, os_name: str, agent_version: str, hostname: str | None = None
+) -> str:
+    message = {
         "type": "auth",
         "protocol_version": PROTOCOL_VERSION,
         "token": token,
         "os": os_name,
         "agent_version": agent_version,
-    })
+    }
+    if hostname:
+        message["hostname"] = hostname[:255]
+    return _dump(message)
 
 
 def build_heartbeat_message(seq: int) -> str:

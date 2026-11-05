@@ -88,9 +88,10 @@ class AuthMessage:
     token: str
     os: str
     agent_version: str
+    hostname: str | None = None
 
     def __repr__(self) -> str:  # token tidak boleh bocor lewat repr/log
-        return f"AuthMessage(os={self.os!r}, agent_version={self.agent_version!r})"
+        return f"AuthMessage(os={self.os!r}, agent_version={self.agent_version!r}, hostname={self.hostname!r})"
 
 
 @dataclass(frozen=True)

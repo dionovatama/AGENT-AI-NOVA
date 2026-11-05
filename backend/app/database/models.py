@@ -322,6 +322,7 @@ class Agent(Base):
     token_hash: Mapped[str] = mapped_column(String(64), nullable=False)
 
     os: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    hostname: Mapped[str | None] = mapped_column(String(255), nullable=True)
     agent_version: Mapped[str | None] = mapped_column(String(32), nullable=True)
 
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="offline")

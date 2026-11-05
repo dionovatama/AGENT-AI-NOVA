@@ -9,6 +9,7 @@ import {
   Wrench,
   Server,
   Network,
+  Radio,
   ScrollText,
   Settings as SettingsIcon,
   LogOut,
@@ -28,6 +29,7 @@ const NAV_ITEMS = [
   { href: "/tools", label: "Tools", icon: Wrench, live: true },
   { href: "/devices", label: "Devices", icon: Server, live: true },
   { href: "/network", label: "Network Management", icon: Network, live: true },
+  { href: "/agent", label: "Remote Agents", icon: Radio, live: true },
   { href: "/audit", label: "Audit Log", icon: ScrollText, live: true },
   { href: "/settings", label: "Settings", icon: SettingsIcon, live: false },
 ];

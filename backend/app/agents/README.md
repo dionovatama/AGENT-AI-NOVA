@@ -149,3 +149,28 @@ alembic upgrade head                    # membuat tabel agents
 pytest tests/test_agents_core.py tests/test_agents_security.py -v   # tanpa DB
 pytest tests/test_agents_api.py -v      # butuh PostgreSQL aktif
 ```
+
+
+## Agent Management API (Phase 2)
+
+Semua endpoint REST berikut memerlukan Bearer JWT dan membatasi data berdasarkan
+`owner_id` dari pengguna yang login:
+
+| Method | Endpoint | Fungsi |
+|---|---|---|
+| POST | `/agents` | Membuat Agent dan mengembalikan token satu kali |
+| GET | `/agents` | Daftar Agent milik pengguna |
+| GET | `/agents/{id}` | Detail Agent |
+| POST | `/agents/{id}/rotate-token` | Mencabut token lama dan menerbitkan token baru |
+| POST | `/agents/{id}/disconnect` | Memutus sesi saat ini tanpa mencabut token |
+| DELETE | `/agents/{id}` | Menghapus Agent dan mencabut identitasnya |
+
+Token plaintext hanya muncul pada response create/rotate. Dashboard harus
+menampilkan token pada modal provisioning saat itu saja; backend hanya menyimpan
+hash. `disconnect` menutup sesi saat ini, tetapi Agent yang masih berjalan dapat
+reconnect otomatis. Untuk mempertahankan status offline, stop service pada host
+Agent; untuk mencabut akses, lakukan rotate-token atau delete.
+
+Handshake protocol v1 menerima field `hostname` opsional agar kompatibel dengan
+Agent lama. Agent versi yang mendukung field ini mengirim hostname OS saat
+autentikasi; backend menyimpannya di kolom `agents.hostname`.

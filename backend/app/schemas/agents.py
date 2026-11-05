@@ -26,6 +26,7 @@ class AgentResponse(BaseModel):
     name: str
     status: str  # status EFEKTIF (berdasar kesegaran heartbeat), bukan kolom mentah
     os: str | None = None
+    hostname: str | None = None
     agent_version: str | None = None
     last_heartbeat_at: datetime | None = None
     last_connected_at: datetime | None = None

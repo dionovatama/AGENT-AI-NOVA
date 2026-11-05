@@ -34,11 +34,12 @@ class SqlAgentStore:
         return await asyncio.to_thread(self._get_auth_record, agent_id)
 
     async def claim_connection(
-        self, agent_id, connection_id, worker_id, os, agent_version, now, expected_token_hash
+        self, agent_id, connection_id, worker_id, os, agent_version, now, expected_token_hash,
+        hostname=None,
     ) -> ClaimResult:
         return await asyncio.to_thread(
             self._claim_connection, agent_id, connection_id, worker_id, os, agent_version, now,
-            expected_token_hash,
+            expected_token_hash, hostname,
         )
 
     async def mark_online(self, agent_id, connection_id, now) -> bool:
@@ -68,7 +69,8 @@ class SqlAgentStore:
 
     @staticmethod
     def _claim_connection(
-        agent_id, connection_id, worker_id, os, agent_version, now, expected_token_hash
+        agent_id, connection_id, worker_id, os, agent_version, now, expected_token_hash,
+        hostname=None,
     ) -> ClaimResult:
         # Validasi ulang ATOMIK: baris agent dikunci (FOR UPDATE) lalu token_hash
         # dan status owner dibaca di dalam transaksi yang sama dengan penulisan
@@ -102,6 +104,7 @@ class SqlAgentStore:
             agent.connection_id = connection_id
             agent.worker_id = worker_id[:100]
             agent.os = os
+            agent.hostname = hostname[:255] if hostname else None
             agent.agent_version = agent_version
             agent.last_heartbeat_at = now
             agent.last_connected_at = now

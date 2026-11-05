@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import platform
 import unittest
 
 from nova_agent import __version__
@@ -57,7 +58,8 @@ class SessionTests(unittest.IsolatedAsyncioTestCase, NoStrayTasks):
         self.assertNotIn(TOKEN, conn.urls[0])
         # first frame is auth with the right fields
         self.assertEqual(t.sent[0], {"type": "auth", "protocol_version": 1, "token": TOKEN,
-                                     "os": "Windows 11 x64", "agent_version": __version__})
+                                     "os": "Windows 11 x64", "agent_version": __version__,
+                                 "hostname": platform.node()})
         # heartbeats are 1, 2, 3 ...
         seqs = [m["seq"] for m in t.sent if m["type"] == "heartbeat"]
         self.assertEqual(seqs, list(range(1, len(seqs) + 1)))

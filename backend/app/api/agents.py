@@ -40,7 +40,7 @@ def _to_response(agent: Agent) -> AgentResponse:
     )
     return AgentResponse(
         id=agent.id, owner_id=agent.owner_id, name=agent.name, status=effective.value,
-        os=agent.os, agent_version=agent.agent_version,
+        os=agent.os, hostname=agent.hostname, agent_version=agent.agent_version,
         last_heartbeat_at=agent.last_heartbeat_at, last_connected_at=agent.last_connected_at,
         last_disconnected_at=agent.last_disconnected_at, last_error=agent.last_error,
         created_at=agent.created_at,
@@ -145,6 +145,36 @@ def rotate_agent_token(
         request_metadata={"agent_id": str(agent.id)},
     )
     return _created_response(agent, token)
+
+
+@router.post("/agents/{agent_id}/disconnect")
+def disconnect_agent(
+    agent_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict[str, bool]:
+    """Putuskan sesi Agent yang sedang aktif tanpa mencabut token.
+
+    Agent akan mencoba menyambung kembali sesuai kebijakan reconnect miliknya.
+    Untuk menghentikan koneksi secara permanen, stop service pada host Agent
+    atau rotate token.
+    """
+    agent = _get_owned_agent(db, agent_id, current_user, lock=True)
+    was_connected = agent.connection_id is not None
+    now = datetime.now(timezone.utc)
+    agent.connection_id = None
+    agent.worker_id = None
+    agent.status = AgentStatus.DISCONNECTED.value
+    agent.last_disconnected_at = now
+    db.commit()
+    _close_local_connection(agent.id)
+    record_audit_event(
+        action="agent.disconnected",
+        result_status="SUCCESS",
+        user_id=current_user.id,
+        request_metadata={"agent_id": str(agent.id), "was_connected": was_connected},
+    )
+    return {"disconnected": was_connected}
 
 
 @router.delete("/agents/{agent_id}", status_code=status.HTTP_204_NO_CONTENT)

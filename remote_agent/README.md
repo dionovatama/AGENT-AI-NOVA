@@ -95,7 +95,8 @@ nova-agent run
 ## Perilaku koneksi
 
 1. Buka `wss://HOST/ws/agent/{agent_id}`, kirim frame `auth` pertama.
-2. Validasi `registered`: `protocol_version`, `agent_id`, `connection_id`, `heartbeat_interval_seconds`,
+2. Agent mengirim `hostname` sebagai metadata opsional pada frame `auth` (backend lama mengabaikan field tambahan).
+3. Validasi `registered`: `protocol_version`, `agent_id`, `connection_id`, `heartbeat_interval_seconds`,
    `heartbeat_timeout_seconds` (harus > interval), `server_time`. Pesan tidak valid → sesi diputus.
 3. Heartbeat dengan `seq` 1, 2, 3 … tiap `heartbeat_interval_seconds`. ACK harus membawa `seq` yang sama; ACK
    salah → close 1002 + reconnect. Tidak ada ACK dalam `heartbeat_timeout − interval` detik → close 4408 + reconnect.

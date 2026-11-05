@@ -277,7 +277,7 @@ class AgentConnectionManager:
         connection_id = uuid.uuid4()
         claim = await self.store.claim_connection(
             agent_id, connection_id, self.worker_id, auth.os, auth.agent_version,
-            self._clock(), stored_hash,
+            self._clock(), stored_hash, hostname=auth.hostname,
         )
         if not claim.claimed:
             logger.warning(

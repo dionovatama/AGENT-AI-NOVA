@@ -76,7 +76,7 @@ class FakeStore:
         return AuthRecord(agent_id, r["owner_id"], r["token_hash"], r["owner_active"])
 
     async def claim_connection(self, agent_id, connection_id, worker_id, os, agent_version, now,
-                               expected_token_hash):
+                               expected_token_hash, hostname=None):
         await self._enter("claim_connection")
         r = self.agents.get(agent_id)
         if r is None:
@@ -89,7 +89,7 @@ class FakeStore:
         was_live = r["status"] in LIVE
         replaced = (r["connection_id"], r["worker_id"]) if was_live else (None, None)
         r.update(status="connecting", connection_id=connection_id, worker_id=worker_id,
-                 os=os, agent_version=agent_version, last_heartbeat_at=now,
+                 os=os, hostname=hostname, agent_version=agent_version, last_heartbeat_at=now,
                  last_connected_at=now, last_error=None)
         return ClaimResult(True, replaced[0], replaced[1])
 
