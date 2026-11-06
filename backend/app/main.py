@@ -9,7 +9,7 @@ Client → FastAPI → Auth → PostgreSQL
 
 import asyncio
 import sys
-from app.api import auth, chat, configurations, devices, tools, mikrotik_generator, images, linux_generator, agent, agents, agent_targets
+from app.api import auth, chat, configurations, devices, tools, mikrotik_generator, images, linux_generator, agent, agents, agent_targets, conversations
 
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
@@ -62,7 +62,7 @@ app.add_middleware(
 )
 
 app.include_router(auth.router)
-app.include_router(chat.router)
+app.include_router(chat.router)\napp.include_router(conversations.router)
 app.include_router(tools.router)
 app.include_router(devices.router)
 app.include_router(configurations.router)
