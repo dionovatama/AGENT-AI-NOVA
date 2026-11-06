@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   Plus,
   MessageSquare,
@@ -44,6 +44,8 @@ export function Sidebar({
 }) {
   const pathname = usePathname();
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const searchKey = searchParams.toString();
   const [email, setEmail] = useState<string | null>(null);
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
 
@@ -57,7 +59,7 @@ export function Sidebar({
       .then((res) => setEmail(res.email))
       .catch(() => setEmail(null));
     novaApi.listConversations().then((items) => setConversations(items.slice(0, 8))).catch(() => setConversations([]));
-  }, [pathname]);
+  }, [pathname, searchKey]);
 
   function handleNewChat() {
     router.push(`/chat?new=${Date.now()}`);
