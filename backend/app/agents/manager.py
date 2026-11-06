@@ -478,7 +478,7 @@ class AgentConnectionManager:
                     raise RelayProtocolError("relay request/session mismatch")
                 self.relay_sessions.fail(
                     uuid.UUID(msg.session_id),
-                    code=msg.code || "PROTOCOL_ERROR",
+                    code=msg.code or "PROTOCOL_ERROR",
                     **common,
                 )
             elif msg.type == "DATA":
