@@ -62,7 +62,8 @@ app.add_middleware(
 )
 
 app.include_router(auth.router)
-app.include_router(chat.router)\napp.include_router(conversations.router)
+app.include_router(chat.router)
+app.include_router(conversations.router)
 app.include_router(tools.router)
 app.include_router(devices.router)
 app.include_router(configurations.router)
