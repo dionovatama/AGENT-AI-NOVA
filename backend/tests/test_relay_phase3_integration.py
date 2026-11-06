@@ -106,3 +106,56 @@ async def test_stale_relay_close_and_data_do_not_kill_agent_connection():
 
     assert sock.closed is None
     assert "release_connection" in store.calls
+
+
+@pytest.mark.asyncio
+async def test_relay_lifecycle_keeps_heartbeat_alive_and_closes_cleanly():
+    store = FakeStore()
+    agent_id, _ = store.add_agent()
+    owner_id = store.row(agent_id)["owner_id"]
+    connection_id = uuid.uuid4()
+    store.row(agent_id)["connection_id"] = connection_id
+
+    manager = AgentConnectionManager(
+        store=store,
+        cfg=AgentRuntimeConfig(
+            heartbeat_interval_seconds=0.1,
+            heartbeat_timeout_seconds=1.0,
+            heartbeat_min_db_interval_seconds=0.0,
+            max_messages_per_window=1,
+            message_window_seconds=10.0,
+            relay_messages_per_window=10,
+            relay_message_window_seconds=10.0,
+        ),
+    )
+    session = _Session(agent_id, owner_id, connection_id, "Windows 11 x64", "0.1.0")
+    relay = manager.relay_sessions.create(
+        agent_id=agent_id,
+        owner_id=owner_id,
+        connection_id=connection_id,
+        target_id=uuid.uuid4(),
+        port=8729,
+    )
+
+    sock = FakeSocket()
+    sock.client_send_raw(json.dumps({
+        "type": "TUNNEL_OPENED",
+        "request_id": str(relay.request_id),
+        "session_id": str(relay.session_id),
+    }))
+    sock.client_send_raw(_relay_data(relay.session_id, 1))
+    sock.client_send_raw(json.dumps({"type": "heartbeat", "seq": 1}))
+    sock.client_send_raw(json.dumps({
+        "type": "CLOSE_TUNNEL",
+        "session_id": str(relay.session_id),
+        "reason": "requested",
+    }))
+    sock.client_send_raw(json.dumps({"type": "heartbeat", "seq": 2}))
+    sock.client_send_raw(json.dumps({"type": "bye"}))
+
+    await manager._run_session(sock, session)
+
+    assert relay.state is RelayState.CLOSED
+    assert any(item.get("type") == "heartbeat_ack" and item.get("seq") == 1 for item in sock.sent)
+    assert any(item.get("type") == "heartbeat_ack" and item.get("seq") == 2 for item in sock.sent)
+    assert "release_connection" in store.calls
