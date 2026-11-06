@@ -19,6 +19,7 @@ import { clearToken } from "@/lib/auth";
 import { novaApi } from "@/lib/api";
 import { NovaOrb } from "@/components/NovaOrb";
 import { SystemPulse } from "@/components/SystemPulse";
+import type { ConversationSummary } from "@/lib/types";
 
 // Nav item nyata -- setiap href beneran punya route. TIDAK ada item
 // dekoratif seperti "Archived"/"Library" dari referensi desain, karena
@@ -44,6 +45,7 @@ export function Sidebar({
   const pathname = usePathname();
   const router = useRouter();
   const [email, setEmail] = useState<string | null>(null);
+  const [conversations, setConversations] = useState<ConversationSummary[]>([]);
 
   useEffect(() => {
     // Identitas asli lewat GET /auth/me -- kalau gagal (token expired,
@@ -54,7 +56,8 @@ export function Sidebar({
       .me()
       .then((res) => setEmail(res.email))
       .catch(() => setEmail(null));
-  }, []);
+    novaApi.listConversations().then((items) => setConversations(items.slice(0, 8))).catch(() => setConversations([]));
+  }, [pathname]);
 
   function handleNewChat() {
     router.push(`/chat?new=${Date.now()}`);
@@ -127,7 +130,20 @@ export function Sidebar({
         })}
       </nav>
 
-      <div className="border-t border-white/[0.06] bg-black/20 p-3">
+      <div className="px-3 pb-3">
+        <p className="mb-2 px-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-ink-500">Recent chats</p>
+        <div className="max-h-48 space-y-1 overflow-y-auto">
+          {conversations.map((conversation) => (
+            <button key={conversation.id} type="button" onClick={() => { router.push("/chat?conversation=" + conversation.id); onNavigate?.(); }} title={conversation.title} className="w-full truncate rounded-md px-2 py-1.5 text-left text-[11px] text-ink-400 transition-colors hover:bg-white/[0.06] hover:text-ink-100">
+              <span className="mr-2 inline-block align-middle"><MessageSquare size={11} /></span>
+              {conversation.title}
+            </button>
+          ))}
+          {conversations.length === 0 && <p className="px-2 text-[11px] text-ink-600">Belum ada riwayat chat</p>}
+        </div>
+      </div>
+
+      <div className="border-t border-white/[0.06] bg-black/20 p-3>
         {/* Status backend dipindah ke sini dari header atas yang dihapus. */}
         <div className="mb-2.5 px-1">
           <SystemPulse compact />
