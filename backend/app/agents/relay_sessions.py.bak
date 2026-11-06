@@ -1,0 +1,144 @@
+"""In-process relay session state and ownership registry (Phase 3).
+
+The authenticated Agent connection remains the authority. This registry is
+worker-local; multi-worker command routing requires a later shared broker or
+sticky routing and is intentionally not implied by this module.
+"""
+from __future__ import annotations
+
+import time
+import uuid
+from dataclasses import dataclass
+from enum import Enum
+
+
+class RelayState(str, Enum):
+    REQUESTED = "requested"
+    OPEN = "open"
+    CLOSING = "closing"
+    CLOSED = "closed"
+    FAILED = "failed"
+
+
+class RelaySessionError(ValueError):
+    pass
+
+
+@dataclass
+class RelaySession:
+    session_id: uuid.UUID
+    request_id: uuid.UUID
+    agent_id: uuid.UUID
+    owner_id: uuid.UUID
+    connection_id: uuid.UUID
+    target_id: uuid.UUID
+    port: int
+    state: RelayState
+    created_at: float
+    last_activity: float
+    error_code: str | None = None
+
+
+class RelaySessionRegistry:
+    """Bounded per-process registry; no network access is performed here."""
+    def __init__(self, *, max_per_agent: int = 8, idle_timeout: float = 60.0,
+                 clock=time.monotonic) -> None:
+        if max_per_agent < 1 or idle_timeout <= 0:
+            raise ValueError("invalid relay registry limits")
+        self.max_per_agent = max_per_agent
+        self.idle_timeout = idle_timeout
+        self._clock = clock
+        self._sessions: dict[uuid.UUID, RelaySession] = {}
+
+    def create(self, *, agent_id: uuid.UUID, owner_id: uuid.UUID,
+               connection_id: uuid.UUID, target_id: uuid.UUID, port: int,
+               request_id: uuid.UUID | None = None,
+               session_id: uuid.UUID | None = None) -> RelaySession:
+        if isinstance(port, bool) or not isinstance(port, int) or not 1 <= port <= 65535:
+            raise RelaySessionError("invalid target port")
+        active = sum(1 for s in self._sessions.values()
+                     if s.agent_id == agent_id and s.state in {RelayState.REQUESTED, RelayState.OPEN, RelayState.CLOSING})
+        if active >= self.max_per_agent:
+            raise RelaySessionError("agent relay session limit reached")
+        self._prune_terminal()
+        sid = session_id or uuid.uuid4()
+        rid = request_id or uuid.uuid4()
+        if sid in self._sessions:
+            raise RelaySessionError("duplicate relay session id")
+        if any(item.request_id == rid for item in self._sessions.values()):
+            raise RelaySessionError("duplicate relay request id")
+        now = self._clock()
+        session = RelaySession(sid, rid, agent_id, owner_id,
+                               connection_id, target_id, port, RelayState.REQUESTED, now, now)
+        self._sessions[sid] = session
+        return session
+
+    def get(self, session_id: uuid.UUID, *, agent_id: uuid.UUID,
+            owner_id: uuid.UUID, connection_id: uuid.UUID) -> RelaySession:
+        session = self._sessions.get(session_id)
+        if (session is None or session.agent_id != agent_id or session.owner_id != owner_id
+                or session.connection_id != connection_id):
+            raise RelaySessionError("relay session not found")
+        return session
+
+    def mark_open(self, session_id: uuid.UUID, *, agent_id: uuid.UUID,
+                  owner_id: uuid.UUID, connection_id: uuid.UUID) -> RelaySession:
+        session = self.get(session_id, agent_id=agent_id, owner_id=owner_id, connection_id=connection_id)
+        if session.state is not RelayState.REQUESTED:
+            raise RelaySessionError("invalid relay state transition")
+        session.state = RelayState.OPEN
+        session.last_activity = self._clock()
+        return session
+
+    def touch(self, session_id: uuid.UUID, *, agent_id: uuid.UUID,
+              owner_id: uuid.UUID, connection_id: uuid.UUID) -> RelaySession:
+        session = self.get(session_id, agent_id=agent_id, owner_id=owner_id, connection_id=connection_id)
+        if session.state is not RelayState.OPEN:
+            raise RelaySessionError("relay session is not open")
+        session.last_activity = self._clock()
+        return session
+
+    def fail(self, session_id: uuid.UUID, *, agent_id: uuid.UUID,
+             owner_id: uuid.UUID, connection_id: uuid.UUID, code: str) -> RelaySession:
+        session = self.get(session_id, agent_id=agent_id, owner_id=owner_id, connection_id=connection_id)
+        if session.state not in {RelayState.REQUESTED, RelayState.OPEN, RelayState.CLOSING}:
+            raise RelaySessionError("invalid relay state transition")
+        session.state, session.error_code = RelayState.FAILED, code
+        return session
+
+    def close(self, session_id: uuid.UUID, *, agent_id: uuid.UUID,
+              owner_id: uuid.UUID, connection_id: uuid.UUID) -> RelaySession:
+        session = self.get(session_id, agent_id=agent_id, owner_id=owner_id, connection_id=connection_id)
+        if session.state not in {RelayState.REQUESTED, RelayState.OPEN, RelayState.CLOSING}:
+            raise RelaySessionError("invalid relay state transition")
+        session.state = RelayState.CLOSED
+        return session
+
+    def cleanup_connection(self, *, agent_id: uuid.UUID, connection_id: uuid.UUID) -> int:
+        count = 0
+        for session in self._sessions.values():
+            if session.agent_id == agent_id and session.connection_id == connection_id and session.state in {
+                RelayState.REQUESTED, RelayState.OPEN, RelayState.CLOSING
+            }:
+                session.state = RelayState.CLOSED
+                count += 1
+        return count
+
+    def expire_idle(self) -> int:
+        now, count = self._clock(), 0
+        for session in self._sessions.values():
+            if session.state in {RelayState.REQUESTED, RelayState.OPEN, RelayState.CLOSING} and now - session.last_activity >= self.idle_timeout:
+                session.state = RelayState.CLOSED
+                count += 1
+        return count
+
+    def _prune_terminal(self, retention_seconds: float = 300.0) -> None:
+        now = self._clock()
+        stale = [sid for sid, item in self._sessions.items()
+                 if item.state in {RelayState.CLOSED, RelayState.FAILED}
+                 and now - item.created_at >= retention_seconds]
+        for sid in stale:
+            self._sessions.pop(sid, None)
+
+    def __len__(self) -> int:
+        return len(self._sessions)

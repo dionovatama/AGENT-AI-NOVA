@@ -1,0 +1,174 @@
+"""Version-1 additive relay message contract for NOVA Remote Agent.
+
+This module deliberately contains no socket, TCP connector, or device access.
+Those belong to Phase 4. Targets are referenced by registered target UUIDs;
+raw hostnames/IPs are never accepted in relay messages.
+"""
+from __future__ import annotations
+
+import base64
+import binascii
+import json
+import uuid
+from dataclasses import dataclass
+from typing import Any
+
+RELAY_MESSAGE_TYPES = frozenset({"OPEN_TUNNEL", "TUNNEL_OPENED", "TUNNEL_ERROR", "DATA", "CLOSE_TUNNEL"})
+MAX_RELAY_DATA_BYTES = 32 * 1024
+MAX_RELAY_FRAME_BYTES = 48 * 1024
+MAX_RELAY_ERROR_LENGTH = 160
+_ALLOWED_ERROR_CODES = frozenset({"TARGET_NOT_ALLOWED", "TARGET_UNAVAILABLE", "CONNECT_FAILED", "TIMEOUT", "RESOURCE_LIMIT", "PROTOCOL_ERROR", "CANCELLED"})
+_ALLOWED_CLOSE_REASONS = frozenset({"requested", "peer_closed", "timeout", "agent_disconnect", "backend_shutdown", "error"})
+
+
+class RelayProtocolError(ValueError):
+    """Malformed or invalid relay protocol message."""
+
+
+def _uuid(value: Any, field: str) -> str:
+    if not isinstance(value, str) or len(value) != 36:
+        raise RelayProtocolError(f"{field} must be a UUID")
+    try:
+        parsed = uuid.UUID(value)
+    except (ValueError, AttributeError):
+        raise RelayProtocolError(f"{field} must be a UUID") from None
+    if parsed.version != 4 or str(parsed) != value.lower():
+        raise RelayProtocolError(f"{field} must be a canonical UUID v4")
+    return str(parsed)
+
+
+def _uint(value: Any, field: str, maximum: int = 2**53 - 1) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or not 0 <= value <= maximum:
+        raise RelayProtocolError(f"{field} must be a non-negative integer")
+    return value
+
+
+def _decode(raw: str | bytes, max_bytes: int = MAX_RELAY_FRAME_BYTES) -> dict[str, Any]:
+    if not isinstance(raw, str):
+        raise RelayProtocolError("relay messages must be JSON text frames")
+    if not isinstance(raw, str):
+        raise RelayProtocolError("relay messages must be JSON text frames")
+    if len(raw.encode("utf-8")) > max_bytes:
+        raise RelayProtocolError("relay message too large")
+    try:
+        value = json.loads(raw)
+    except (ValueError, TypeError):
+        raise RelayProtocolError("malformed relay JSON") from None
+    if not isinstance(value, dict) or value.get("type") not in RELAY_MESSAGE_TYPES:
+        raise RelayProtocolError("unknown relay message type")
+    return value
+
+
+def _dump(value: dict[str, Any]) -> str:
+    raw = json.dumps(value, separators=(",", ":"), ensure_ascii=True)
+    if len(raw.encode("utf-8")) > MAX_RELAY_FRAME_BYTES:
+        raise RelayProtocolError("relay message too large")
+    return raw
+
+
+@dataclass(frozen=True)
+class RelayMessage:
+    type: str
+    request_id: str | None = None
+    session_id: str | None = None
+    target_id: str | None = None
+    port: int | None = None
+    seq: int | None = None
+    data: bytes | None = None
+    code: str | None = None
+    message: str | None = None
+    reason: str | None = None
+
+
+def parse_relay_message(raw: str, *, direction: str) -> RelayMessage:
+    """Parse one message. direction is 'server_to_agent' or 'agent_to_server'."""
+    if direction not in {"server_to_agent", "agent_to_server"}:
+        raise ValueError("invalid relay direction")
+    item = _decode(raw)
+    kind = item["type"]
+    if kind == "OPEN_TUNNEL":
+        if direction != "server_to_agent":
+            raise RelayProtocolError("OPEN_TUNNEL direction is invalid")
+        port = _uint(item.get("port"), "port", 65535)
+        if port == 0:
+            raise RelayProtocolError("port must be between 1 and 65535")
+        return RelayMessage(kind, _uuid(item.get("request_id"), "request_id"),
+                            _uuid(item.get("session_id"), "session_id"),
+                            _uuid(item.get("target_id"), "target_id"), port=port)
+    if kind == "TUNNEL_OPENED":
+        if direction != "agent_to_server":
+            raise RelayProtocolError("TUNNEL_OPENED direction is invalid")
+        return RelayMessage(kind, _uuid(item.get("request_id"), "request_id"),
+                            _uuid(item.get("session_id"), "session_id"))
+    if kind == "TUNNEL_ERROR":
+        if direction != "agent_to_server":
+            raise RelayProtocolError("TUNNEL_ERROR direction is invalid")
+        code = item.get("code")
+        message = item.get("message", "")
+        if not isinstance(code, str) or code not in _ALLOWED_ERROR_CODES:
+            raise RelayProtocolError("invalid relay error code")
+        if not isinstance(message, str) or len(message) > MAX_RELAY_ERROR_LENGTH or not message.isprintable():
+            raise RelayProtocolError("invalid relay error message")
+        return RelayMessage(kind, _uuid(item.get("request_id"), "request_id"),
+                            _uuid(item.get("session_id"), "session_id"), code=code, message=message)
+    if kind == "DATA":
+        if direction not in {"server_to_agent", "agent_to_server"}:
+            raise RelayProtocolError("DATA direction is invalid")
+        encoded = item.get("data")
+        if not isinstance(encoded, str) or len(encoded) > ((MAX_RELAY_DATA_BYTES + 2) // 3) * 4:
+            raise RelayProtocolError("invalid relay data")
+        try:
+            payload = base64.b64decode(encoded, validate=True)
+        except (binascii.Error, ValueError):
+            raise RelayProtocolError("invalid relay data encoding") from None
+        if len(payload) > MAX_RELAY_DATA_BYTES:
+            raise RelayProtocolError("relay data exceeds payload limit")
+        return RelayMessage(kind, session_id=_uuid(item.get("session_id"), "session_id"),
+                            seq=_uint(item.get("seq"), "seq"), data=payload)
+    if kind == "CLOSE_TUNNEL":
+        if direction not in {"server_to_agent", "agent_to_server"}:
+            raise RelayProtocolError("CLOSE_TUNNEL direction is invalid")
+        reason = item.get("reason", "requested")
+        if not isinstance(reason, str) or reason not in _ALLOWED_CLOSE_REASONS:
+            raise RelayProtocolError("invalid relay close reason")
+        return RelayMessage(kind, session_id=_uuid(item.get("session_id"), "session_id"), reason=reason)
+    raise RelayProtocolError("unknown relay message type")
+
+
+def open_tunnel_message(*, request_id: uuid.UUID, session_id: uuid.UUID,
+                        target_id: uuid.UUID, port: int) -> dict[str, Any]:
+    if isinstance(port, bool) or not isinstance(port, int) or not 1 <= port <= 65535:
+        raise RelayProtocolError("port must be between 1 and 65535")
+    return {"type": "OPEN_TUNNEL", "request_id": str(request_id),
+            "session_id": str(session_id), "target_id": str(target_id), "port": port}
+
+
+def tunnel_opened_message(*, request_id: uuid.UUID, session_id: uuid.UUID) -> dict[str, Any]:
+    return {"type": "TUNNEL_OPENED", "request_id": str(request_id), "session_id": str(session_id)}
+
+
+def tunnel_error_message(*, request_id: uuid.UUID, session_id: uuid.UUID,
+                         code: str, message: str = "") -> dict[str, Any]:
+    if (not isinstance(code, str) or code not in _ALLOWED_ERROR_CODES
+            or not isinstance(message, str) or len(message) > MAX_RELAY_ERROR_LENGTH or not message.isprintable()):
+        raise RelayProtocolError("invalid relay error")
+    return {"type": "TUNNEL_ERROR", "request_id": str(request_id), "session_id": str(session_id),
+            "code": code, "message": message}
+
+
+def data_message(*, session_id: uuid.UUID, seq: int, data: bytes) -> dict[str, Any]:
+    if not isinstance(data, bytes) or len(data) > MAX_RELAY_DATA_BYTES:
+        raise RelayProtocolError("relay data exceeds payload limit")
+    _uint(seq, "seq")
+    return {"type": "DATA", "session_id": str(session_id), "seq": seq,
+            "data": base64.b64encode(data).decode("ascii")}
+
+
+def close_tunnel_message(*, session_id: uuid.UUID, reason: str = "requested") -> dict[str, Any]:
+    if reason not in _ALLOWED_CLOSE_REASONS:
+        raise RelayProtocolError("invalid relay close reason")
+    return {"type": "CLOSE_TUNNEL", "session_id": str(session_id), "reason": reason}
+
+
+def encode_relay_message(payload: dict[str, Any]) -> str:
+    return _dump(payload)
