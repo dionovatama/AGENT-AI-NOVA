@@ -36,6 +36,8 @@ jobs:
       LINUX_SSH_HOST: 127.0.0.1
       LINUX_SSH_PRIVATE_KEY_PATH: /tmp/nova-ci-test-key
       CONFIG_APPLY_ENABLED: "false"
+      CREDENTIAL_ENCRYPTION_KEYS_JSON: '{"ci":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="}'
+      CREDENTIAL_ENCRYPTION_ACTIVE_KEY_ID: ci
       APP_ENV: test
     steps:
       - uses: actions/checkout@v4
