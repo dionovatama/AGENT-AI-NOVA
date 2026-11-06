@@ -110,11 +110,10 @@ export default function ChatPage() {
       }]);
       await persistMessage(historyId, "assistant", result.content, { generated_files: result.generated_files, configuration_proposal: result.configuration_proposal, meta: assistantMeta });
     } catch (err) {
-      setMessages((prev) => [...prev, {
-        role: "assistant",
-        content: "Permintaan konfigurasi gagal diproses.",
-        meta: { error: err instanceof NovaApiError ? err.message : "Unknown error" },
-      }]);
+      const content = "Permintaan konfigurasi gagal diproses.";
+      const metadata = { error: err instanceof NovaApiError ? err.message : "Unknown error" };
+      setMessages((prev) => [...prev, { role: "assistant", content, meta: metadata }]);
+      await persistMessage(historyId, "assistant", content, { meta: metadata });
     } finally {
       window.history.replaceState(null, "", "/chat?conversation=" + historyId);
       setSending(false);
@@ -134,11 +133,10 @@ export default function ChatPage() {
       setMessages((prev) => [...prev, { role: "assistant", content }]);
       if (conversationIdRef.current) await persistMessage(conversationIdRef.current, "assistant", content);
     } catch (err) {
-      setMessages((prev) => [...prev, {
-        role: "assistant",
-        content: "Eksekusi ditolak atau gagal. Periksa detail error dan audit log; jangan ulangi tanpa meninjau status router.",
-        meta: { error: err instanceof NovaApiError ? err.message : "Unknown error" },
-      }]);
+      const content = "Eksekusi ditolak atau gagal. Periksa detail error dan audit log; jangan ulangi tanpa meninjau status router.";
+      const metadata = { error: err instanceof NovaApiError ? err.message : "Unknown error" };
+      setMessages((prev) => [...prev, { role: "assistant", content, meta: metadata }]);
+      if (conversationIdRef.current) await persistMessage(conversationIdRef.current, "assistant", content, { meta: metadata });
     } finally {
       setSending(false);
     }
@@ -166,12 +164,12 @@ export default function ChatPage() {
       window.history.replaceState(null, "", "/chat?conversation=" + historyId);
       setLastLatencyMs(Math.round(performance.now() - startedAt));
     } catch (err) {
-      setMessages((prev) => [...prev, {
-        role: "assistant",
-        content: "Gagal membuat gambar. Lihat detail error di bawah, lalu coba lagi.",
-        meta: { error: err instanceof Error ? err.message : "Unknown error" },
-      }]);
+      const content = "Gagal membuat gambar. Lihat detail error di bawah, lalu coba lagi.";
+      const metadata = { error: err instanceof Error ? err.message : "Unknown error" };
+      setMessages((prev) => [...prev, { role: "assistant", content, meta: metadata }]);
+      if (conversationIdRef.current) await persistMessage(conversationIdRef.current, "assistant", content, { meta: metadata });
     } finally {
+      if (conversationIdRef.current) window.history.replaceState(null, "", "/chat?conversation=" + conversationIdRef.current);
       setSending(false);
     }
   }
