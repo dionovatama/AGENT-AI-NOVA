@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { ArrowUp, Paperclip, X } from "lucide-react";
 import { ChatWindow } from "@/components/chat/ChatWindow";
@@ -41,18 +41,47 @@ export default function ChatPage() {
   const [sending, setSending] = useState(false);
   const [processingStage, setProcessingStage] = useState<ProcessingStage>("understand");
   const [lastLatencyMs, setLastLatencyMs] = useState<number | null>(null);
+  const conversationIdRef = useRef<string | null>(null);
 
   const searchParams = useSearchParams();
   const resetKey = searchParams.get("new");
+  const selectedConversationId = searchParams.get("conversation");
 
   useEffect(() => {
+    let cancelled = false;
     if (resetKey) {
-      setMessages([]);
-      setInput("");
-      setSelectedFile(null);
+      conversationIdRef.current = null;
+      setMessages([]); setInput(""); setSelectedFile(null);
+      return;
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [resetKey]);
+    if (!selectedConversationId) {
+      conversationIdRef.current = null; setMessages([]);
+      return;
+    }
+    conversationIdRef.current = selectedConversationId;
+    setMessages([]);
+    novaApi.getConversationMessages(selectedConversationId).then((rows) => {
+      if (cancelled) return;
+      setMessages(rows.map((row) => {
+        const meta = row.metadata ?? {};
+        return { role: row.role, content: row.content, attachment_name: typeof meta.attachment_name === "string" ? meta.attachment_name : undefined, diagrams: Array.isArray(meta.diagrams) ? meta.diagrams as ChatMessage["diagrams"] : undefined, generated_files: Array.isArray(meta.generated_files) ? meta.generated_files as ChatMessage["generated_files"] : undefined, show_configuration_choices: meta.show_configuration_choices === true, configuration_request: typeof meta.configuration_request === "string" ? meta.configuration_request : undefined, meta: meta.meta && typeof meta.meta === "object" ? meta.meta as ChatMessage["meta"] : undefined } as ChatMessage;
+      }));
+    }).catch(() => { if (!cancelled) setMessages([{ role: "assistant", content: "Riwayat percakapan gagal dimuat. Coba muat ulang halaman." }]); });
+    return () => { cancelled = true; };
+  }, [resetKey, selectedConversationId]);
+
+  async function ensureConversation(): Promise<string> {
+    if (conversationIdRef.current) return conversationIdRef.current;
+    const created = await novaApi.createConversation();
+    conversationIdRef.current = created.id;
+    window.history.replaceState(null, "", "/chat?conversation=" + created.id);
+    return created.id;
+  }
+
+  async function persistMessage(id: string, role: "user" | "assistant", content: string, metadata?: Record<string, unknown>) {
+    try { await novaApi.appendConversationMessage(id, role, content, metadata); }
+    catch (error) { console.error("Chat history persistence failed", error); }
+  }
 
   const toolsSupported = TOOL_CALLING_CATEGORIES.includes(category);
   const isEmpty = messages.length === 0;
