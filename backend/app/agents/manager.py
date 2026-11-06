@@ -364,15 +364,6 @@ class AgentConnectionManager:
                     await sock.close(CloseCode.TIMEOUT, "heartbeat timeout")
                     return
 
-                if not msg_limiter.hit("msg"):
-                    disconnect_reason = "message_rate_limited"
-                    logger.warning(
-                        "agent message flood agent=%s conn=%s ip=%s",
-                        s.agent_id, s.connection_id, sock.client_ip,
-                    )
-                    await sock.close(CloseCode.RATE_LIMITED, "rate limited")
-                    return
-
                 msg = parse_client_message(raw, cfg.max_message_bytes)
 
                 if msg.type in RELAY_MESSAGE_TYPES:
@@ -386,6 +377,15 @@ class AgentConnectionManager:
                         return
                     await self._handle_relay_message(raw, s)
                     continue
+
+                if not msg_limiter.hit("msg"):
+                    disconnect_reason = "message_rate_limited"
+                    logger.warning(
+                        "agent message flood agent=%s conn=%s ip=%s",
+                        s.agent_id, s.connection_id, sock.client_ip,
+                    )
+                    await sock.close(CloseCode.RATE_LIMITED, "rate limited")
+                    return
 
                 if msg.type == "bye":
                     final_status = AgentStatus.OFFLINE
