@@ -64,7 +64,7 @@ export default function ChatPage() {
       if (cancelled) return;
       setMessages(rows.map((row) => {
         const meta = row.metadata ?? {};
-        return { role: row.role, content: row.content, attachment_name: typeof meta.attachment_name === "string" ? meta.attachment_name : undefined, diagrams: Array.isArray(meta.diagrams) ? meta.diagrams as ChatMessage["diagrams"] : undefined, generated_files: Array.isArray(meta.generated_files) ? meta.generated_files as ChatMessage["generated_files"] : undefined, show_configuration_choices: meta.show_configuration_choices === true, configuration_request: typeof meta.configuration_request === "string" ? meta.configuration_request : undefined, meta: meta.meta && typeof meta.meta === "object" ? meta.meta as ChatMessage["meta"] : undefined } as ChatMessage;
+        return { role: row.role, content: row.content, attachment_name: typeof meta.attachment_name === "string" ? meta.attachment_name : undefined, diagrams: Array.isArray(meta.diagrams) ? meta.diagrams as ChatMessage["diagrams"] : undefined, generated_files: Array.isArray(meta.generated_files) ? meta.generated_files as ChatMessage["generated_files"] : undefined, show_configuration_choices: meta.show_configuration_choices === true, configuration_request: typeof meta.configuration_request === "string" ? meta.configuration_request : undefined, configuration_proposal: meta.configuration_proposal as ChatMessage["configuration_proposal"], meta: meta.meta && typeof meta.meta === "object" ? meta.meta as ChatMessage["meta"] : undefined } as ChatMessage;
       }));
     }).catch(() => { if (!cancelled) setMessages([{ role: "assistant", content: "Riwayat percakapan gagal dimuat. Coba muat ulang halaman." }]); });
     return () => { cancelled = true; };
@@ -108,7 +108,7 @@ export default function ChatPage() {
         role: "assistant", content: result.content, generated_files: result.generated_files,
         configuration_proposal: result.configuration_proposal, meta: assistantMeta,
       }]);
-      await persistMessage(historyId, "assistant", result.content, { generated_files: result.generated_files, meta: assistantMeta });
+      await persistMessage(historyId, "assistant", result.content, { generated_files: result.generated_files, configuration_proposal: result.configuration_proposal, meta: assistantMeta });
     } catch (err) {
       setMessages((prev) => [...prev, {
         role: "assistant",
@@ -246,6 +246,7 @@ export default function ChatPage() {
         generated_files: result.generated_files,
         show_configuration_choices: result.configuration_choice,
         configuration_request: result.configuration_choice ? text : undefined,
+        configuration_proposal: result.configuration_proposal,
         meta: { model_used: result.model_used, used_fallback: result.used_fallback, tools_used: result.tools_used, tools_offered: toolsRequested },
       };
       setMessages((prev) => [...prev, { role: "assistant", content: result.content, ...assistantMetadata }]);
