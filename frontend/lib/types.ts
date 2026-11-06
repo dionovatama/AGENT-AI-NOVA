@@ -390,3 +390,19 @@ export interface ConfigurationProposal {
   expires_at?: string | null;
   applied_at?: string | null;
 }
+
+
+export interface ConversationSummary {
+  id: string;
+  title: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PersistedChatMessage {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+  metadata: Record<string, unknown> | null;
+  created_at: string;
+}
