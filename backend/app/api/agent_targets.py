@@ -22,7 +22,7 @@ router = APIRouter(tags=["agent-targets"])
 def _to_response(t: RelayTarget) -> RelayTargetResponse:
     return RelayTargetResponse(
         id=t.id, agent_id=t.agent_id, device_id=t.device_id, name=t.name, host=t.host,
-        ports=list(t.ports), created_at=t.created_at,
+        ports=list(t.ports), tls_fingerprint=t.tls_fingerprint, created_at=t.created_at,
         agent_config={"target_id": str(t.id), "host": t.host, "ports": list(t.ports)},
     )
 
@@ -52,6 +52,7 @@ def create_target(
     target = RelayTarget(
         owner_id=current_user.id, agent_id=agent.id, device_id=payload.device_id,
         name=payload.name, host=payload.host, ports=payload.ports,
+        tls_fingerprint=payload.tls_fingerprint,
     )
     db.add(target)
     try:
@@ -63,7 +64,8 @@ def create_target(
     record_audit_event(
         action="agent.target.created", result_status="SUCCESS", user_id=current_user.id,
         request_metadata={"agent_id": str(agent.id), "target_id": str(target.id),
-                          "host": target.host, "ports": list(target.ports)},
+                          "host": target.host, "ports": list(target.ports),
+                          "tls_pinned": target.tls_fingerprint is not None},
     )
     return _to_response(target)
 

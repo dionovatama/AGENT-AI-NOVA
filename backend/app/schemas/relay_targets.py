@@ -9,6 +9,8 @@ from datetime import datetime
 
 from pydantic import BaseModel, Field, StrictInt, field_validator
 
+from app.network.relay_tls import normalize_fingerprint
+
 MAX_PORTS_PER_TARGET = 16
 MAX_TARGETS_PER_AGENT = 256
 
@@ -42,6 +44,15 @@ class RelayTargetCreateRequest(BaseModel):
     host: str = Field(min_length=1, max_length=255)
     ports: list[StrictInt] = Field(min_length=1, max_length=MAX_PORTS_PER_TARGET)
     device_id: uuid.UUID | None = None
+    # SHA-256 sertifikat API-SSL router: 64 hex, boleh "AA:BB:.." atau "sha256:..".
+    tls_fingerprint: str | None = Field(default=None, max_length=128)
+
+    @field_validator("tls_fingerprint")
+    @classmethod
+    def _fp(cls, v: str | None) -> str | None:
+        if v is None or not v.strip():
+            return None
+        return normalize_fingerprint(v)
 
     @field_validator("name")
     @classmethod
@@ -71,6 +82,7 @@ class RelayTargetResponse(BaseModel):
     name: str
     host: str
     ports: list[int]
+    tls_fingerprint: str | None = None
     created_at: datetime
     # Salin ke "relay_targets" di config.json Agent. Tanpa entri ini Agent
     # menolak target (allow-list lokal adalah batas keamanan sebenarnya).

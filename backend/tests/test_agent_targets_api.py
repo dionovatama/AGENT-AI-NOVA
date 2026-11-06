@@ -183,3 +183,28 @@ async def test_open_relay_denials():
             await open_relay(db, owner_id=uid, target_id=uuid.UUID(t["id"]), port=8729, manager=other_worker)
     assert sock.sent == []
     assert issubclass(AgentOffline, RelayUnavailable)
+
+# -- Phase 5: pin fingerprint sertifikat router ---------------------------------
+
+def test_target_tls_fingerprint_is_normalized_and_returned():
+    _, h = _user()
+    agent = _agent(h)
+    pretty = ":".join(["AB"] * 32)
+    res = _target(h, agent["id"], tls_fingerprint=pretty)
+    assert res.status_code == 201, res.text
+    assert res.json()["tls_fingerprint"] == "ab" * 32
+    listed = client.get(f"/agents/{agent['id']}/targets", headers=h).json()
+    assert listed[0]["tls_fingerprint"] == "ab" * 32
+
+
+def test_target_without_fingerprint_has_null_pin():
+    _, h = _user()
+    agent = _agent(h)
+    assert _target(h, agent["id"]).json()["tls_fingerprint"] is None
+
+
+@pytest.mark.parametrize("bad", ["abc", "zz" * 32, "ab" * 31, "ab" * 33])
+def test_target_rejects_bad_fingerprint(bad):
+    _, h = _user()
+    agent = _agent(h)
+    assert _target(h, agent["id"], tls_fingerprint=bad).status_code == 422

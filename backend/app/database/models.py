@@ -378,6 +378,9 @@ class RelayTarget(Base):
     name: Mapped[str] = mapped_column(String(100), nullable=False)
     host: Mapped[str] = mapped_column(String(255), nullable=False)
     ports: Mapped[list] = mapped_column(JSON, nullable=False)
+    # SHA-256 (64 hex, huruf kecil) sertifikat API-SSL router. Dipakai backend untuk
+    # memin TLS lewat relay; jalur remote MikroTik menolak target tanpa pin.
+    tls_fingerprint: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False

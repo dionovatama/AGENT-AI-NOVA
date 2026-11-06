@@ -79,7 +79,7 @@ class MikrotikConnectionError(Exception):
 _ALLOWED_CONNECTION_TYPES = ("api", "api-ssl")
 
 
-def _connect(device: Device, password: str | None):
+def _connect(device: Device, password: str | None, sock=None):
     """
     Factory koneksi RouterOS API — SATU tempat kebenaran untuk parameter
     koneksi seluruh tool mikrotik.* di file ini, dipanggil dari dalam
@@ -121,6 +121,13 @@ def _connect(device: Device, password: str | None):
             "yang bisa dipakai untuk autentikasi RouterOS API."
         )
 
+    if sock is not None:
+        # Jalur remote (Phase 5): soket SUDAH berisi TLS terpin lewat Remote Agent
+        # (app/network/relay_tls.py). Tidak ada koneksi langsung dan tidak ada
+        # ssl.CERT_NONE di sini -- verifikasi = pin fingerprint, dilakukan sebelum
+        # login ini mengirim satu byte pun.
+        return _connect_over_socket(sock, username, password)
+
     connect_kwargs: dict = {
         "host": device.host,
         "port": device.port,
@@ -144,10 +151,37 @@ def _connect(device: Device, password: str | None):
     return librouteros.connect(**connect_kwargs)
 
 
+def _connect_over_socket(sock, username: str, password: str):
+    """Login RouterOS API di atas soket yang sudah tersambung (relay + TLS terpin).
+
+    ``librouteros.connect()`` selalu membuka soketnya sendiri, jadi untuk soket
+    suntikan kita merakit Api dari bagian publik librouteros (transport -> protocol
+    -> login ``plain``, sama dengan default connect()). Hanya bagian ini yang
+    bergantung pada struktur internal librouteros 3.x.
+    """
+    try:
+        from librouteros.api import Api
+        from librouteros.connections import SocketTransport
+        from librouteros.login import plain
+        from librouteros.protocol import ApiProtocol
+    except ImportError as exc:  # pragma: no cover - tergantung versi library
+        raise MikrotikConnectionError(
+            "Versi librouteros tidak mendukung transport soket suntikan.") from exc
+
+    transport = SocketTransport(sock=sock)
+    try:
+        api = Api(protocol=ApiProtocol(transport=transport, encoding="ASCII"))
+        plain(api=api, username=username, password=password)
+    except BaseException:
+        transport.close()
+        raise
+    return api
+
+
 @contextmanager
-def _api_session(device: Device, password: str | None):
+def _api_session(device: Device, password: str | None, sock=None):
     """Kelola lifecycle koneksi librouteros; Api sendiri bukan context manager."""
-    api = _connect(device, password)
+    api = _connect(device, password) if sock is None else _connect(device, password, sock)
     try:
         yield api
     finally:
@@ -181,6 +215,24 @@ def _connection_error_message(exc: Exception) -> str:
     return f"Connection error: {exc}"
 
 
+async def _run_on_device(sync_fn, ctx: ExecutionContext):
+    """Jalankan ``sync_fn(device, password[, sock])`` di thread.
+
+    Device berjalur lokal -> persis perilaku lama. Device dengan relay target ->
+    soket TLS terpin lewat Remote Agent disuntikkan sebagai argumen ketiga.
+    Import lazy: remote_transport mengimpor modul ini (hindari siklus).
+    """
+    if ctx.db is None or ctx.user is None:  # tanpa DB tidak mungkin ada relay target: jalur lokal
+        return await asyncio.to_thread(sync_fn, ctx.device, ctx.credential_plaintext)
+
+    from app.network.remote_transport import remote_api_socket
+
+    async with remote_api_socket(ctx.device, ctx) as sock:
+        if sock is None:
+            return await asyncio.to_thread(sync_fn, ctx.device, ctx.credential_plaintext)
+        return await asyncio.to_thread(sync_fn, ctx.device, ctx.credential_plaintext, sock)
+
+
 # ============================================================
 # mikrotik.system_resource
 # ============================================================
@@ -203,8 +255,8 @@ class SystemResourceOutput(BaseModel):
     error: str | None = None
 
 
-def _system_resource_sync(device: Device, password: str | None) -> dict:
-    with _api_session(device, password) as api:
+def _system_resource_sync(device: Device, password: str | None, sock=None) -> dict:
+    with _api_session(device, password, sock) as api:
         resource_rows = list(api.path("system", "resource"))
         identity_rows = list(api.path("system", "identity"))
     return {
@@ -220,7 +272,7 @@ async def execute_system_resource(
         return SystemResourceOutput(success=False, error="Device context tidak tersedia.")
 
     try:
-        raw = await asyncio.to_thread(_system_resource_sync, ctx.device, ctx.credential_plaintext)
+        raw = await _run_on_device(_system_resource_sync, ctx)
     except MikrotikConnectionError as exc:
         return SystemResourceOutput(success=False, error=str(exc))
     except librouteros.exceptions.TrapError as exc:
@@ -283,8 +335,8 @@ class InterfaceStatusOutput(BaseModel):
     error: str | None = None
 
 
-def _interface_status_sync(device: Device, password: str | None) -> list[dict]:
-    with _api_session(device, password) as api:
+def _interface_status_sync(device: Device, password: str | None, sock=None) -> list[dict]:
+    with _api_session(device, password, sock) as api:
         return list(api.path("interface"))
 
 
@@ -295,7 +347,7 @@ async def execute_interface_status(
         return InterfaceStatusOutput(success=False, error="Device context tidak tersedia.")
 
     try:
-        rows = await asyncio.to_thread(_interface_status_sync, ctx.device, ctx.credential_plaintext)
+        rows = await _run_on_device(_interface_status_sync, ctx)
     except MikrotikConnectionError as exc:
         return InterfaceStatusOutput(success=False, error=str(exc))
     except librouteros.exceptions.TrapError as exc:
@@ -352,8 +404,8 @@ class IpAddressOutput(BaseModel):
     error: str | None = None
 
 
-def _ip_address_sync(device: Device, password: str | None) -> list[dict]:
-    with _api_session(device, password) as api:
+def _ip_address_sync(device: Device, password: str | None, sock=None) -> list[dict]:
+    with _api_session(device, password, sock) as api:
         return list(api.path("ip", "address"))
 
 
@@ -364,7 +416,7 @@ async def execute_ip_address(
         return IpAddressOutput(success=False, error="Device context tidak tersedia.")
 
     try:
-        rows = await asyncio.to_thread(_ip_address_sync, ctx.device, ctx.credential_plaintext)
+        rows = await _run_on_device(_ip_address_sync, ctx)
     except MikrotikConnectionError as exc:
         return IpAddressOutput(success=False, error=str(exc))
     except librouteros.exceptions.TrapError as exc:
@@ -423,8 +475,8 @@ class RouteTableOutput(BaseModel):
     error: str | None = None
 
 
-def _route_table_sync(device: Device, password: str | None) -> list[dict]:
-    with _api_session(device, password) as api:
+def _route_table_sync(device: Device, password: str | None, sock=None) -> list[dict]:
+    with _api_session(device, password, sock) as api:
         return list(api.path("ip", "route"))
 
 
@@ -435,7 +487,7 @@ async def execute_route_table(
         return RouteTableOutput(success=False, error="Device context tidak tersedia.")
 
     try:
-        rows = await asyncio.to_thread(_route_table_sync, ctx.device, ctx.credential_plaintext)
+        rows = await _run_on_device(_route_table_sync, ctx)
     except MikrotikConnectionError as exc:
         return RouteTableOutput(success=False, error=str(exc))
     except librouteros.exceptions.TrapError as exc:
@@ -499,8 +551,8 @@ class ArpTableOutput(BaseModel):
     error: str | None = None
 
 
-def _arp_table_sync(device: Device, password: str | None) -> list[dict]:
-    with _api_session(device, password) as api:
+def _arp_table_sync(device: Device, password: str | None, sock=None) -> list[dict]:
+    with _api_session(device, password, sock) as api:
         return list(api.path("ip", "arp"))
 
 
@@ -511,7 +563,7 @@ async def execute_arp_table(
         return ArpTableOutput(success=False, error="Device context tidak tersedia.")
 
     try:
-        rows = await asyncio.to_thread(_arp_table_sync, ctx.device, ctx.credential_plaintext)
+        rows = await _run_on_device(_arp_table_sync, ctx)
     except MikrotikConnectionError as exc:
         return ArpTableOutput(success=False, error=str(exc))
     except librouteros.exceptions.TrapError as exc:
@@ -574,8 +626,8 @@ class DhcpLeasesOutput(BaseModel):
     error: str | None = None
 
 
-def _dhcp_leases_sync(device: Device, password: str | None) -> list[dict]:
-    with _api_session(device, password) as api:
+def _dhcp_leases_sync(device: Device, password: str | None, sock=None) -> list[dict]:
+    with _api_session(device, password, sock) as api:
         return list(api.path("ip", "dhcp-server", "lease"))
 
 
@@ -586,7 +638,7 @@ async def execute_dhcp_leases(
         return DhcpLeasesOutput(success=False, error="Device context tidak tersedia.")
 
     try:
-        rows = await asyncio.to_thread(_dhcp_leases_sync, ctx.device, ctx.credential_plaintext)
+        rows = await _run_on_device(_dhcp_leases_sync, ctx)
     except MikrotikConnectionError as exc:
         return DhcpLeasesOutput(success=False, error=str(exc))
     except librouteros.exceptions.TrapError as exc:
@@ -666,8 +718,8 @@ class FirewallRulesOutput(BaseModel):
     error: str | None = None
 
 
-def _firewall_rules_sync(device: Device, password: str | None) -> list[dict]:
-    with _api_session(device, password) as api:
+def _firewall_rules_sync(device: Device, password: str | None, sock=None) -> list[dict]:
+    with _api_session(device, password, sock) as api:
         return list(api.path("ip", "firewall", "filter"))
 
 
@@ -678,7 +730,7 @@ async def execute_firewall_rules(
         return FirewallRulesOutput(success=False, error="Device context tidak tersedia.")
 
     try:
-        rows = await asyncio.to_thread(_firewall_rules_sync, ctx.device, ctx.credential_plaintext)
+        rows = await _run_on_device(_firewall_rules_sync, ctx)
     except MikrotikConnectionError as exc:
         return FirewallRulesOutput(success=False, error=str(exc))
     except librouteros.exceptions.TrapError as exc:

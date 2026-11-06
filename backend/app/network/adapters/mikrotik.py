@@ -39,9 +39,9 @@ if TYPE_CHECKING:
 logger = logging.getLogger("nova.network.adapters.mikrotik")
 
 
-def _get_device_state_sync(device: Device, password: str | None) -> DeviceStateSnapshot:
+def _get_device_state_sync(device: Device, password: str | None, sock=None) -> DeviceStateSnapshot:
     """Membaca state nyata router secara sync di dalam thread."""
-    with _api_session(device, password) as api:
+    with _api_session(device, password, sock) as api:
         # 1. Interface state
         iface_rows = list(api.path("interface"))
         interfaces = [
@@ -94,9 +94,9 @@ def _get_device_state_sync(device: Device, password: str | None) -> DeviceStateS
     )
 
 
-def _apply_operation_sync(op: NetworkOperation, device: Device, password: str | None) -> str:
+def _apply_operation_sync(op: NetworkOperation, device: Device, password: str | None, sock=None) -> str:
     """Menerapkan satu operasi konfigurasi ke router via librouteros."""
-    with _api_session(device, password) as api:
+    with _api_session(device, password, sock) as api:
         if isinstance(op, AddIpAddressOperation):
             kwargs: dict[str, Any] = {
                 "address": op.address,
@@ -129,9 +129,9 @@ def _apply_operation_sync(op: NetworkOperation, device: Device, password: str | 
         raise ValueError(f"Operasi tidak didukung: {type(op)}")
 
 
-def _remove_operation_sync(op: NetworkOperation, object_id: str, device: Device, password: str | None) -> bool:
+def _remove_operation_sync(op: NetworkOperation, object_id: str, device: Device, password: str | None, sock=None) -> bool:
     """Menghapus objek dari router berdasarkan object_id internal (mis. *1A)."""
-    with _api_session(device, password) as api:
+    with _api_session(device, password, sock) as api:
         try:
             if isinstance(op, AddIpAddressOperation):
                 api.path("ip", "address").remove(object_id)
@@ -148,11 +148,28 @@ def _remove_operation_sync(op: NetworkOperation, object_id: str, device: Device,
     return False
 
 
-def _trigger_native_backup_sync(backup_name: str, device: Device, password: str | None) -> None:
+def _trigger_native_backup_sync(backup_name: str, device: Device, password: str | None, sock=None) -> None:
     """Memicu pembuatan backup native (.backup) di flash router."""
-    with _api_session(device, password) as api:
+    with _api_session(device, password, sock) as api:
         # Eksekusi /system/backup/save =name=backup_name
         list(api.path("system", "backup")("save", **{"name": backup_name}))
+
+
+async def _call(sync_fn, device: Device, ctx: ExecutionContext | None, password: str | None, *lead):
+    """Jalankan fungsi *_sync di thread. ``lead`` = argumen sebelum (device, password).
+
+    Lokal (tanpa relay target): sama seperti sebelumnya. Remote: soket TLS terpin lewat
+    Remote Agent disuntikkan; ditutup setelah thread selesai (session cleanup).
+    """
+    if ctx is None or ctx.db is None or ctx.user is None:  # tanpa DB tidak ada relay target
+        return await asyncio.to_thread(sync_fn, *lead, device, password)
+
+    from app.network.remote_transport import remote_api_socket  # lazy: hindari siklus impor
+
+    async with remote_api_socket(device, ctx) as sock:
+        if sock is None:
+            return await asyncio.to_thread(sync_fn, *lead, device, password)
+        return await asyncio.to_thread(sync_fn, *lead, device, password, sock)
 
 
 class MikrotikNetworkAdapter(NetworkDeviceAdapter):
@@ -162,13 +179,13 @@ class MikrotikNetworkAdapter(NetworkDeviceAdapter):
         self, device: Device, ctx: ExecutionContext | None = None
     ) -> DeviceStateSnapshot:
         password = ctx.credential_plaintext if ctx else None
-        return await asyncio.to_thread(_get_device_state_sync, device, password)
+        return await _call(_get_device_state_sync, device, ctx, password)
 
     async def apply_operation(
         self, op: NetworkOperation, device: Device, ctx: ExecutionContext | None = None
     ) -> str:
         password = ctx.credential_plaintext if ctx else None
-        return await asyncio.to_thread(_apply_operation_sync, op, device, password)
+        return await _call(_apply_operation_sync, device, ctx, password, op)
 
     async def remove_operation(
         self,
@@ -178,7 +195,7 @@ class MikrotikNetworkAdapter(NetworkDeviceAdapter):
         ctx: ExecutionContext | None = None,
     ) -> bool:
         password = ctx.credential_plaintext if ctx else None
-        return await asyncio.to_thread(_remove_operation_sync, op, object_id, device, password)
+        return await _call(_remove_operation_sync, device, ctx, password, op, object_id)
 
     async def verify_operation(
         self, op: NetworkOperation, device: Device, ctx: ExecutionContext | None = None
@@ -209,7 +226,7 @@ class MikrotikNetworkAdapter(NetworkDeviceAdapter):
     ) -> None:
         """Membuat backup native di router sebelum apply."""
         password = ctx.credential_plaintext if ctx else None
-        await asyncio.to_thread(_trigger_native_backup_sync, backup_name, device, password)
+        await _call(_trigger_native_backup_sync, device, ctx, password, backup_name)
 
     def render_cli_preview(self, op: NetworkOperation) -> str:
         """Template perintah CLI MikroTik RouterOS deterministik."""
