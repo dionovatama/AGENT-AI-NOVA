@@ -74,7 +74,6 @@ export default function ChatPage() {
     if (conversationIdRef.current) return conversationIdRef.current;
     const created = await novaApi.createConversation();
     conversationIdRef.current = created.id;
-    window.history.replaceState(null, "", "/chat?conversation=" + created.id);
     return created.id;
   }
 
@@ -94,20 +93,22 @@ export default function ChatPage() {
 
   async function handleConfigurationChoice(requestText: string, choice: "file" | "direct") {
     if (sending) return;
-    setMessages((prev) => [...prev, { role: "user", content: choice === "file" ? "Pilih: buatkan file konfigurasi." : "Pilih: konfigurasi langsung ke router." }]);
+    const historyId = await ensureConversation();
+    const choiceMessage = choice === "file" ? "Pilih: buatkan file konfigurasi." : "Pilih: konfigurasi langsung ke router.";
+    setMessages((prev) => [...prev, { role: "user", content: choiceMessage }]);
+    await persistMessage(historyId, "user", choiceMessage);
     setSending(true);
     setProcessingStage("process");
     const startedAt = performance.now();
     try {
       const result = await novaApi.chatCompletion(requestText, "configuration_generation", false, choice);
       setLastLatencyMs(Math.round(performance.now() - startedAt));
+      const assistantMeta = { model_used: result.model_used, used_fallback: result.used_fallback, tools_used: result.tools_used };
       setMessages((prev) => [...prev, {
-        role: "assistant",
-        content: result.content,
-        generated_files: result.generated_files,
-        configuration_proposal: result.configuration_proposal,
-        meta: { model_used: result.model_used, used_fallback: result.used_fallback, tools_used: result.tools_used },
+        role: "assistant", content: result.content, generated_files: result.generated_files,
+        configuration_proposal: result.configuration_proposal, meta: assistantMeta,
       }]);
+      await persistMessage(historyId, "assistant", result.content, { generated_files: result.generated_files, meta: assistantMeta });
     } catch (err) {
       setMessages((prev) => [...prev, {
         role: "assistant",
@@ -115,6 +116,7 @@ export default function ChatPage() {
         meta: { error: err instanceof NovaApiError ? err.message : "Unknown error" },
       }]);
     } finally {
+      window.history.replaceState(null, "", "/chat?conversation=" + historyId);
       setSending(false);
     }
   }
@@ -126,12 +128,11 @@ export default function ChatPage() {
     try {
       await novaApi.approveConfiguration(configurationId);
       const applied = await novaApi.applyConfiguration(configurationId);
-      setMessages((prev) => [...prev, {
-        role: "assistant",
-        content: applied.status === "VERIFIED"
-          ? "Konfigurasi berhasil diterapkan dan status proposal telah diperbarui. Periksa hasil verifikasi pada proposal/audit log."
-          : "Permintaan eksekusi selesai dengan status: " + applied.status,
-      }]);
+      const content = applied.status === "VERIFIED"
+        ? "Konfigurasi berhasil diterapkan dan status proposal telah diperbarui. Periksa hasil verifikasi pada proposal/audit log."
+        : "Permintaan eksekusi selesai dengan status: " + applied.status;
+      setMessages((prev) => [...prev, { role: "assistant", content }]);
+      if (conversationIdRef.current) await persistMessage(conversationIdRef.current, "assistant", content);
     } catch (err) {
       setMessages((prev) => [...prev, {
         role: "assistant",
@@ -151,6 +152,7 @@ export default function ChatPage() {
     setProcessingStage("process");
     const startedAt = performance.now();
     try {
+      const historyId = await ensureConversation();
       const imageUrl = (await generateImage(cleanPrompt)).imageDataUrl;
       setProcessingStage("respond");
       setMessages((prev) => [...prev, {
@@ -160,6 +162,8 @@ export default function ChatPage() {
         image_prompt: cleanPrompt,
         meta: { model_used: "Cloudflare FLUX Image Generation" },
       }]);
+      await persistMessage(historyId, "assistant", "Image generated: " + cleanPrompt, { image_prompt: cleanPrompt, meta: { model_used: "Cloudflare FLUX Image Generation" } });
+      window.history.replaceState(null, "", "/chat?conversation=" + historyId);
       setLastLatencyMs(Math.round(performance.now() - startedAt));
     } catch (err) {
       setMessages((prev) => [...prev, {
@@ -253,6 +257,7 @@ export default function ChatPage() {
       setMessages((prev) => [...prev, { role: "assistant", content: errorContent, meta: errorMeta }]);
       if (historyId) await persistMessage(historyId, "assistant", errorContent, { meta: errorMeta });
     } finally {
+      if (historyId) window.history.replaceState(null, "", "/chat?conversation=" + historyId);
       window.clearTimeout(stageTimer);
       setSending(false);
     }
