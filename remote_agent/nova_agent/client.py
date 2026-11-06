@@ -441,8 +441,12 @@ class AgentClient:
     async def _dispatch_relay_message(self, transport: Transport, raw: object, st: _SessionState) -> None:
         try:
             msg = parse_server_relay_message(raw)
-        except RelayProtocolViolation as exc:
-            raise ProtocolViolation(f"invalid relay message ({exc})") from None
+        except RelayProtocolViolation:
+            # Relay dispatch shares the single reader with normal protocol
+            # messages. Preserve the pre-relay behavior for server error and
+            # unsupported informational frames.
+            self._check_unsolicited(raw)
+            return
         if msg.type == "OPEN_TUNNEL":
             st.relay_sessions.add(msg.session_id)
             await transport.send(json.dumps(build_tunnel_error(
@@ -454,7 +458,8 @@ class AgentClient:
             st.relay_sessions.discard(msg.session_id)
             return
         if msg.session_id not in st.relay_sessions:
-            raise ProtocolViolation("relay session is not active")
+            log.debug("Ignoring stale relay frame type=%s session=%s", msg.type, msg.session_id)
+            return
         if msg.type == "CLOSE_TUNNEL":
             st.relay_sessions.discard(msg.session_id)
             return
