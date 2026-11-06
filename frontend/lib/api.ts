@@ -9,6 +9,8 @@ import type {
   TaskCategory,
   ToolResult,
   ConfigurationProposal,
+  ConversationSummary,
+  PersistedChatMessage,
 } from "./types";
 
 const BASE_URL =
@@ -238,6 +240,30 @@ export const novaApi = {
       method: "POST",
       body: JSON.stringify(payload),
     }),
+
+  // --- Account-scoped chat history --------------------------------
+  listConversations: () => request<ConversationSummary[]>("/conversations"),
+  createConversation: (title = "New chat") =>
+    request<ConversationSummary>("/conversations", {
+      method: "POST", body: JSON.stringify({ title }),
+    }),
+  getConversationMessages: (conversationId: string) =>
+    request<PersistedChatMessage[]>("/conversations/" + conversationId + "/messages"),
+  appendConversationMessage: (
+    conversationId: string,
+    role: "user" | "assistant",
+    content: string,
+    metadata?: Record<string, unknown>,
+  ) =>
+    request<PersistedChatMessage>("/conversations/" + conversationId + "/messages", {
+      method: "POST", body: JSON.stringify({ role, content, metadata: metadata ?? null }),
+    }),
+  renameConversation: (conversationId: string, title: string) =>
+    request<ConversationSummary>("/conversations/" + conversationId, {
+      method: "PATCH", body: JSON.stringify({ title }),
+    }),
+  deleteConversation: (conversationId: string) =>
+    request<void>("/conversations/" + conversationId, { method: "DELETE" }),
 
   // --- Remote Agent management ----------------------------------
   // Token hanya dikembalikan pada create/rotate; backend menyimpan hash.
