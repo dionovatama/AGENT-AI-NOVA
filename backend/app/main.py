@@ -50,17 +50,6 @@ app = FastAPI(
     version="0.4.0-milestone4",
 )
 
-# CORS — diperlukan agar console frontend (Next.js, localhost:3000) bisa
-# memanggil backend ini dari browser. Tanpa ini browser menolak request
-# lintas-origin sebelum sempat sampai ke endpoint mana pun.
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
 app.include_router(auth.router)
 app.include_router(chat.router)
 app.include_router(conversations.router)
@@ -136,3 +125,19 @@ def health_check():
         "service": settings.app_name,
         "environment": settings.app_env,
     }
+
+
+# Wrap the complete ASGI application (rather than only adding an inner
+# middleware) so CORS headers are also present on unhandled error responses.
+# Include both common local frontend hostnames; credentials remain enabled
+# for the Bearer-authenticated API and future cookie-based auth.
+app = CORSMiddleware(
+    app,
+    allow_origins=[
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
