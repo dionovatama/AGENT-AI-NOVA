@@ -27,6 +27,8 @@ from typing import Awaitable, Callable
 from . import __version__
 from .config import AgentConfig
 from .logging_setup import register_secret
+from .relay_policy import AllowList
+from .tcp_relay import TcpRelayManager
 from .relay_protocol import RelayProtocolViolation, build_tunnel_error, parse_server_relay_message
 from .protocol import (
     BYE_MESSAGE,
@@ -178,6 +180,7 @@ class _SessionState:
     healthy: bool = False
     peer_closed: bool = False
     relay_sessions: set[str] | None = None
+    relay: TcpRelayManager | None = None
 
     def __post_init__(self) -> None:
         if self.relay_sessions is None:
@@ -360,6 +363,11 @@ class AgentClient:
                 self.config.token, self._os_name, __version__, platform.node()))
             registered = await self._handshake(queue)
             st.registered = True
+            if self.config.relay_targets:
+                st.relay = TcpRelayManager(
+                    AllowList(self.config.relay_targets),
+                    lambda m: transport.send(json.dumps(m, separators=(",", ":"))),
+                )
             log.info("Registered with NOVA backend (connection %s)", registered.connection_id)
             await self._heartbeat_loop(transport, queue, registered, st)
             raise AssertionError("heartbeat loop returned")  # pragma: no cover
@@ -385,6 +393,8 @@ class AgentClient:
             close_code, close_reason = CloseCode.TIMEOUT, "timeout"
             outcome = SessionOutcome("failed", detail=str(exc))
         finally:
+            if st.relay is not None:
+                await st.relay.close_all()
             await self._teardown(
                 transport, reader,
                 send_bye=(stopped and st.registered and not st.peer_closed),
@@ -446,6 +456,14 @@ class AgentClient:
             # messages. Preserve the pre-relay behavior for server error and
             # unsupported informational frames.
             self._check_unsolicited(raw)
+            return
+        if st.relay is not None:
+            if msg.type == "OPEN_TUNNEL":
+                await st.relay.open(msg)
+            elif msg.type == "DATA":
+                st.relay.feed(msg.session_id, msg.seq, msg.data)
+            elif msg.type == "CLOSE_TUNNEL":
+                st.relay.close(msg.session_id, msg.reason or "requested")
             return
         if msg.type == "OPEN_TUNNEL":
             st.relay_sessions.add(msg.session_id)

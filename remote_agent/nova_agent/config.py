@@ -24,6 +24,7 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 from .protocol import parse_agent_id
+from .relay_policy import RelayTarget, TargetConfigError, parse_relay_targets, relay_targets_to_json
 
 ALLOW_INSECURE_ENV = "NOVA_AGENT_ALLOW_INSECURE"
 MAX_CONFIG_BYTES = 64 * 1024
@@ -122,15 +123,21 @@ class AgentConfig:
     token: str = field(repr=False)
     server_url: str
     allow_insecure: bool = False
+    relay_targets: tuple[RelayTarget, ...] = ()
 
     @classmethod
     def create(cls, agent_id: object, token: object, server_url: object,
-               allow_insecure: bool = False) -> "AgentConfig":
+               allow_insecure: bool = False, relay_targets: object = None) -> "AgentConfig":
+        try:
+            targets = relay_targets if isinstance(relay_targets, tuple) else parse_relay_targets(relay_targets)
+        except TargetConfigError as exc:
+            raise ConfigError(str(exc)) from None
         return cls(
             agent_id=validate_agent_id(agent_id),
             token=validate_token(token),
             server_url=validate_server_url(server_url, allow_insecure=allow_insecure),
             allow_insecure=bool(allow_insecure),
+            relay_targets=targets,
         )
 
     @classmethod
@@ -142,7 +149,8 @@ class AgentConfig:
             if key not in data:
                 raise ConfigError(f"config is missing '{key}'")
         opt_in = data.get("allow_insecure") is True or env.get(ALLOW_INSECURE_ENV) == "1"
-        return cls.create(data["agent_id"], data["token"], data["server_url"], opt_in)
+        return cls.create(data["agent_id"], data["token"], data["server_url"], opt_in,
+                          data.get("relay_targets"))
 
     @classmethod
     def load(cls, path: Path | None = None) -> "AgentConfig":
@@ -218,6 +226,8 @@ def save_config(config: AgentConfig, path: Path | None = None) -> Path:
     }
     if config.allow_insecure:
         payload["allow_insecure"] = True
+    if config.relay_targets:
+        payload["relay_targets"] = relay_targets_to_json(config.relay_targets)
     data = json.dumps(payload, indent=2).encode("utf-8")
 
     tmp = path.with_name(f"{path.name}.{os.getpid()}.tmp")

@@ -9,7 +9,7 @@ Client → FastAPI → Auth → PostgreSQL
 
 import asyncio
 import sys
-from app.api import auth, chat, configurations, devices, tools, mikrotik_generator, images, linux_generator, agent, agents
+from app.api import auth, chat, configurations, devices, tools, mikrotik_generator, images, linux_generator, agent, agents, agent_targets
 
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
@@ -70,6 +70,7 @@ app.include_router(mikrotik_generator.router)
 app.include_router(linux_generator.router)
 app.include_router(images.router)
 app.include_router(agent.router)   # legacy Phase 1 static-token gateway (/agent/ws), unchanged
+app.include_router(agent_targets.router)  # Phase 4: relay target allow-list per agent
 app.include_router(agents.router)  # Phase A: DB-backed agents (REST /agents + WS /ws/agent/{id})
 
 tool_manager.register(ping_tool)

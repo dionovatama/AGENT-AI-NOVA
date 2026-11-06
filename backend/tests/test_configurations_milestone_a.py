@@ -18,7 +18,8 @@ import pytest
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
-from app.database.models import Configuration, Device, User
+from app.database.models import Configuration, Credential, Device, User
+from app.security.credential_encryption import encrypt_credential
 from app.database.session import SessionLocal
 from app.main import app
 from app.network.adapters.fake import FakeNetworkAdapter
@@ -83,6 +84,16 @@ def _create_test_user() -> tuple[dict[str, str], User]:
 def _create_test_device(user: User, host: str = "192.168.88.1") -> Device:
     db = SessionLocal()
     try:
+        credential_id = uuid.uuid4()
+        encrypted = encrypt_credential(
+            "lab_password_secret", owner_id=user.id, credential_id=credential_id,
+        )
+        db.add(Credential(
+            id=credential_id, owner_id=user.id, name="test-cred", type="password",
+            encrypted_secret=encrypted.ciphertext, encryption_nonce=encrypted.nonce,
+            encryption_key_id=encrypted.key_id, secret_reference=None,
+        ))
+        db.commit()
         device = Device(
             id=uuid.uuid4(),
             owner_id=user.id,
@@ -92,7 +103,8 @@ def _create_test_device(user: User, host: str = "192.168.88.1") -> Device:
             port=8728,
             connection_type="api",
             status="active",
-            device_metadata={"username": "admin", "lab": True},
+            device_metadata={"username": "admin", "lab": True, "mock": True},
+            credential_id=credential_id,
         )
         db.add(device)
         db.commit()

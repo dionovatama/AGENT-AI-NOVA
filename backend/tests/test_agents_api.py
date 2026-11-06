@@ -128,7 +128,9 @@ def test_agent_connects_heartbeats_and_goes_offline_on_bye():
         assert info["last_heartbeat_at"] and info["last_connected_at"]
 
         ws.send_json({"type": "bye"})
-    _wait_status(h, agent["id"], "offline")
+        # Tunggu DI DALAM blok `with`: keluar dari blok langsung membatalkan
+        # task ASGI TestClient, sehingga release DB bisa terpotong (race tes).
+        _wait_status(h, agent["id"], "offline")
 
 
 def test_wrong_token_and_unknown_agent_are_rejected_identically():

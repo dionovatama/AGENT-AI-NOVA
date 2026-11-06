@@ -74,6 +74,9 @@ class FakeApi:
             )
         return self._responses[key]
 
+    def close(self) -> None:
+        self.closed = True
+
 
 class FakeConnectionContextManager:
     """Tiruan objek yang dikembalikan librouteros.connect() — dipakai
@@ -98,14 +101,14 @@ def _mock_connect_success(responses: dict[tuple, list[dict]]):
     api = FakeApi(responses)
     return patch(
         "app.tools.mikrotik.librouteros.connect",
-        return_value=FakeConnectionContextManager(api=api),
+        return_value=api,
     )
 
 
 def _mock_connect_failure(exc: Exception):
     return patch(
         "app.tools.mikrotik.librouteros.connect",
-        return_value=FakeConnectionContextManager(connect_error=exc),
+        side_effect=exc,
     )
 
 

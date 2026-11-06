@@ -347,3 +347,38 @@ class Agent(Base):
     def __repr__(self) -> str:
         # Sengaja tanpa token_hash.
         return f"<Agent id={self.id} name={self.name} status={self.status} owner_id={self.owner_id}>"
+
+
+class RelayTarget(Base):
+    """
+    Tujuan TCP yang boleh dijangkau lewat Remote Agent (Phase 4/5).
+
+    'id' adalah target_id yang dikirim di OPEN_TUNNEL. Backend TIDAK pernah
+    mengirim host/IP ke Agent; Agent memetakan target_id ke host dari config
+    lokalnya sendiri (allow-list). Baris ini adalah sisi backend dari daftar
+    yang sama: siapa pemiliknya, lewat Agent mana, port apa saja.
+    """
+    __tablename__ = "relay_targets"
+    __table_args__ = (
+        UniqueConstraint("agent_id", "name", name="uq_relay_targets_agent_name"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        PG_UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    owner_id: Mapped[uuid.UUID] = mapped_column(
+        PG_UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    agent_id: Mapped[uuid.UUID] = mapped_column(
+        PG_UUID(as_uuid=True), ForeignKey("agents.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    device_id: Mapped[uuid.UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True), ForeignKey("devices.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    host: Mapped[str] = mapped_column(String(255), nullable=False)
+    ports: Mapped[list] = mapped_column(JSON, nullable=False)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
+    )

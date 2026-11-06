@@ -122,7 +122,7 @@ async def test_relay_lifecycle_keeps_heartbeat_alive_and_closes_cleanly():
             heartbeat_interval_seconds=0.1,
             heartbeat_timeout_seconds=1.0,
             heartbeat_min_db_interval_seconds=0.0,
-            max_messages_per_window=1,
+            max_messages_per_window=3,  # heartbeat x2 + bye; relay frames use own budget
             message_window_seconds=10.0,
             relay_messages_per_window=10,
             relay_message_window_seconds=10.0,

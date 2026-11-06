@@ -54,7 +54,11 @@ from app.agents.protocol import (
 )
 from app.agents.ratelimit import SlidingWindowLimiter
 from app.agents.registry import LiveConnection, LocalConnectionRegistry
-from app.agents.relay_protocol import RELAY_MESSAGE_TYPES, RelayProtocolError, open_tunnel_message, parse_relay_message
+from app.agents.relay_protocol import (
+    RELAY_MESSAGE_TYPES, RelayProtocolError, close_tunnel_message,
+    open_tunnel_message, parse_relay_message,
+)
+from app.agents.relay_channel import RelayChannel, RelayOpenError
 from app.agents.relay_sessions import RelaySessionError, RelaySessionRegistry
 from app.agents.states import AgentStatus
 from app.agents.store import AgentStore
@@ -162,6 +166,7 @@ class AgentConnectionManager:
         self.worker_id = worker_id or default_worker_id()
         self.registry = LocalConnectionRegistry()
         self.relay_sessions = RelaySessionRegistry(max_per_agent=8, idle_timeout=60.0)
+        self.relay_channels: dict[uuid.UUID, RelayChannel] = {}
         self._audit_sink = audit
         self._clock = clock
         self._sweeper: asyncio.Task | None = None
@@ -437,6 +442,7 @@ class AgentConnectionManager:
             await sock.close(CloseCode.INTERNAL, "internal error")
         finally:
             self.relay_sessions.cleanup_connection(agent_id=s.agent_id, connection_id=s.connection_id)
+            self._end_channels_for_connection(s.agent_id, s.connection_id)
             self.registry.unregister(s.agent_id, s.connection_id)
             if not superseded:
                 try:
@@ -472,6 +478,9 @@ class AgentConnectionManager:
                 if session.request_id != uuid.UUID(msg.request_id):
                     raise RelayProtocolError("relay request/session mismatch")
                 self.relay_sessions.mark_open(uuid.UUID(msg.session_id), **common)
+                channel = self.relay_channels.get(uuid.UUID(msg.session_id))
+                if channel is not None:
+                    channel._resolve_open()
             elif msg.type == "TUNNEL_ERROR":
                 session = self.relay_sessions.get(uuid.UUID(msg.session_id), **common)
                 if session.request_id != uuid.UUID(msg.request_id):
@@ -481,9 +490,16 @@ class AgentConnectionManager:
                     code=msg.code or "PROTOCOL_ERROR",
                     **common,
                 )
+                channel = self.relay_channels.pop(uuid.UUID(msg.session_id), None)
+                if channel is not None:
+                    channel._fail_open(msg.code or "PROTOCOL_ERROR", msg.message or "")
             elif msg.type == "DATA":
                 try:
                     self.relay_sessions.touch(uuid.UUID(msg.session_id), **common)
+                    channel = self.relay_channels.get(uuid.UUID(msg.session_id))
+                    if channel is not None and not channel._feed(msg.data or b""):
+                        logger.warning("relay inbound overflow agent=%s session=%s", s.agent_id, msg.session_id)
+                        await self._close_channel(channel, "error")
                 except RelaySessionError as exc:
                     if "not found" in str(exc) or "not open" in str(exc):
                         logger.debug(
@@ -495,6 +511,9 @@ class AgentConnectionManager:
             elif msg.type == "CLOSE_TUNNEL":
                 try:
                     self.relay_sessions.close(uuid.UUID(msg.session_id), **common)
+                    channel = self.relay_channels.pop(uuid.UUID(msg.session_id), None)
+                    if channel is not None:
+                        channel._end(msg.reason or "peer_closed")
                 except RelaySessionError as exc:
                     if "not found" in str(exc) or "invalid relay state" in str(exc):
                         logger.debug(
@@ -534,6 +553,86 @@ class AgentConnectionManager:
             )
             raise
         return payload
+
+    async def open_relay_channel(
+        self, *, agent_id: uuid.UUID, owner_id: uuid.UUID, connection_id: uuid.UUID,
+        target_id: uuid.UUID, port: int, open_timeout: float = 15.0,
+    ) -> RelayChannel:
+        """Open a relay session and return a byte channel once the Agent confirms.
+
+        Raises RelaySessionError (no live connection / limit) or RelayOpenError
+        (Agent refused: TARGET_NOT_ALLOWED, CONNECT_FAILED, TIMEOUT, ...).
+        """
+        live = self.registry.get(agent_id)
+        if live is None or live.connection_id != connection_id or live.owner_id != owner_id:
+            raise RelaySessionError("agent connection not found")
+        session = self.relay_sessions.create(
+            agent_id=agent_id, owner_id=owner_id, connection_id=connection_id,
+            target_id=target_id, port=port,
+        )
+        common = {"agent_id": agent_id, "owner_id": owner_id, "connection_id": connection_id}
+
+        async def send_frame(frame: dict) -> None:
+            await live.sock.send_json(frame)
+
+        channel = RelayChannel(
+            session_id=session.session_id, agent_id=agent_id, owner_id=owner_id,
+            connection_id=connection_id, send_frame=send_frame, on_close=self._close_channel,
+        )
+        self.relay_channels[session.session_id] = channel
+        try:
+            await live.sock.send_json(open_tunnel_message(
+                request_id=session.request_id, session_id=session.session_id,
+                target_id=target_id, port=port,
+            ))
+            await channel.wait_open(open_timeout)
+        except BaseException as exc:
+            self.relay_channels.pop(session.session_id, None)
+            channel._end("error")
+            # Agent refusal: the TUNNEL_ERROR handler already failed the session.
+            # Timeout / send failure / cancel: fail it here and tell the Agent.
+            refused = isinstance(exc, RelayOpenError) and exc.code != "TIMEOUT"
+            if not refused:
+                try:
+                    self.relay_sessions.fail(
+                        session.session_id,
+                        code="TIMEOUT" if isinstance(exc, RelayOpenError) else "CONNECT_FAILED",
+                        **common,
+                    )
+                    await live.sock.send_json(
+                        close_tunnel_message(session_id=session.session_id, reason="timeout"))
+                except Exception:  # noqa: BLE001 -- best-effort cleanup
+                    pass
+            raise
+        return channel
+
+    async def _close_channel(self, channel: RelayChannel, reason: str) -> None:
+        """Backend-initiated close: notify the Agent, then free everything."""
+        if channel.closed:
+            return
+        self.relay_channels.pop(channel.session_id, None)
+        common = {"agent_id": channel.agent_id, "owner_id": channel.owner_id,
+                  "connection_id": channel.connection_id}
+        try:
+            self.relay_sessions.close(channel.session_id, **common)
+        except RelaySessionError:
+            pass
+        channel._end(reason)
+        live = self.registry.get(channel.agent_id)
+        if live is not None and live.connection_id == channel.connection_id:
+            try:
+                await live.sock.send_json(close_tunnel_message(
+                    session_id=channel.session_id,
+                    reason=reason if reason in {"requested", "timeout", "error", "backend_shutdown"} else "requested",
+                ))
+            except Exception:  # noqa: BLE001 -- socket already gone
+                pass
+
+    def _end_channels_for_connection(self, agent_id: uuid.UUID, connection_id: uuid.UUID) -> None:
+        for sid, ch in list(self.relay_channels.items()):
+            if ch.agent_id == agent_id and ch.connection_id == connection_id:
+                self.relay_channels.pop(sid, None)
+                ch._end("agent_disconnect")
 
     # ------------------------------------------------------------------
     # Audit (best effort -- tidak boleh menjatuhkan koneksi)

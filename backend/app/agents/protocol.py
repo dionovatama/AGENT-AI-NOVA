@@ -149,10 +149,19 @@ def parse_auth(raw: str, max_bytes: int) -> AuthMessage:
     agent_version = _clean_text(data.get("agent_version"), "agent_version", 32)
     if not _VERSION_RE.fullmatch(agent_version):
         raise ProtocolError("'agent_version' is invalid")
+    # hostname bersifat informasi opsional: nilai tak valid diabaikan,
+    # bukan alasan menolak autentikasi.
+    hostname = data.get("hostname")
+    if not (isinstance(hostname, str) and hostname.strip()
+            and len(hostname.strip()) <= 255 and hostname.strip().isprintable()):
+        hostname = None
+    else:
+        hostname = hostname.strip()
     return AuthMessage(
         token=token,
         os=_clean_text(data.get("os"), "os", 50),
         agent_version=agent_version,
+        hostname=hostname,
     )
 
 

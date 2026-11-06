@@ -287,7 +287,7 @@ def test_apply_rejected_when_kill_switch_off(monkeypatch):
     # 3. Apply -> harus gagal karena kill-switch mati
     res_apply = client.post(f"/configurations/{config_id}/apply", headers=headers)
     assert res_apply.status_code == 400
-    assert "Kill-switch CONFIG_APPLY_ENABLED sedang mati" in res_apply.json()["detail"]
+    assert "CONFIG_APPLY_ENABLED=false" in res_apply.json()["detail"]
 
 
 def test_apply_rejected_when_device_not_lab(monkeypatch):
