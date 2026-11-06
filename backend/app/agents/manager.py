@@ -523,6 +523,9 @@ class AgentConnectionManager:
             now.timestamp() - self.cfg.heartbeat_timeout_seconds, tz=timezone.utc
         )
         self.auth_failures.prune()
+        relay_expired = self.relay_sessions.expire_idle()
+        if relay_expired:
+            logger.warning("agent relay sweeper: %d idle relay session -> closed", relay_expired)
         swept = await self.store.mark_stale(cutoff, now)
         if swept:
             logger.warning("agent sweeper: %d agent heartbeat basi -> disconnected", swept)
