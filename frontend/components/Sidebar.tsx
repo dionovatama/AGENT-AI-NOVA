@@ -143,7 +143,7 @@ export function Sidebar({
         </div>
       </div>
 
-      <div className="border-t border-white/[0.06] bg-black/20 p-3>
+      <div className="border-t border-white/[0.06] bg-black/20 p-3">
         {/* Status backend dipindah ke sini dari header atas yang dihapus. */}
         <div className="mb-2.5 px-1">
           <SystemPulse compact />
