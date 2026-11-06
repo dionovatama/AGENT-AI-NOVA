@@ -193,8 +193,8 @@ export default function ChatPage() {
 
     let historyId: string | null = conversationIdRef.current;
     try {
-      historyId = await ensureConversation();
-      await persistMessage(historyId, "user", userContent, fileToUpload ? { attachment_name: fileToUpload.name } : undefined);
+      try { historyId = await ensureConversation(); } catch { historyId = null; }
+      if (historyId) await persistMessage(historyId, "user", userContent, fileToUpload ? { attachment_name: fileToUpload.name } : undefined);
       if (fileToUpload) {
         setProcessingStage("process");
         const result = await novaApi.chatWithDocument(fileToUpload, text || "Baca dan pahami dokumen ini. Berikan ringkasan isi dan poin pentingnya.");
@@ -202,7 +202,7 @@ export default function ChatPage() {
         setProcessingStage("respond");
         const assistantMeta = { model_used: result.model_used, used_fallback: result.used_fallback };
         setMessages((prev) => [...prev, { role: "assistant", content: result.content, meta: assistantMeta }]);
-        await persistMessage(historyId, "assistant", result.content, { meta: assistantMeta });
+        if (historyId) await persistMessage(historyId, "assistant", result.content, { meta: assistantMeta });
         return;
       }
 
@@ -231,7 +231,7 @@ export default function ChatPage() {
         setMessages((prev) => [...prev, {
           role: "assistant", content: "", image_url: imageUrl, image_prompt: prompt, meta: imageMeta,
         }]);
-        await persistMessage(historyId, "assistant", "Image generated: " + prompt, { image_prompt: prompt, meta: imageMeta });
+        if (historyId) await persistMessage(historyId, "assistant", "Image generated: " + prompt, { image_prompt: prompt, meta: imageMeta });
         setLastLatencyMs(Math.round(performance.now() - startedAt));
         return;
       }
@@ -250,7 +250,7 @@ export default function ChatPage() {
         meta: { model_used: result.model_used, used_fallback: result.used_fallback, tools_used: result.tools_used, tools_offered: toolsRequested },
       };
       setMessages((prev) => [...prev, { role: "assistant", content: result.content, ...assistantMetadata }]);
-      await persistMessage(historyId, "assistant", result.content, assistantMetadata);
+      if (historyId) await persistMessage(historyId, "assistant", result.content, assistantMetadata);
     } catch (err) {
       setLastLatencyMs(Math.round(performance.now() - startedAt));
       const errorContent = "Permintaan gagal diproses. Periksa koneksi atau konfigurasi layanan, lalu coba lagi.";
