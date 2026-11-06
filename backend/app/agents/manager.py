@@ -108,6 +108,9 @@ class AgentRuntimeConfig:
     # 30 dtk; default mengizinkan 20 pesan / 10 dtk).
     max_messages_per_window: int = 20
     message_window_seconds: float = 10.0
+    # Relay frames use a separate budget from heartbeat/control frames.
+    relay_messages_per_window: int = 200
+    relay_message_window_seconds: float = 10.0
 
     def __post_init__(self) -> None:
         if self.heartbeat_timeout_seconds <= self.heartbeat_interval_seconds:
@@ -121,6 +124,8 @@ class AgentRuntimeConfig:
             self.auth_fail_limit <= 0 or self.auth_fail_window_seconds <= 0
             or self.max_pending_auth_per_ip <= 0
             or self.max_messages_per_window <= 0 or self.message_window_seconds <= 0
+            or self.relay_messages_per_window <= 0
+            or self.relay_message_window_seconds <= 0
         ):
             raise ValueError("parameter rate limit harus > 0")
 
@@ -345,6 +350,11 @@ class AgentConnectionManager:
             msg_limiter = SlidingWindowLimiter(
                 cfg.max_messages_per_window, cfg.message_window_seconds, clock=self._mono
             )
+            relay_limiter = SlidingWindowLimiter(
+                cfg.relay_messages_per_window,
+                cfg.relay_message_window_seconds,
+                clock=self._mono,
+            )
             while True:
                 try:
                     raw = await sock.receive_text(cfg.heartbeat_timeout_seconds)
@@ -366,6 +376,14 @@ class AgentConnectionManager:
                 msg = parse_client_message(raw, cfg.max_message_bytes)
 
                 if msg.type in RELAY_MESSAGE_TYPES:
+                    if not relay_limiter.hit("relay"):
+                        disconnect_reason = "relay_rate_limited"
+                        logger.warning(
+                            "agent relay flood agent=%s conn=%s ip=%s",
+                            s.agent_id, s.connection_id, sock.client_ip,
+                        )
+                        await sock.close(CloseCode.RATE_LIMITED, "relay rate limited")
+                        return
                     await self._handle_relay_message(raw, s)
                     continue
 
@@ -450,15 +468,41 @@ class AgentConnectionManager:
             msg = parse_relay_message(raw, direction="agent_to_server")
             common = {"agent_id": s.agent_id, "owner_id": s.owner_id, "connection_id": s.connection_id}
             if msg.type == "TUNNEL_OPENED":
-                session = self.relay_sessions.mark_open(uuid.UUID(msg.session_id), **common)
+                session = self.relay_sessions.get(uuid.UUID(msg.session_id), **common)
                 if session.request_id != uuid.UUID(msg.request_id):
                     raise RelayProtocolError("relay request/session mismatch")
+                self.relay_sessions.mark_open(uuid.UUID(msg.session_id), **common)
             elif msg.type == "TUNNEL_ERROR":
-                self.relay_sessions.fail(uuid.UUID(msg.session_id), code=msg.code or "PROTOCOL_ERROR", **common)
+                session = self.relay_sessions.get(uuid.UUID(msg.session_id), **common)
+                if session.request_id != uuid.UUID(msg.request_id):
+                    raise RelayProtocolError("relay request/session mismatch")
+                self.relay_sessions.fail(
+                    uuid.UUID(msg.session_id),
+                    code=msg.code || "PROTOCOL_ERROR",
+                    **common,
+                )
             elif msg.type == "DATA":
-                self.relay_sessions.touch(uuid.UUID(msg.session_id), **common)
+                try:
+                    self.relay_sessions.touch(uuid.UUID(msg.session_id), **common)
+                except RelaySessionError as exc:
+                    if "not found" in str(exc) or "not open" in str(exc):
+                        logger.debug(
+                            "ignoring stale relay DATA agent=%s session=%s",
+                            s.agent_id, msg.session_id,
+                        )
+                        return
+                    raise
             elif msg.type == "CLOSE_TUNNEL":
-                self.relay_sessions.close(uuid.UUID(msg.session_id), **common)
+                try:
+                    self.relay_sessions.close(uuid.UUID(msg.session_id), **common)
+                except RelaySessionError as exc:
+                    if "not found" in str(exc) or "invalid relay state" in str(exc):
+                        logger.debug(
+                            "ignoring stale relay CLOSE_TUNNEL agent=%s session=%s",
+                            s.agent_id, msg.session_id,
+                        )
+                        return
+                    raise
             logger.debug("relay frame agent=%s type=%s session=%s", s.agent_id, msg.type, msg.session_id)
         except (RelayProtocolError, RelaySessionError, ValueError) as exc:
             logger.warning("invalid relay frame agent=%s: %s", s.agent_id, exc)
