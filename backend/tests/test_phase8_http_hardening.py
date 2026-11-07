@@ -9,7 +9,7 @@ from app.security.http_hardening import _Window, websocket_origin_allowed
 def _production(**overrides):
     values = {
         "app_env": "production",
-        "jwt_secret_key": "a" * 48,
+        "jwt_secret_key": "Aa1!Bb2@Cc3#Dd4$Ee5%Ff6^Gg7&",
         "agent_require_tls": True,
         "cors_origins": ["https://console.example.com"],
     }
@@ -26,6 +26,7 @@ def test_production_settings_accept_strong_secret_tls_and_https_origin():
     [
         {"jwt_secret_key": "short"},
         {"jwt_secret_key": "changeme"},
+        {"jwt_secret_key": "a" * 64},
         {"agent_require_tls": False},
         {"agent_require_tls": None},
         {"cors_origins": ["http://localhost:3000"]},
