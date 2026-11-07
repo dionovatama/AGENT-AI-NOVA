@@ -94,13 +94,25 @@ def update_target_pin(
         RelayTarget.owner_id == current_user.id).first()
     if target is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Target not found.")
+    if not payload.confirm:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT,
+                            detail="Explicit confirmation is required to change the certificate pin.")
+    if payload.expected_current_fingerprint != target.tls_fingerprint:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT,
+                            detail="The current pin changed. Refresh the target and confirm again.")
+    previous_pin = target.tls_fingerprint
     target.tls_fingerprint = payload.tls_fingerprint
     db.commit()
     db.refresh(target)
     record_audit_event(
         action="agent.target.pin_updated", result_status="SUCCESS", user_id=current_user.id,
-        request_metadata={"agent_id": str(agent.id), "target_id": str(target.id),
-                          "tls_pinned": target.tls_fingerprint is not None},
+        request_metadata={
+            "agent_id": str(agent.id), "target_id": str(target.id),
+            "old_fingerprint_prefix": previous_pin[:12] if previous_pin else None,
+            "new_fingerprint_prefix": target.tls_fingerprint[:12] if target.tls_fingerprint else None,
+            "tls_pinned": target.tls_fingerprint is not None,
+            "operator_confirmed": True,
+        },
     )
     return _to_response(target)
 
