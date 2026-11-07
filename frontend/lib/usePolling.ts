@@ -92,9 +92,10 @@ export function usePolling<T>({ enabled, intervalMs, fetcher }: PollingOptions<T
       disposed = true;
       if (timer) clearTimeout(timer);
       document.removeEventListener("visibilitychange", onVisibility);
-      controllerRef.current?.abort();
+      const activeController = controllerRef.current;
+      activeController?.abort();
+      if (inFlight.current === activeController) inFlight.current = null;
       controllerRef.current = null;
-      if (inFlight.current === controllerRef.current) inFlight.current = null;
     };
   }, [enabled, intervalMs, fetcher, retryKey]);
 
