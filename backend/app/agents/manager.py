@@ -438,7 +438,7 @@ class AgentConnectionManager:
             final_error = (
                 f"{type(exc).__name__}: {sanitize_error_message(str(exc)) or ''}"
             )[:200]
-            logger.exception("agent session error agent=%s conn=%s", s.agent_id, s.connection_id)
+            logger.error("agent session error agent=%s conn=%s type=%s", s.agent_id, s.connection_id, type(exc).__name__)
             await sock.close(CloseCode.INTERNAL, "internal error")
         finally:
             self.relay_sessions.cleanup_connection(agent_id=s.agent_id, connection_id=s.connection_id)
@@ -452,8 +452,8 @@ class AgentConnectionManager:
                             self._clock(), final_error,
                         )
                     )
-                except Exception:  # noqa: BLE001
-                    logger.exception("agent release gagal agent=%s conn=%s", s.agent_id, s.connection_id)
+                except Exception as exc:  # noqa: BLE001
+                    logger.error("agent release gagal agent=%s conn=%s type=%s", s.agent_id, s.connection_id, type(exc).__name__)
             if connected_audited:
                 await self._audit(
                     "agent.disconnected",
@@ -524,7 +524,7 @@ class AgentConnectionManager:
                     raise
             logger.debug("relay frame agent=%s type=%s session=%s", s.agent_id, msg.type, msg.session_id)
         except (RelayProtocolError, RelaySessionError, ValueError) as exc:
-            logger.warning("invalid relay frame agent=%s: %s", s.agent_id, exc)
+            logger.warning("invalid relay frame agent=%s type=%s", s.agent_id, type(exc).__name__)
             await self._audit("agent.relay.protocol_error", "FAILED", s, {"reason": "invalid_relay_frame"}, error=str(exc)[:160])
             raise ProtocolError("invalid relay frame")
 
@@ -653,8 +653,8 @@ class AgentConnectionManager:
                 metadata={"connection_id": str(s.connection_id), "worker_id": self.worker_id, **metadata},
                 error=error,
             )
-        except Exception:  # noqa: BLE001
-            logger.warning("audit agent gagal action=%s", action, exc_info=True)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("audit agent gagal action=%s type=%s", action, type(exc).__name__)
 
     # ------------------------------------------------------------------
     # Sweeper + lifecycle
@@ -723,6 +723,6 @@ class AgentConnectionManager:
                     ),
                     timeout=5.0,
                 )
-            except Exception:  # noqa: BLE001
-                logger.warning("release saat shutdown gagal agent=%s", live.agent_id, exc_info=True)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("release saat shutdown gagal agent=%s type=%s", live.agent_id, type(exc).__name__)
             self.registry.unregister(live.agent_id, live.connection_id)
