@@ -99,6 +99,7 @@ auth_register_limiter = HttpRateLimiter(lambda: settings.rate_limit_auth_registe
 chat_limiter = HttpRateLimiter(lambda: settings.rate_limit_chat_limit, lambda: settings.rate_limit_chat_window_seconds, "chat")
 tools_execute_limiter = HttpRateLimiter(lambda: settings.rate_limit_tools_execute_limit, lambda: settings.rate_limit_tools_execute_window_seconds, "tools_execute")
 monitoring_limiter = HttpRateLimiter(lambda: settings.rate_limit_monitoring_limit, lambda: settings.rate_limit_monitoring_window_seconds, "monitoring")
+images_limiter = HttpRateLimiter(lambda: settings.rate_limit_images_limit, lambda: settings.rate_limit_images_window_seconds, "images")
 
 
 def rate_limit_auth_login(request: Request) -> None:
@@ -119,3 +120,7 @@ def rate_limit_tools_execute(request: Request, current_user: User = Depends(get_
 
 def rate_limit_monitoring(request: Request, current_user: User = Depends(get_current_user)) -> None:
     monitoring_limiter.check(f"monitoring:{current_user.id}" if current_user else f"monitoring:{get_client_ip(request)}")
+
+
+def rate_limit_images(current_user: User = Depends(get_current_user)) -> None:
+    images_limiter.check(f"images:{current_user.id}")
