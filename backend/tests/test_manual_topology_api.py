@@ -71,7 +71,8 @@ def test_manual_topology_node_link_crud_and_device_status_payload():
     saved = client.get("/network/manual-topology", headers=headers)
     assert saved.status_code == 200
     assert len(saved.json()["nodes"]) == 2
-    assert len(saved.json()["links"]) == 1\n    assert saved.json()["available_devices"] == []
+    assert len(saved.json()["links"]) == 1
+    assert saved.json()["available_devices"] == []
 
     deleted = client.delete(f"/network/manual-topology/nodes/{node_a['id']}", headers=headers)
     assert deleted.status_code == 204
