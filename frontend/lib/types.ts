@@ -346,6 +346,27 @@ export interface DeviceCreateInput {
   metadata?: Record<string, unknown> | null;
 }
 
+
+export interface RelayTarget {
+  id: string;
+  agent_id: string;
+  device_id: string | null;
+  name: string;
+  host: string;
+  ports: number[];
+  tls_fingerprint: string | null;
+  created_at: string;
+  agent_config: { target_id: string; host: string; ports: number[] };
+}
+
+export interface RelayTargetCreateInput {
+  name: string;
+  host: string;
+  ports: number[];
+  device_id?: string | null;
+  tls_fingerprint?: string | null;
+}
+
 export interface Credential {
   id: string;
   owner_id: string;
