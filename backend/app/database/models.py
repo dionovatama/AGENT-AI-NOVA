@@ -113,6 +113,13 @@ class Device(Base):
     connection_type: Mapped[str] = mapped_column(String(50), default="ssh", nullable=False)
     status: Mapped[str] = mapped_column(String(50), default="active", nullable=False)
 
+    # Hasil probe jangkauan lewat Remote Agent (Phase 6). BUKAN status admin di atas.
+    # reachability: online | offline | unknown. Data bisa basi -> lihat last_checked_at.
+    reachability: Mapped[str] = mapped_column(
+        String(20), default="unknown", server_default="unknown", nullable=False)
+    last_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_check_detail: Mapped[str | None] = mapped_column(String(200), nullable=True)
+
     # Kolom di DB bernama "metadata", atribut Python bernama device_metadata
     # karena nama 'metadata' di kelas model adalah atribut khusus MetaData SQLAlchemy.
     device_metadata: Mapped[dict | None] = mapped_column("metadata", JSON, nullable=True)

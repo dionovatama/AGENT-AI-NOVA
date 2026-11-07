@@ -9,7 +9,7 @@ Client → FastAPI → Auth → PostgreSQL
 
 import asyncio
 import sys
-from app.api import auth, chat, configurations, devices, tools, mikrotik_generator, images, linux_generator, agent, agents, agent_targets, conversations
+from app.api import auth, chat, configurations, devices, tools, mikrotik_generator, images, linux_generator, agent, agents, agent_targets, conversations, network
 
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
@@ -53,6 +53,7 @@ app = FastAPI(
 app.include_router(auth.router)
 app.include_router(chat.router)
 app.include_router(conversations.router)
+app.include_router(network.router)  # Phase 6: topology nyata + refresh status device
 app.include_router(tools.router)
 app.include_router(devices.router)
 app.include_router(configurations.router)
@@ -131,6 +132,9 @@ def health_check():
 # middleware) so CORS headers are also present on unhandled error responses.
 # Include both common local frontend hostnames; credentials remain enabled
 # for the Bearer-authenticated API and future cookie-based auth.
+# Instance FastAPI asli tetap dapat diakses (dependency_overrides untuk tes, dsb.);
+# `app` di bawah adalah pembungkus ASGI, bukan FastAPI.
+fastapi_app = app
 app = CORSMiddleware(
     app,
     allow_origins=[

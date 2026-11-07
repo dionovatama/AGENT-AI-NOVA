@@ -43,10 +43,10 @@ class RemoteTransportError(MikrotikConnectionError):
     """Gagal membuka jalur remote. Pesan aman (tanpa IP, password, atau fingerprint)."""
 
 
-def find_relay_target(ctx: "ExecutionContext", device: "Device") -> RelayTarget | None:
+def find_target_for_device(db, device: "Device") -> RelayTarget | None:
     """Target relay milik owner untuk device ini, atau None bila device berjalur lokal."""
     candidates = (
-        ctx.db.query(RelayTarget)
+        db.query(RelayTarget)
         .filter(RelayTarget.device_id == device.id, RelayTarget.owner_id == device.owner_id)
         .order_by(RelayTarget.created_at)
         .all()
@@ -57,6 +57,10 @@ def find_relay_target(ctx: "ExecutionContext", device: "Device") -> RelayTarget 
         if device.port in (t.ports or []):
             return t
     raise RemoteTransportError("Port device tidak terdaftar pada relay target mana pun.")
+
+
+def find_relay_target(ctx: "ExecutionContext", device: "Device") -> RelayTarget | None:
+    return find_target_for_device(ctx.db, device)
 
 
 @asynccontextmanager

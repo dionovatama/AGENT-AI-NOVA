@@ -12,7 +12,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.api import images as images_module
-from app.main import app
+from app.main import app, fastapi_app
 from app.security.dependencies import get_current_user
 
 
@@ -22,13 +22,13 @@ class _FakeUser:
 
 @pytest.fixture(autouse=True)
 def _setup(monkeypatch):
-    app.dependency_overrides[get_current_user] = lambda: _FakeUser()
+    fastapi_app.dependency_overrides[get_current_user] = lambda: _FakeUser()
     monkeypatch.setattr(images_module.settings, "cloudflare_account_id", "acc123", raising=False)
     monkeypatch.setattr(images_module.settings, "cloudflare_api_token", "tok-secret", raising=False)
     monkeypatch.setattr(images_module.settings, "image_model", "@cf/black-forest-labs/flux-1-schnell", raising=False)
     images_module._recent_requests.clear()
     yield
-    app.dependency_overrides.clear()
+    fastapi_app.dependency_overrides.clear()
 
 
 client = TestClient(app)
@@ -109,6 +109,6 @@ def test_rate_limit_kicks_in():
 
 
 def test_requires_auth():
-    app.dependency_overrides.clear()
+    fastapi_app.dependency_overrides.clear()
     r = client.post("/images/generate", json={"prompt": "x"})
     assert r.status_code in (401, 403)
