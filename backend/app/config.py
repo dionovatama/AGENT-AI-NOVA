@@ -125,6 +125,11 @@ class Settings(BaseSettings):
 
     audit_log_retention_days: int = 90
 
+    # --- MikroTik monitoring history (Phase 7) ---
+    monitoring_sample_interval_seconds: int = 15
+    monitoring_retention_days: int = 7
+    monitoring_max_samples_per_device: int = 20000
+
     # --- Credential encryption at rest ---
     # JSON keyring: {"key-id":"base64-encoded-32-byte-key"}.
     # Keep keys in deployment secret storage, never in the database/repository.

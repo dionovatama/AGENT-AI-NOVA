@@ -9,6 +9,14 @@ import type {
   TaskCategory,
   ToolResult,
   ConfigurationProposal,
+  ConversationSummary,
+  PersistedChatMessage,
+  RelayTarget,
+  RelayTargetCreateInput,
+  ManualTopology,
+  ManualTopologyNode,
+  ManualTopologyLink,
+  MikrotikMonitoringHistory,
 } from "./types";
 
 const BASE_URL =
@@ -55,6 +63,22 @@ async function request<T>(
   const text = await response.text();
   return (text ? JSON.parse(text) : undefined) as T;
 }
+
+export type MikrotikMonitoringSnapshot = {
+  device_id: string;
+  collected_at: string;
+  router: {
+    identity?: string; board_name?: string; model?: string; routeros_version?: string;
+    uptime?: string; cpu_load_percent?: number; free_memory_bytes?: number;
+    total_memory_bytes?: number; memory_used_percent?: number;
+    free_storage_bytes?: number; total_storage_bytes?: number; storage_used_percent?: number;
+  };
+  interfaces: Array<{ name: string; type?: string; running: boolean; disabled: boolean; rx_bps?: number; tx_bps?: number; mac_address?: string }>;
+  neighbors: Array<{ identity?: string; address?: string; mac_address?: string; interface?: string; platform?: string; version?: string }>;
+  arp: Array<{ address?: string; mac_address?: string; interface?: string; complete?: boolean }>;
+  dhcp_leases: Array<{ address?: string; mac_address?: string; host_name?: string; status?: string }>;
+  bridge_hosts: Array<{ mac_address?: string; bridge?: string; on_interface?: string }>;
+};
 
 export interface HealthResponse {
   status: string;
@@ -212,11 +236,18 @@ export const novaApi = {
   // Authorization header selama auth=true (default).
 
   listDevices: () => request<Device[]>("/devices"),
+  getMikrotikMonitoring: (deviceId: string, signal?: AbortSignal) =>
+    request<MikrotikMonitoringSnapshot>(`/devices/${deviceId}/monitoring`, { signal }),
+  getMikrotikMonitoringHistory: (deviceId: string, minutes: number, iface?: string, signal?: AbortSignal) => {
+    const params = new URLSearchParams({ minutes: String(minutes) });
+    if (iface) params.set("interface", iface);
+    return request<MikrotikMonitoringHistory>(`/devices/${deviceId}/monitoring/history?${params}`, { signal });
+  },
 
   deleteDevice: (deviceId: string) =>
     request<void>(`/devices/${deviceId}`, { method: "DELETE" }),
 
-  updateDevice: (deviceId: string, payload: { metadata?: Record<string, unknown> | null }) =>
+  updateDevice: (deviceId: string, payload: Partial<Pick<Device, "name" | "platform" | "host" | "port" | "connection_type" | "status" | "credential_id" | "metadata">>) =>
     request<Device>(`/devices/${deviceId}`, {
       method: "PATCH",
       body: JSON.stringify(payload),
@@ -239,6 +270,30 @@ export const novaApi = {
       body: JSON.stringify(payload),
     }),
 
+  // --- Account-scoped chat history --------------------------------
+  listConversations: () => request<ConversationSummary[]>("/conversations"),
+  createConversation: (title = "New chat") =>
+    request<ConversationSummary>("/conversations", {
+      method: "POST", body: JSON.stringify({ title }),
+    }),
+  getConversationMessages: (conversationId: string) =>
+    request<PersistedChatMessage[]>("/conversations/" + conversationId + "/messages"),
+  appendConversationMessage: (
+    conversationId: string,
+    role: "user" | "assistant",
+    content: string,
+    metadata?: Record<string, unknown>,
+  ) =>
+    request<PersistedChatMessage>("/conversations/" + conversationId + "/messages", {
+      method: "POST", body: JSON.stringify({ role, content, metadata: metadata ?? null }),
+    }),
+  renameConversation: (conversationId: string, title: string) =>
+    request<ConversationSummary>("/conversations/" + conversationId, {
+      method: "PATCH", body: JSON.stringify({ title }),
+    }),
+  deleteConversation: (conversationId: string) =>
+    request<void>("/conversations/" + conversationId, { method: "DELETE" }),
+
   // --- Remote Agent management ----------------------------------
   // Token hanya dikembalikan pada create/rotate; backend menyimpan hash.
   listAgents: () => request<RemoteAgent[]>("/agents"),
@@ -253,6 +308,30 @@ export const novaApi = {
     request<{ disconnected: boolean }>(`/agents/${agentId}/disconnect`, { method: "POST" }),
   deleteAgent: (agentId: string) =>
     request<void>(`/agents/${agentId}`, { method: "DELETE" }),
+  listRelayTargets: (agentId: string) =>
+    request<RelayTarget[]>(`/agents/${agentId}/targets`),
+  createRelayTarget: (agentId: string, payload: RelayTargetCreateInput) =>
+    request<RelayTarget>(`/agents/${agentId}/targets`, {
+      method: "POST", body: JSON.stringify(payload),
+    }),
+  updateRelayTargetPin: (agentId: string, targetId: string, tls_fingerprint: string | null) =>
+    request<RelayTarget>(`/agents/${agentId}/targets/${targetId}`, {
+      method: "PATCH", body: JSON.stringify({ tls_fingerprint }),
+    }),
+  deleteRelayTarget: (agentId: string, targetId: string) =>
+    request<void>(`/agents/${agentId}/targets/${targetId}`, { method: "DELETE" }),
+
+  getManualTopology: () => request<ManualTopology>("/network/manual-topology"),
+  createManualNode: (payload: { device_id?: string | null; name: string; kind?: string; x?: number; y?: number }) =>
+    request<ManualTopologyNode>("/network/manual-topology/nodes", { method: "POST", body: JSON.stringify(payload) }),
+  updateManualNode: (nodeId: string, payload: Partial<Pick<ManualTopologyNode, "name" | "kind" | "x" | "y">>) =>
+    request<ManualTopologyNode>(`/network/manual-topology/nodes/${nodeId}`, { method: "PATCH", body: JSON.stringify(payload) }),
+  deleteManualNode: (nodeId: string) =>
+    request<void>(`/network/manual-topology/nodes/${nodeId}`, { method: "DELETE" }),
+  createManualLink: (payload: { source_node_id: string; target_node_id: string; label?: string | null; connection_type?: string }) =>
+    request<ManualTopologyLink>("/network/manual-topology/links", { method: "POST", body: JSON.stringify(payload) }),
+  deleteManualLink: (linkId: string) =>
+    request<void>(`/network/manual-topology/links/${linkId}`, { method: "DELETE" }),
 
   listAuditLogs: () => request<AuditLogEntry[]>("/audit-logs"),
 };

@@ -346,6 +346,27 @@ export interface DeviceCreateInput {
   metadata?: Record<string, unknown> | null;
 }
 
+
+export interface RelayTarget {
+  id: string;
+  agent_id: string;
+  device_id: string | null;
+  name: string;
+  host: string;
+  ports: number[];
+  tls_fingerprint: string | null;
+  created_at: string;
+  agent_config: { target_id: string; host: string; ports: number[] };
+}
+
+export interface RelayTargetCreateInput {
+  name: string;
+  host: string;
+  ports: number[];
+  device_id?: string | null;
+  tls_fingerprint?: string | null;
+}
+
 export interface Credential {
   id: string;
   owner_id: string;
@@ -389,4 +410,67 @@ export interface ConfigurationProposal {
   created_at: string;
   expires_at?: string | null;
   applied_at?: string | null;
+}
+
+
+export interface ConversationSummary {
+  id: string;
+  title: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PersistedChatMessage {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+  metadata: Record<string, unknown> | null;
+  created_at: string;
+}
+
+
+export interface ManualTopologyNode {
+  id: string;
+  device_id: string | null;
+  name: string;
+  kind: string;
+  x: number;
+  y: number;
+  device: {
+    id: string; platform: string; host: string; port: number;
+    reachability: string; last_checked_at: string | null; last_check_detail: string | null;
+  } | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ManualTopologyLink {
+  id: string;
+  source_node_id: string;
+  target_node_id: string;
+  label: string | null;
+  connection_type: string;
+}
+
+export interface ManualTopology {
+  nodes: ManualTopologyNode[];
+  links: ManualTopologyLink[];
+  available_devices: Array<Pick<Device, "id" | "name" | "platform" | "host" | "port" | "connection_type">>;
+}
+
+
+export interface MikrotikMonitoringHistoryPoint {
+  collected_at: string;
+  cpu_load_percent: number | null;
+  memory_used_percent: number | null;
+  storage_used_percent: number | null;
+  rx_bps: number | null;
+  tx_bps: number | null;
+  sample_count: number;
+}
+
+export interface MikrotikMonitoringHistory {
+  points: MikrotikMonitoringHistoryPoint[];
+  bucket_seconds: number;
+  count: number;
 }

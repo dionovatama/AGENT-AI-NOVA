@@ -87,3 +87,15 @@ class RelayTargetResponse(BaseModel):
     # Salin ke "relay_targets" di config.json Agent. Tanpa entri ini Agent
     # menolak target (allow-list lokal adalah batas keamanan sebenarnya).
     agent_config: dict
+
+
+class RelayTargetPinUpdateRequest(BaseModel):
+    """Replace or clear the pinned SHA-256 certificate fingerprint."""
+    tls_fingerprint: str | None = Field(..., max_length=128)
+
+    @field_validator("tls_fingerprint")
+    @classmethod
+    def _fp(cls, v: str | None) -> str | None:
+        if v is None or not v.strip():
+            return None
+        return normalize_fingerprint(v)

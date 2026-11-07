@@ -9,7 +9,7 @@ Client → FastAPI → Auth → PostgreSQL
 
 import asyncio
 import sys
-from app.api import auth, chat, configurations, devices, tools, mikrotik_generator, images, linux_generator, agent, agents, agent_targets
+from app.api import auth, chat, configurations, devices, tools, mikrotik_generator, images, linux_generator, agent, agents, agent_targets, conversations, network, mikrotik_monitoring
 
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
@@ -50,19 +50,11 @@ app = FastAPI(
     version="0.4.0-milestone4",
 )
 
-# CORS — diperlukan agar console frontend (Next.js, localhost:3000) bisa
-# memanggil backend ini dari browser. Tanpa ini browser menolak request
-# lintas-origin sebelum sempat sampai ke endpoint mana pun.
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
 app.include_router(auth.router)
 app.include_router(chat.router)
+app.include_router(conversations.router)
+app.include_router(network.router)  # Phase 6: topology nyata + refresh status device
+app.include_router(mikrotik_monitoring.router)  # Read-only RouterOS v6/v7 live monitoring
 app.include_router(tools.router)
 app.include_router(devices.router)
 app.include_router(configurations.router)
@@ -135,3 +127,22 @@ def health_check():
         "service": settings.app_name,
         "environment": settings.app_env,
     }
+
+
+# Wrap the complete ASGI application (rather than only adding an inner
+# middleware) so CORS headers are also present on unhandled error responses.
+# Include both common local frontend hostnames; credentials remain enabled
+# for the Bearer-authenticated API and future cookie-based auth.
+# Instance FastAPI asli tetap dapat diakses (dependency_overrides untuk tes, dsb.);
+# `app` di bawah adalah pembungkus ASGI, bukan FastAPI.
+fastapi_app = app
+app = CORSMiddleware(
+    app,
+    allow_origins=[
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)

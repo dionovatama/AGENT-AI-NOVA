@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { ArrowUp, Paperclip, X } from "lucide-react";
 import { ChatWindow } from "@/components/chat/ChatWindow";
@@ -41,18 +41,46 @@ export default function ChatPage() {
   const [sending, setSending] = useState(false);
   const [processingStage, setProcessingStage] = useState<ProcessingStage>("understand");
   const [lastLatencyMs, setLastLatencyMs] = useState<number | null>(null);
+  const conversationIdRef = useRef<string | null>(null);
 
   const searchParams = useSearchParams();
   const resetKey = searchParams.get("new");
+  const selectedConversationId = searchParams.get("conversation");
 
   useEffect(() => {
+    let cancelled = false;
     if (resetKey) {
-      setMessages([]);
-      setInput("");
-      setSelectedFile(null);
+      conversationIdRef.current = null;
+      setMessages([]); setInput(""); setSelectedFile(null);
+      return;
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [resetKey]);
+    if (!selectedConversationId) {
+      conversationIdRef.current = null; setMessages([]);
+      return;
+    }
+    conversationIdRef.current = selectedConversationId;
+    setMessages([]);
+    novaApi.getConversationMessages(selectedConversationId).then((rows) => {
+      if (cancelled) return;
+      setMessages(rows.map((row) => {
+        const meta = row.metadata ?? {};
+        return { role: row.role, content: row.content, attachment_name: typeof meta.attachment_name === "string" ? meta.attachment_name : undefined, diagrams: Array.isArray(meta.diagrams) ? meta.diagrams as ChatMessage["diagrams"] : undefined, generated_files: Array.isArray(meta.generated_files) ? meta.generated_files as ChatMessage["generated_files"] : undefined, show_configuration_choices: meta.show_configuration_choices === true, configuration_request: typeof meta.configuration_request === "string" ? meta.configuration_request : undefined, configuration_proposal: meta.configuration_proposal as ChatMessage["configuration_proposal"], meta: meta.meta && typeof meta.meta === "object" ? meta.meta as ChatMessage["meta"] : undefined } as ChatMessage;
+      }));
+    }).catch(() => { if (!cancelled) setMessages([{ role: "assistant", content: "Riwayat percakapan gagal dimuat. Coba muat ulang halaman." }]); });
+    return () => { cancelled = true; };
+  }, [resetKey, selectedConversationId]);
+
+  async function ensureConversation(): Promise<string> {
+    if (conversationIdRef.current) return conversationIdRef.current;
+    const created = await novaApi.createConversation();
+    conversationIdRef.current = created.id;
+    return created.id;
+  }
+
+  async function persistMessage(id: string, role: "user" | "assistant", content: string, metadata?: Record<string, unknown>) {
+    try { await novaApi.appendConversationMessage(id, role, content, metadata); }
+    catch (error) { console.error("Chat history persistence failed", error); }
+  }
 
   const toolsSupported = TOOL_CALLING_CATEGORIES.includes(category);
   const isEmpty = messages.length === 0;
@@ -65,27 +93,29 @@ export default function ChatPage() {
 
   async function handleConfigurationChoice(requestText: string, choice: "file" | "direct") {
     if (sending) return;
-    setMessages((prev) => [...prev, { role: "user", content: choice === "file" ? "Pilih: buatkan file konfigurasi." : "Pilih: konfigurasi langsung ke router." }]);
+    const historyId = await ensureConversation();
+    const choiceMessage = choice === "file" ? "Pilih: buatkan file konfigurasi." : "Pilih: konfigurasi langsung ke router.";
+    setMessages((prev) => [...prev, { role: "user", content: choiceMessage }]);
+    await persistMessage(historyId, "user", choiceMessage);
     setSending(true);
     setProcessingStage("process");
     const startedAt = performance.now();
     try {
       const result = await novaApi.chatCompletion(requestText, "configuration_generation", false, choice);
       setLastLatencyMs(Math.round(performance.now() - startedAt));
+      const assistantMeta = { model_used: result.model_used, used_fallback: result.used_fallback, tools_used: result.tools_used };
       setMessages((prev) => [...prev, {
-        role: "assistant",
-        content: result.content,
-        generated_files: result.generated_files,
-        configuration_proposal: result.configuration_proposal,
-        meta: { model_used: result.model_used, used_fallback: result.used_fallback, tools_used: result.tools_used },
+        role: "assistant", content: result.content, generated_files: result.generated_files,
+        configuration_proposal: result.configuration_proposal, meta: assistantMeta,
       }]);
+      await persistMessage(historyId, "assistant", result.content, { generated_files: result.generated_files, configuration_proposal: result.configuration_proposal, meta: assistantMeta });
     } catch (err) {
-      setMessages((prev) => [...prev, {
-        role: "assistant",
-        content: "Permintaan konfigurasi gagal diproses.",
-        meta: { error: err instanceof NovaApiError ? err.message : "Unknown error" },
-      }]);
+      const content = "Permintaan konfigurasi gagal diproses.";
+      const metadata = { error: err instanceof NovaApiError ? err.message : "Unknown error" };
+      setMessages((prev) => [...prev, { role: "assistant", content, meta: metadata }]);
+      await persistMessage(historyId, "assistant", content, { meta: metadata });
     } finally {
+      window.history.replaceState(null, "", "/chat?conversation=" + historyId);
       setSending(false);
     }
   }
@@ -97,18 +127,16 @@ export default function ChatPage() {
     try {
       await novaApi.approveConfiguration(configurationId);
       const applied = await novaApi.applyConfiguration(configurationId);
-      setMessages((prev) => [...prev, {
-        role: "assistant",
-        content: applied.status === "VERIFIED"
-          ? "Konfigurasi berhasil diterapkan dan status proposal telah diperbarui. Periksa hasil verifikasi pada proposal/audit log."
-          : "Permintaan eksekusi selesai dengan status: " + applied.status,
-      }]);
+      const content = applied.status === "VERIFIED"
+        ? "Konfigurasi berhasil diterapkan dan status proposal telah diperbarui. Periksa hasil verifikasi pada proposal/audit log."
+        : "Permintaan eksekusi selesai dengan status: " + applied.status;
+      setMessages((prev) => [...prev, { role: "assistant", content }]);
+      if (conversationIdRef.current) await persistMessage(conversationIdRef.current, "assistant", content);
     } catch (err) {
-      setMessages((prev) => [...prev, {
-        role: "assistant",
-        content: "Eksekusi ditolak atau gagal. Periksa detail error dan audit log; jangan ulangi tanpa meninjau status router.",
-        meta: { error: err instanceof NovaApiError ? err.message : "Unknown error" },
-      }]);
+      const content = "Eksekusi ditolak atau gagal. Periksa detail error dan audit log; jangan ulangi tanpa meninjau status router.";
+      const metadata = { error: err instanceof NovaApiError ? err.message : "Unknown error" };
+      setMessages((prev) => [...prev, { role: "assistant", content, meta: metadata }]);
+      if (conversationIdRef.current) await persistMessage(conversationIdRef.current, "assistant", content, { meta: metadata });
     } finally {
       setSending(false);
     }
@@ -122,6 +150,7 @@ export default function ChatPage() {
     setProcessingStage("process");
     const startedAt = performance.now();
     try {
+      const historyId = await ensureConversation();
       const imageUrl = (await generateImage(cleanPrompt)).imageDataUrl;
       setProcessingStage("respond");
       setMessages((prev) => [...prev, {
@@ -131,14 +160,16 @@ export default function ChatPage() {
         image_prompt: cleanPrompt,
         meta: { model_used: "Cloudflare FLUX Image Generation" },
       }]);
+      await persistMessage(historyId, "assistant", "Image generated: " + cleanPrompt, { image_prompt: cleanPrompt, meta: { model_used: "Cloudflare FLUX Image Generation" } });
+      window.history.replaceState(null, "", "/chat?conversation=" + historyId);
       setLastLatencyMs(Math.round(performance.now() - startedAt));
     } catch (err) {
-      setMessages((prev) => [...prev, {
-        role: "assistant",
-        content: "Gagal membuat gambar. Lihat detail error di bawah, lalu coba lagi.",
-        meta: { error: err instanceof Error ? err.message : "Unknown error" },
-      }]);
+      const content = "Gagal membuat gambar. Lihat detail error di bawah, lalu coba lagi.";
+      const metadata = { error: err instanceof Error ? err.message : "Unknown error" };
+      setMessages((prev) => [...prev, { role: "assistant", content, meta: metadata }]);
+      if (conversationIdRef.current) await persistMessage(conversationIdRef.current, "assistant", content, { meta: metadata });
     } finally {
+      if (conversationIdRef.current) window.history.replaceState(null, "", "/chat?conversation=" + conversationIdRef.current);
       setSending(false);
     }
   }
@@ -149,7 +180,8 @@ export default function ChatPage() {
     if ((!text && !selectedFile) || sending) return;
     const fileToUpload = selectedFile;
 
-    setMessages((prev) => [...prev, { role: "user", content: text || "Tolong analisis dokumen ini.", attachment_name: fileToUpload?.name }]);
+    const userContent = text || "Tolong analisis dokumen ini.";
+    setMessages((prev) => [...prev, { role: "user", content: userContent, attachment_name: fileToUpload?.name }]);
     setInput("");
     setSelectedFile(null);
     setSending(true);
@@ -157,16 +189,18 @@ export default function ChatPage() {
     const stageTimer = window.setTimeout(() => setProcessingStage("process"), 350);
     const startedAt = performance.now();
 
+    let historyId: string | null = conversationIdRef.current;
     try {
+      try { historyId = await ensureConversation(); } catch { historyId = null; }
+      if (historyId) await persistMessage(historyId, "user", userContent, fileToUpload ? { attachment_name: fileToUpload.name } : undefined);
       if (fileToUpload) {
         setProcessingStage("process");
         const result = await novaApi.chatWithDocument(fileToUpload, text || "Baca dan pahami dokumen ini. Berikan ringkasan isi dan poin pentingnya.");
         setLastLatencyMs(Math.round(performance.now() - startedAt));
         setProcessingStage("respond");
-        setMessages((prev) => [...prev, {
-          role: "assistant", content: result.content,
-          meta: { model_used: result.model_used, used_fallback: result.used_fallback },
-        }]);
+        const assistantMeta = { model_used: result.model_used, used_fallback: result.used_fallback };
+        setMessages((prev) => [...prev, { role: "assistant", content: result.content, meta: assistantMeta }]);
+        if (historyId) await persistMessage(historyId, "assistant", result.content, { meta: assistantMeta });
         return;
       }
 
@@ -191,13 +225,11 @@ export default function ChatPage() {
         const prompt = imagePrompt || text;
         const imageUrl = (await generateImage(prompt)).imageDataUrl;
         setProcessingStage("respond");
+        const imageMeta = { model_used: "Cloudflare FLUX Image Generation" };
         setMessages((prev) => [...prev, {
-          role: "assistant",
-          content: "",
-          image_url: imageUrl,
-          image_prompt: prompt,
-          meta: { model_used: "Cloudflare FLUX Image Generation" },
+          role: "assistant", content: "", image_url: imageUrl, image_prompt: prompt, meta: imageMeta,
         }]);
+        if (historyId) await persistMessage(historyId, "assistant", "Image generated: " + prompt, { image_prompt: prompt, meta: imageMeta });
         setLastLatencyMs(Math.round(performance.now() - startedAt));
         return;
       }
@@ -207,34 +239,24 @@ export default function ChatPage() {
       const result = await novaApi.chatCompletion(text, category, toolsRequested);
       setLastLatencyMs(Math.round(performance.now() - startedAt));
       setProcessingStage("respond");
-      setMessages((prev) => [
-        ...prev,
-        {
-          role: "assistant",
-          content: result.content,
-          diagrams: result.diagrams,
-          generated_files: result.generated_files,
-          show_configuration_choices: result.configuration_choice,
-          configuration_request: result.configuration_choice ? text : undefined,
-          meta: {
-            model_used: result.model_used,
-            used_fallback: result.used_fallback,
-            tools_used: result.tools_used,
-            tools_offered: toolsRequested,
-          },
-        },
-      ]);
+      const assistantMetadata = {
+        diagrams: result.diagrams,
+        generated_files: result.generated_files,
+        show_configuration_choices: result.configuration_choice,
+        configuration_request: result.configuration_choice ? text : undefined,
+        configuration_proposal: result.configuration_proposal,
+        meta: { model_used: result.model_used, used_fallback: result.used_fallback, tools_used: result.tools_used, tools_offered: toolsRequested },
+      };
+      setMessages((prev) => [...prev, { role: "assistant", content: result.content, ...assistantMetadata }]);
+      if (historyId) await persistMessage(historyId, "assistant", result.content, assistantMetadata);
     } catch (err) {
       setLastLatencyMs(Math.round(performance.now() - startedAt));
-      setMessages((prev) => [
-        ...prev,
-        {
-          role: "assistant",
-          content: "Permintaan gagal diproses. Periksa koneksi atau konfigurasi layanan, lalu coba lagi.",
-          meta: { error: err instanceof NovaApiError ? err.message : "Unknown error" },
-        },
-      ]);
+      const errorContent = "Permintaan gagal diproses. Periksa koneksi atau konfigurasi layanan, lalu coba lagi.";
+      const errorMeta = { error: err instanceof NovaApiError ? err.message : "Unknown error" };
+      setMessages((prev) => [...prev, { role: "assistant", content: errorContent, meta: errorMeta }]);
+      if (historyId) await persistMessage(historyId, "assistant", errorContent, { meta: errorMeta });
     } finally {
+      if (historyId) window.history.replaceState(null, "", "/chat?conversation=" + historyId);
       window.clearTimeout(stageTimer);
       setSending(false);
     }

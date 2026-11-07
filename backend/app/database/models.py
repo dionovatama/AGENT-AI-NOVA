@@ -14,7 +14,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Index, Integer, JSON, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Index, Integer, JSON, String, Text, UniqueConstraint, desc
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -113,6 +113,13 @@ class Device(Base):
     connection_type: Mapped[str] = mapped_column(String(50), default="ssh", nullable=False)
     status: Mapped[str] = mapped_column(String(50), default="active", nullable=False)
 
+    # Hasil probe jangkauan lewat Remote Agent (Phase 6). BUKAN status admin di atas.
+    # reachability: online | offline | unknown. Data bisa basi -> lihat last_checked_at.
+    reachability: Mapped[str] = mapped_column(
+        String(20), default="unknown", server_default="unknown", nullable=False)
+    last_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_check_detail: Mapped[str | None] = mapped_column(String(200), nullable=True)
+
     # Kolom di DB bernama "metadata", atribut Python bernama device_metadata
     # karena nama 'metadata' di kelas model adalah atribut khusus MetaData SQLAlchemy.
     device_metadata: Mapped[dict | None] = mapped_column("metadata", JSON, nullable=True)
@@ -129,6 +136,24 @@ class Device(Base):
 
     def __repr__(self) -> str:
         return f"<Device id={self.id} name={self.name} platform={self.platform} host={self.host}>"
+
+
+class DeviceMetricSample(Base):
+    """Sanitized time-series metrics only; never stores raw RouterOS payloads."""
+    __tablename__ = "device_metric_samples"
+    __table_args__ = (
+        Index("ix_device_metric_samples_device_collected", "device_id", desc("collected_at")),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    device_id: Mapped[uuid.UUID] = mapped_column(
+        PG_UUID(as_uuid=True), ForeignKey("devices.id", ondelete="CASCADE"), nullable=False
+    )
+    collected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    cpu_load_percent: Mapped[float | None] = mapped_column(Float, nullable=True)
+    memory_used_percent: Mapped[float | None] = mapped_column(Float, nullable=True)
+    storage_used_percent: Mapped[float | None] = mapped_column(Float, nullable=True)
+    interfaces: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
 
 
 class AuditLog(Base):
@@ -382,6 +407,95 @@ class RelayTarget(Base):
     # memin TLS lewat relay; jalur remote MikroTik menolak target tanpa pin.
     tls_fingerprint: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
+    )
+
+
+class Conversation(Base):
+    """A conversation owned by one authenticated account."""
+    __tablename__ = "conversations"
+    __table_args__ = (Index("ix_conversations_owner_updated", "owner_id", "updated_at"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    owner_id: Mapped[uuid.UUID] = mapped_column(
+        PG_UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    title: Mapped[str] = mapped_column(String(160), nullable=False, default="New chat")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc), nullable=False
+    )
+
+
+class ConversationMessage(Base):
+    """Persisted chat message; metadata contains JSON-safe display attributes only."""
+    __tablename__ = "conversation_messages"
+    __table_args__ = (Index("ix_conversation_messages_conversation_created", "conversation_id", "created_at"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    conversation_id: Mapped[uuid.UUID] = mapped_column(
+        PG_UUID(as_uuid=True), ForeignKey("conversations.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    role: Mapped[str] = mapped_column(String(20), nullable=False)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    message_metadata: Mapped[dict | None] = mapped_column("metadata", JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False, index=True
+    )
+
+
+class TopologyNode(Base):
+    """Node yang digambar admin pada manual network topology."""
+    __tablename__ = "topology_nodes"
+    __table_args__ = (
+        Index("ix_topology_nodes_owner", "owner_id"),
+        UniqueConstraint("owner_id", "device_id", name="uq_topology_nodes_owner_device"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    owner_id: Mapped[uuid.UUID] = mapped_column(
+        PG_UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    device_id: Mapped[uuid.UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True), ForeignKey("devices.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    kind: Mapped[str] = mapped_column(String(30), nullable=False, default="other")
+    x: Mapped[float] = mapped_column(Float, nullable=False, default=80)
+    y: Mapped[float] = mapped_column(Float, nullable=False, default=80)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc), nullable=False
+    )
+
+
+class TopologyLink(Base):
+    """Koneksi manual antar node; bukan hasil discovery/scanning."""
+    __tablename__ = "topology_links"
+    __table_args__ = (
+        Index("ix_topology_links_owner", "owner_id"),
+        UniqueConstraint("owner_id", "source_node_id", "target_node_id", name="uq_topology_link_pair"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    owner_id: Mapped[uuid.UUID] = mapped_column(
+        PG_UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    source_node_id: Mapped[uuid.UUID] = mapped_column(
+        PG_UUID(as_uuid=True), ForeignKey("topology_nodes.id", ondelete="CASCADE"), nullable=False
+    )
+    target_node_id: Mapped[uuid.UUID] = mapped_column(
+        PG_UUID(as_uuid=True), ForeignKey("topology_nodes.id", ondelete="CASCADE"), nullable=False
+    )
+    label: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    connection_type: Mapped[str] = mapped_column(String(30), nullable=False, default="ethernet")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
     )
