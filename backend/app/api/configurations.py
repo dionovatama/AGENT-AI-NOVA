@@ -226,7 +226,7 @@ async def get_configuration(
             cs = ChangeSet.model_validate(config.change_set)
             response.cli_preview = render_cli_preview(cs, adapter)
     except Exception as exc:
-        logger.warning("Tidak dapat merekonstruksi CLI preview untuk config %s: %s", config.id, exc)
+        logger.warning("Tidak dapat merekonstruksi CLI preview untuk config %s (%s)", config.id, type(exc).__name__)
 
     return response
 
@@ -255,11 +255,11 @@ def approve_configuration_endpoint(
         )
         return ConfigurationResponse.model_validate(config)
     except StateConflictError as exc:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Configuration state changed; refresh and retry.") from None
     except Exception as exc:
         if "tidak ditemukan" in str(exc).lower():
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Configuration proposal tidak ditemukan.") from exc
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Configuration operation failed. Check operator audit logs.") from None
 
 
 @router.post("/{configuration_id}/apply", response_model=ConfigurationResponse)
@@ -294,11 +294,11 @@ async def apply_configuration_endpoint(
         )
         return ConfigurationResponse.model_validate(config)
     except DriftDetectedError as exc:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Device state changed; review the plan and retry.") from None
     except StateConflictError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     except VerificationFailedError as exc:
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Configuration verification or execution failed. Check operator audit logs.") from None
     except Exception as exc:
         if "tidak ditemukan" in str(exc).lower():
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Configuration proposal tidak ditemukan.") from exc
