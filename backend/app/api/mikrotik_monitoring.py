@@ -108,6 +108,8 @@ def _monitor_sync(device, password, sock=None):
                 "on_interface": r.get("on-interface"), "local": _to_bool(r.get("local", False)),
             } for r in bridge_hosts],
         }
+    _save_metric_sample(db, device, response)
+    return response
 
 
 @router.get("/{device_id}/monitoring")
@@ -147,7 +149,7 @@ async def get_mikrotik_monitoring(
     free = _safe_int(resource.get("free-memory"))
     storage_total = _safe_int(resource.get("total-hdd-space"))
     storage_free = _safe_int(resource.get("free-hdd-space"))
-    return {
+    response = {
         "device_id": str(device.id), "collected_at": datetime.now(timezone.utc).isoformat(),
         "router": {
             "identity": identity.get("name"), "board_name": resource.get("board-name"),
@@ -169,3 +171,141 @@ async def get_mikrotik_monitoring(
         "compatibility": {"routeros": "v6/v7", "collection": "read-only",
             "optional_tables_may_be_empty": True},
     }
+
+# Per-process throttle for retention work; database throttling remains authoritative.
+_LAST_MONITORING_PRUNE: dict[uuid.UUID, datetime] = {}
+_INTERFACE_NAME = __import__("re").compile(r"^[A-Za-z0-9_.:@/-]{1,64}$")
+
+
+def _save_metric_sample(db: Session, device: Device, snapshot: dict) -> None:
+    """Best-effort persistence: monitoring response must survive DB write failures."""
+    from sqlalchemy import delete
+    from app.config import settings
+    from app.database.models import DeviceMetricSample
+
+    now = datetime.now(timezone.utc)
+    try:
+        # Serialize writes per device on PostgreSQL to avoid concurrent duplicate samples.
+        db.query(Device).filter(Device.id == device.id).with_for_update().first()
+        latest = db.query(DeviceMetricSample).filter(
+            DeviceMetricSample.device_id == device.id
+        ).order_by(DeviceMetricSample.collected_at.desc()).first()
+        if latest and (now - latest.collected_at).total_seconds() < settings.monitoring_sample_interval_seconds:
+            db.rollback()
+            return
+
+        router = snapshot.get("router") or {}
+        interfaces = [
+            {
+                "name": str(item.get("name", ""))[:64],
+                "rx_bps": item.get("rx_bps"),
+                "tx_bps": item.get("tx_bps"),
+                "running": bool(item.get("running", False)),
+            }
+            for item in snapshot.get("interfaces", [])
+            if item.get("name")
+        ]
+        db.add(DeviceMetricSample(
+            device_id=device.id,
+            collected_at=now,
+            cpu_load_percent=router.get("cpu_load_percent"),
+            memory_used_percent=router.get("memory_used_percent"),
+            storage_used_percent=router.get("storage_used_percent"),
+            interfaces=interfaces,
+        ))
+
+        last_prune = _LAST_MONITORING_PRUNE.get(device.id)
+        if last_prune is None or (now - last_prune).total_seconds() >= 3600:
+            cutoff = now - __import__("datetime").timedelta(days=settings.monitoring_retention_days)
+            db.execute(delete(DeviceMetricSample).where(
+                DeviceMetricSample.device_id == device.id,
+                DeviceMetricSample.collected_at < cutoff,
+            ))
+            _LAST_MONITORING_PRUNE[device.id] = now
+
+        overflow_ids = db.query(DeviceMetricSample.id).filter(
+            DeviceMetricSample.device_id == device.id
+        ).order_by(DeviceMetricSample.collected_at.desc()).offset(
+            settings.monitoring_max_samples_per_device
+        ).subquery()
+        db.execute(delete(DeviceMetricSample).where(DeviceMetricSample.id.in_(overflow_ids)))
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        logger.warning("Monitoring history write failed for device %s (%s)", device.id, type(exc).__name__)
+
+
+@router.get("/{device_id}/monitoring/history")
+def get_mikrotik_monitoring_history(
+    device_id: uuid.UUID,
+    minutes: int = __import__("fastapi").Query(60, ge=1, le=10080),
+    interface: str | None = __import__("fastapi").Query(None, min_length=1, max_length=64),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Return at most 500 averaged time buckets from sanitized samples."""
+    from math import ceil
+    from collections import defaultdict
+    from app.database.models import DeviceMetricSample
+
+    if interface is not None and not _INTERFACE_NAME.fullmatch(interface):
+        raise HTTPException(status_code=422, detail="Invalid interface name.")
+    device = db.query(Device).filter(
+        Device.id == device_id, Device.owner_id == current_user.id,
+        Device.platform == "mikrotik",
+    ).first()
+    if device is None:
+        raise HTTPException(status_code=404, detail="MikroTik device not found.")
+
+    now = datetime.now(timezone.utc)
+    start = now - __import__("datetime").timedelta(minutes=minutes)
+    samples = db.query(DeviceMetricSample).join(
+        Device, Device.id == DeviceMetricSample.device_id
+    ).filter(
+        Device.id == device_id, Device.owner_id == current_user.id,
+        DeviceMetricSample.collected_at >= start,
+    ).order_by(DeviceMetricSample.collected_at.asc()).all()
+
+    bucket_seconds = max(1, ceil(minutes * 60 / 500))
+    buckets: dict[int, dict] = defaultdict(lambda: {
+        "timestamps": [], "cpu": [], "memory": [], "storage": [], "rx": [], "tx": []
+    })
+    for sample in samples:
+        epoch = sample.collected_at.timestamp()
+        key = int(epoch // bucket_seconds)
+        bucket = buckets[key]
+        bucket["timestamps"].append(epoch)
+        for source, target in (
+            (sample.cpu_load_percent, "cpu"),
+            (sample.memory_used_percent, "memory"),
+            (sample.storage_used_percent, "storage"),
+        ):
+            if source is not None:
+                bucket[target].append(float(source))
+        if interface is not None:
+            for item in sample.interfaces or []:
+                if item.get("name") == interface:
+                    if item.get("rx_bps") is not None:
+                        bucket["rx"].append(float(item["rx_bps"]))
+                    if item.get("tx_bps") is not None:
+                        bucket["tx"].append(float(item["tx_bps"]))
+                    break
+
+    def average(values):
+        return round(sum(values) / len(values), 2) if values else None
+
+    points = []
+    for key in sorted(buckets):
+        bucket = buckets[key]
+        points.append({
+            "collected_at": datetime.fromtimestamp(
+                sum(bucket["timestamps"]) / len(bucket["timestamps"]), timezone.utc
+            ).isoformat(),
+            "cpu_load_percent": average(bucket["cpu"]),
+            "memory_used_percent": average(bucket["memory"]),
+            "storage_used_percent": average(bucket["storage"]),
+            "rx_bps": average(bucket["rx"]) if interface is not None else None,
+            "tx_bps": average(bucket["tx"]) if interface is not None else None,
+            "sample_count": len(bucket["timestamps"]),
+        })
+    return {"points": points[:500], "bucket_seconds": bucket_seconds, "count": len(samples)}
