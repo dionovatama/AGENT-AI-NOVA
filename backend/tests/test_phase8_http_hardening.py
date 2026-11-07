@@ -11,6 +11,8 @@ def _production(**overrides):
         "app_env": "production",
         "jwt_secret_key": "Aa1!Bb2@Cc3#Dd4$Ee5%Ff6^Gg7&",
         "agent_require_tls": True,
+        "linux_ssh_host_key_checking": True,
+        "linux_ssh_known_hosts_path": "/tmp/nova-known-hosts",
         "cors_origins": ["https://console.example.com"],
     }
     values.update(overrides)
@@ -29,6 +31,8 @@ def test_production_settings_accept_strong_secret_tls_and_https_origin():
         {"jwt_secret_key": "a" * 64},
         {"agent_require_tls": False},
         {"agent_require_tls": None},
+        {"linux_ssh_host_key_checking": False},
+        {"linux_ssh_known_hosts_path": None},
         {"cors_origins": ["http://localhost:3000"]},
         {"cors_origins": ["https://console.example.com", "http://127.0.0.1:3000"]},
         {"cors_origins": []},
@@ -45,6 +49,8 @@ def test_development_settings_keep_legacy_local_configuration():
             app_env="development",
             jwt_secret_key="dev",
             agent_require_tls=False,
+            linux_ssh_host_key_checking=False,
+            linux_ssh_known_hosts_path=None,
             cors_origins=["http://localhost:3000"],
         )
     )
