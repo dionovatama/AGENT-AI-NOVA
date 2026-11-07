@@ -26,6 +26,10 @@ class LinuxNetworkAdapter(NetworkDeviceAdapter):
     async def _run(self, device: Device, command: str) -> str:
         if not settings.linux_ssh_private_key_path:
             raise RuntimeError("linux_ssh_private_key_path belum dikonfigurasi.")
+        if settings.app_env.lower() == "production" and (
+            not settings.linux_ssh_host_key_checking or not settings.linux_ssh_known_hosts_path
+        ):
+            raise RuntimeError("Production SSH requires strict known_hosts verification.")
         known_hosts = (settings.linux_ssh_known_hosts_path or ()) if settings.linux_ssh_host_key_checking else None
         async with asyncssh.connect(host=device.host, port=device.port or 22, username=_username(device), client_keys=[settings.linux_ssh_private_key_path], known_hosts=known_hosts, connect_timeout=settings.linux_ssh_connect_timeout_seconds) as conn:
             result = await conn.run(command, check=False, timeout=20)
