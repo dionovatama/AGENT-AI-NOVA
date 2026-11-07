@@ -17,7 +17,21 @@ PER_DEVICE_LIMIT = 1
 OPERATION_TIMEOUT_SECONDS = 30.0
 QUEUE_TIMEOUT_SECONDS = 5.0
 
-_executor = ThreadPoolExecutor(max_workers=GLOBAL_LIMIT, thread_name_prefix="nova-routeros")
+_executor: ThreadPoolExecutor | None = None
+
+
+def _get_executor() -> ThreadPoolExecutor:
+    global _executor
+    if _executor is None:
+        _executor = ThreadPoolExecutor(max_workers=GLOBAL_LIMIT, thread_name_prefix="nova-routeros")
+    return _executor
+
+
+def shutdown_device_executor(wait: bool = True) -> None:
+    global _executor
+    executor, _executor = _executor, None
+    if executor is not None:
+        executor.shutdown(wait=wait, cancel_futures=True)
 _global_slots = asyncio.Semaphore(GLOBAL_LIMIT)
 _device_slots: dict[str, asyncio.Semaphore] = {}
 
@@ -33,7 +47,7 @@ class DeviceExecutionSlot:
     async def run(self, fn: Callable[..., Any], *args: Any,
                   timeout: float = OPERATION_TIMEOUT_SECONDS) -> Any:
         loop = asyncio.get_running_loop()
-        self._future = loop.run_in_executor(_executor, partial(fn, *args))
+        self._future = loop.run_in_executor(_get_executor(), partial(fn, *args))
         try:
             return await asyncio.wait_for(asyncio.shield(self._future), timeout=timeout)
         except asyncio.TimeoutError:
