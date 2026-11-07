@@ -172,6 +172,18 @@ class Settings(BaseSettings):
     # None = otomatis: wajib TLS (wss) jika APP_ENV=production. Set false/true untuk override.
     agent_require_tls: bool | None = None
 
+    # --- HTTP Rate Limiting ---
+    rate_limit_auth_login_limit: int = 10
+    rate_limit_auth_login_window_seconds: float = 60.0
+    rate_limit_auth_register_limit: int = 10
+    rate_limit_auth_register_window_seconds: float = 60.0
+    rate_limit_chat_limit: int = 60
+    rate_limit_chat_window_seconds: float = 60.0
+    rate_limit_tools_execute_limit: int = 60
+    rate_limit_tools_execute_window_seconds: float = 60.0
+    rate_limit_monitoring_limit: int = 120
+    rate_limit_monitoring_window_seconds: float = 60.0
+
     # --- CORS (Cross-Origin Resource Sharing) ---
     cors_origins: list[str] = list(DEFAULT_DEV_CORS_ORIGINS)
 

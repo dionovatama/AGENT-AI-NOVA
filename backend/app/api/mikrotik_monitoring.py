@@ -19,10 +19,15 @@ from app.database.models import Device, User
 from app.database.session import get_db
 from app.network.device_context import build_device_context
 from app.security.dependencies import get_current_user
+from app.security.rate_limiter import rate_limit_monitoring
 from app.tools.mikrotik import _run_on_device, _api_session, _safe_int, _to_bool
 
 logger = logging.getLogger(__name__)
-router = APIRouter(prefix="/devices", tags=["mikrotik-monitoring"])
+router = APIRouter(
+    prefix="/devices",
+    tags=["mikrotik-monitoring"],
+    dependencies=[Depends(rate_limit_monitoring)],
+)
 
 
 # librouteros melempar MultiTrapError (bukan subclass TrapError) saat menu tidak

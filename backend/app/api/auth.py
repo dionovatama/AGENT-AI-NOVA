@@ -17,6 +17,7 @@ from app.database.session import get_db
 from app.database.models import User
 from app.security.dependencies import get_current_user
 from app.security.hashing import hash_password, verify_password, create_access_token
+from app.security.rate_limiter import rate_limit_auth_login, rate_limit_auth_register
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -48,7 +49,7 @@ class TokenResponse(BaseModel):
 
 # --- Endpoints ---
 
-@router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED, dependencies=[Depends(rate_limit_auth_register)])
 def register(payload: RegisterRequest, db: Session = Depends(get_db)):
     existing = db.query(User).filter(User.email == payload.email).first()
     if existing:
@@ -71,7 +72,7 @@ def register(payload: RegisterRequest, db: Session = Depends(get_db)):
     return user
 
 
-@router.post("/login", response_model=TokenResponse)
+@router.post("/login", response_model=TokenResponse, dependencies=[Depends(rate_limit_auth_login)])
 def login(payload: LoginRequest, db: Session = Depends(get_db)):
     user = db.query(User).filter(User.email == payload.email).first()
 

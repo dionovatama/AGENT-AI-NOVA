@@ -20,6 +20,7 @@ from app.network.models import AddIpAddressOperation, ChangeSet
 from app.schemas.configurations import ConfigurationCreateRequest
 from app.api.configurations import create_configuration
 from app.security.dependencies import get_current_user
+from app.security.rate_limiter import rate_limit_chat
 from app.ai.model_router import TaskCategory
 from app.ai.openrouter import ChatMessage, ChatCompletionResult, OpenRouterError, get_completion
 from app.ai.tool_calling import NOVA_SYSTEM_PROMPT, get_completion_with_tools
@@ -155,7 +156,7 @@ def _configuration_from_message(message: str) -> GeneratorRequest:
     )
 
 
-@router.post("/completions", response_model=ChatCompletionResult)
+@router.post("/completions", response_model=ChatCompletionResult, dependencies=[Depends(rate_limit_chat)])
 async def chat_completions(
     payload: ChatRequest,
     current_user: User = Depends(get_current_user),
@@ -394,7 +395,7 @@ def _extract_document_text(filename: str, content: bytes) -> str:
     return extracted[:_MAX_DOCUMENT_CHARS]
 
 
-@router.post("/documents/completions", response_model=ChatCompletionResult)
+@router.post("/documents/completions", response_model=ChatCompletionResult, dependencies=[Depends(rate_limit_chat)])
 async def chat_with_document(
     file: UploadFile = File(...),
     message: str = Form("Baca dan pahami dokumen ini. Berikan ringkasan isi dan poin pentingnya."),

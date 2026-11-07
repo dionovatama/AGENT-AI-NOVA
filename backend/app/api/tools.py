@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from app.database.models import User
 from app.database.session import get_db
 from app.security.dependencies import get_current_user
+from app.security.rate_limiter import rate_limit_tools_execute
 from app.security.permissions import PermissionDeniedError
 from app.security.sanitization import sanitize_error_message
 from app.tools.manager import (
@@ -33,7 +34,7 @@ async def list_tools(current_user: User = Depends(get_current_user)) -> list[str
     return tool_manager.list_tools()
 
 
-@router.post("/execute", response_model=ToolResult)
+@router.post("/execute", response_model=ToolResult, dependencies=[Depends(rate_limit_tools_execute)])
 async def execute_tool(
     request: ToolRequest,
     current_user: User = Depends(get_current_user),
