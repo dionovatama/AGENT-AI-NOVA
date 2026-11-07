@@ -4,6 +4,7 @@ import time
 
 import pytest
 
+from app.network import device_executor
 from app.network.device_executor import acquire_device_slot
 
 
@@ -42,3 +43,15 @@ async def test_routeros_executor_serializes_per_device_and_holds_slot_after_time
     waited = time.perf_counter() - started
     next_slot.release()
     assert waited >= 0.07
+
+
+
+@pytest.mark.asyncio
+async def test_routeros_executor_rejects_long_device_queue(monkeypatch):
+    monkeypatch.setattr(device_executor, "QUEUE_TIMEOUT_SECONDS", 0.01)
+    held = await acquire_device_slot("busy-router")
+    try:
+        with pytest.raises(TimeoutError, match="device is busy"):
+            await acquire_device_slot("busy-router")
+    finally:
+        held.release()
