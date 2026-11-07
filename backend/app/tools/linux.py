@@ -109,7 +109,7 @@ async def execute_system_info(input: SystemInfoInput) -> SystemInfoOutput:
             memory_available_kb=memory_available_kb,
         )
     except (asyncssh.Error, OSError) as exc:
-        return SystemInfoOutput(success=False, error=f"SSH error: {exc}")
+        return SystemInfoOutput(success=False, error="SSH operation failed. Check the host connection and operator logs.")
 
 
 system_info_tool = ToolDefinition(
@@ -224,7 +224,7 @@ async def execute_network_info(input: NetworkInfoInput) -> NetworkInfoOutput:
             dns_servers=dns_servers,
         )
     except (asyncssh.Error, OSError) as exc:
-        return NetworkInfoOutput(success=False, error=f"SSH error: {exc}")
+        return NetworkInfoOutput(success=False, error="SSH operation failed. Check the host connection and operator logs.")
 
 
 network_info_tool = ToolDefinition(
@@ -287,7 +287,7 @@ async def execute_disk_info(input: DiskInfoInput) -> DiskInfoOutput:
 
         return DiskInfoOutput(success=True, disks=disks)
     except (asyncssh.Error, OSError) as exc:
-        return DiskInfoOutput(success=False, error=f"SSH error: {exc}")
+        return DiskInfoOutput(success=False, error="SSH operation failed. Check the host connection and operator logs.")
 
 
 disk_info_tool = ToolDefinition(
@@ -355,7 +355,7 @@ async def execute_memory_info(input: MemoryInfoInput) -> MemoryInfoOutput:
             used_percent=used_percent,
         )
     except (asyncssh.Error, OSError) as exc:
-        return MemoryInfoOutput(success=False, error=f"SSH error: {exc}")
+        return MemoryInfoOutput(success=False, error="SSH operation failed. Check the host connection and operator logs.")
 
 
 memory_info_tool = ToolDefinition(
@@ -419,7 +419,7 @@ async def execute_service_status(input: ServiceStatusInput) -> ServiceStatusOutp
         )
     except (asyncssh.Error, OSError) as exc:
         return ServiceStatusOutput(
-            success=False, service_name=input.service_name, error=f"SSH error: {exc}"
+            success=False, service_name=input.service_name, error="SSH operation failed. Check the host connection and operator logs."
         )
 
 
@@ -510,7 +510,7 @@ async def execute_log_check(input: LogCheckInput) -> LogCheckOutput:
                 success=False,
                 service_name=input.service_name,
                 lines_requested=input.lines,
-                error=f"journalctl gagal: {result.stderr.strip()}",
+                error="journalctl failed. Check service permissions and operator logs.",
             )
 
         raw_lines = result.stdout.strip().splitlines()
@@ -536,7 +536,7 @@ async def execute_log_check(input: LogCheckInput) -> LogCheckOutput:
             success=False,
             service_name=input.service_name,
             lines_requested=input.lines,
-            error=f"SSH error: {exc}",
+            error="SSH operation failed. Check the host connection and operator logs.",
         )
 
 
@@ -627,7 +627,7 @@ async def execute_process_status(input: ProcessStatusInput) -> ProcessStatusOutp
 
         return ProcessStatusOutput(success=True, processes=entries)
     except (asyncssh.Error, OSError) as exc:
-        return ProcessStatusOutput(success=False, error=f"SSH error: {exc}")
+        return ProcessStatusOutput(success=False, error="SSH operation failed. Check the host connection and operator logs.")
 
 
 process_status_tool = ToolDefinition(
@@ -682,7 +682,7 @@ async def execute_docker_status(input: DockerStatusInput) -> DockerStatusOutput:
             if "not found" in stderr_lower or "command not found" in stderr_lower:
                 return DockerStatusOutput(success=True, docker_installed=False)
             return DockerStatusOutput(
-                success=False, error=f"docker ps gagal: {result.stderr.strip()}"
+                success=False, error="docker ps failed. Check Docker availability and operator logs."
             )
 
         containers: list[ContainerEntry] = []
@@ -696,7 +696,7 @@ async def execute_docker_status(input: DockerStatusInput) -> DockerStatusOutput:
 
         return DockerStatusOutput(success=True, docker_installed=True, containers=containers)
     except (asyncssh.Error, OSError) as exc:
-        return DockerStatusOutput(success=False, error=f"SSH error: {exc}")
+        return DockerStatusOutput(success=False, error="SSH operation failed. Check the host connection and operator logs.")
 
 
 docker_status_tool = ToolDefinition(
