@@ -24,17 +24,22 @@ def detect_worker_count(
     env = environ if environ is not None else os.environ
     cli = list(argv if argv is not None else sys.argv[1:])
 
+    counts = [1]
     for key in ("WEB_CONCURRENCY", "UVICORN_WORKERS"):
         value = env.get(key)
         if value:
             try:
-                return max(1, int(value))
+                counts.append(int(value))
             except ValueError:
                 raise RuntimeError(f"{key} must be a positive integer.") from None
 
     gunicorn_args = shlex.split(env.get("GUNICORN_CMD_ARGS", ""))
     flag = _read_worker_flag(cli) or _read_worker_flag(gunicorn_args)
-    return max(1, flag or 1)
+    if flag is not None:
+        counts.append(flag)
+    if any(count < 1 for count in counts):
+        raise RuntimeError("ASGI worker count must be a positive integer.")
+    return max(counts)
 
 
 def validate_single_worker_relay(
