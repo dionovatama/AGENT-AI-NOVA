@@ -16,6 +16,7 @@ import type {
   ManualTopology,
   ManualTopologyNode,
   ManualTopologyLink,
+  MikrotikMonitoringHistory,
 } from "./types";
 
 const BASE_URL =
@@ -235,8 +236,13 @@ export const novaApi = {
   // Authorization header selama auth=true (default).
 
   listDevices: () => request<Device[]>("/devices"),
-  getMikrotikMonitoring: (deviceId: string) =>
-    request<MikrotikMonitoringSnapshot>(`/devices/${deviceId}/monitoring`),
+  getMikrotikMonitoring: (deviceId: string, signal?: AbortSignal) =>
+    request<MikrotikMonitoringSnapshot>(`/devices/${deviceId}/monitoring`, { signal }),
+  getMikrotikMonitoringHistory: (deviceId: string, minutes: number, iface?: string, signal?: AbortSignal) => {
+    const params = new URLSearchParams({ minutes: String(minutes) });
+    if (iface) params.set("interface", iface);
+    return request<MikrotikMonitoringHistory>(`/devices/${deviceId}/monitoring/history?${params}`, { signal });
+  },
 
   deleteDevice: (deviceId: string) =>
     request<void>(`/devices/${deviceId}`, { method: "DELETE" }),
