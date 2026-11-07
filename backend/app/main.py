@@ -46,8 +46,10 @@ from app.tools.diagram import diagram_create_tool
 from app.security.audit_retention import audit_retention_loop
 from app.agents.wiring import agent_manager
 from app.agents.worker_guard import validate_single_worker_relay
+from app.network.device_executor import shutdown_device_executor
 
 logger = logging.getLogger("nova.startup")
+_audit_retention_task: asyncio.Task | None = None
 
 app = FastAPI(
     title=settings.app_name,
@@ -107,6 +109,7 @@ tool_manager.register(linux_config_apply_tool)
 
 @app.on_event("startup")
 async def start_background_tasks():
+    global _audit_retention_task
     """
     Retention policy audit_logs (PRD section 32/33) — purge otomatis
     baris lebih tua dari AUDIT_LOG_RETENTION_DAYS, jalan di background
@@ -117,15 +120,21 @@ async def start_background_tasks():
     validate_single_worker_relay()
     if settings.app_env.lower() == "production" and settings.allow_unpinned_local_tls:
         logger.warning("SECURITY: ALLOW_UNPINNED_LOCAL_TLS is enabled; local MikroTik API-SSL peers are not certificate-pinned.")
-    asyncio.create_task(audit_retention_loop())
+    _audit_retention_task = asyncio.create_task(audit_retention_loop(), name="nova-audit-retention")
     # Remote Agent Phase A: sweeper untuk status agent basi (idempoten, per worker).
     agent_manager.start()
 
 
 @app.on_event("shutdown")
 async def stop_agent_manager():
-    """Tutup koneksi agent lokal dengan 1001 dan tandai 'disconnected'."""
+    """Tutup koneksi Agent, hentikan background task, dan drain executor."""
+    global _audit_retention_task
     await agent_manager.shutdown()
+    if _audit_retention_task is not None:
+        _audit_retention_task.cancel()
+        await asyncio.gather(_audit_retention_task, return_exceptions=True)
+        _audit_retention_task = None
+    await asyncio.to_thread(shutdown_device_executor, True)
 
 
 @app.get("/health", tags=["system"])
