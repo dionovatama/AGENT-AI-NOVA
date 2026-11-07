@@ -97,7 +97,8 @@ class HttpHardeningMiddleware:
         ip = str(client[0]) if client else "unknown"
         for pattern, _, _, name in _RULES:
             if pattern.match(path):
-                if not self._windows[name].hit(f"{ip}:{name}"):
+                resource_key = path.split("/")[2] if name == "monitoring" else name
+                if not self._windows[name].hit(f"{ip}:{name}:{resource_key}"):
                     body = json.dumps({"detail": "Too many requests. Please retry later."}).encode()
                     await send({"type": "http.response.start", "status": 429, "headers": [
                         (b"content-type", b"application/json"),
