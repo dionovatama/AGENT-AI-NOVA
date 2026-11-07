@@ -14,6 +14,7 @@ from fastapi.testclient import TestClient
 from app.api import images as images_module
 from app.main import app, fastapi_app
 from app.security.dependencies import get_current_user
+from app.security.rate_limiter import images_limiter
 
 
 class _FakeUser:
@@ -22,13 +23,17 @@ class _FakeUser:
 
 @pytest.fixture(autouse=True)
 def _setup(monkeypatch):
-    fastapi_app.dependency_overrides[get_current_user] = lambda: _FakeUser()
+    # monkeypatch.setitem: dibersihkan otomatis walau baris setelahnya gagal, jadi satu
+    # fixture rusak tidak lagi meninggalkan override auth yang meracuni tes lain.
+    monkeypatch.setitem(fastapi_app.dependency_overrides, get_current_user, lambda: _FakeUser())
     monkeypatch.setattr(images_module.settings, "cloudflare_account_id", "acc123", raising=False)
     monkeypatch.setattr(images_module.settings, "cloudflare_api_token", "tok-secret", raising=False)
     monkeypatch.setattr(images_module.settings, "image_model", "@cf/black-forest-labs/flux-1-schnell", raising=False)
-    images_module._recent_requests.clear()
+    # Default produksi 2 permintaan/menit; tes ini mengasumsikan 10.
+    monkeypatch.setattr(images_module.settings, "rate_limit_images_limit", 10)
+    images_limiter.reset()
     yield
-    fastapi_app.dependency_overrides.clear()
+    images_limiter.reset()
 
 
 client = TestClient(app)
