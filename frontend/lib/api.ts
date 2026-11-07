@@ -247,6 +247,10 @@ export const novaApi = {
   deleteDevice: (deviceId: string) =>
     request<void>(`/devices/${deviceId}`, { method: "DELETE" }),
 
+  getObservedDeviceTlsFingerprint: (deviceId: string) =>
+    request<{ observed: string; expires_in_seconds: number }>(
+      `/devices/${deviceId}/observed-tls-fingerprint`,
+    ),
   updateDevice: (deviceId: string, payload: Partial<Pick<Device, "name" | "platform" | "host" | "port" | "connection_type" | "status" | "credential_id" | "metadata">> & { tls_fingerprint?: string | null; confirm_tls_fingerprint_change?: boolean }) =>
     request<Device>(`/devices/${deviceId}`, {
       method: "PATCH",
