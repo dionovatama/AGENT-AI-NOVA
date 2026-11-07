@@ -7,6 +7,7 @@ import {
   Trash2, Wifi, WifiOff, X,
 } from "lucide-react";
 import { novaApi, type RemoteAgent, type RemoteAgentProvisioned } from "@/lib/api";
+import type { Device, RelayTarget } from "@/lib/types";
 
 const API_BASE = process.env.NEXT_PUBLIC_NOVA_API_BASE_URL ?? "http://localhost:8000";
 
@@ -130,6 +131,149 @@ function ProvisioningPanel({ agent, onClose }: { agent: RemoteAgentProvisioned; 
         </div>
       </div>
     </Modal>
+  );
+}
+
+function RelayTargetsPanel({ agentId }: { agentId: string }) {
+  const [targets, setTargets] = useState<RelayTarget[]>([]);
+  const [devices, setDevices] = useState<Device[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+  const [name, setName] = useState("");
+  const [host, setHost] = useState("");
+  const [ports, setPorts] = useState("8729");
+  const [deviceId, setDeviceId] = useState("");
+  const [fingerprint, setFingerprint] = useState("");
+  const [pinDrafts, setPinDrafts] = useState<Record<string, string>>({});
+  const [busyTarget, setBusyTarget] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [targetRows, deviceRows] = await Promise.all([novaApi.listRelayTargets(agentId), novaApi.listDevices()]);
+      setTargets(targetRows);
+      setDevices(deviceRows);
+      setError("");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to load relay targets.");
+    } finally { setLoading(false); }
+  }, [agentId]);
+
+  useEffect(() => { void load(); }, [load]);
+
+  async function createTarget(e: FormEvent) {
+    e.preventDefault();
+    const parsedPorts = ports.split(",").map((part) => Number(part.trim()));
+    if (!name.trim() || !host.trim() || !parsedPorts.length || parsedPorts.some((port) => !Number.isInteger(port) || port < 1 || port > 65535)) {
+      setError("Isi nama, host, dan port valid (1–65535; pisahkan port dengan koma)."); return;
+    }
+    setSaving(true); setError(""); setNotice("");
+    try {
+      await novaApi.createRelayTarget(agentId, {
+        name: name.trim(), host: host.trim(), ports: Array.from(new Set(parsedPorts)),
+        ...(deviceId ? { device_id: deviceId } : {}),
+        ...(fingerprint.trim() ? { tls_fingerprint: fingerprint.trim() } : {}),
+      });
+      setName(""); setHost(""); setPorts("8729"); setDeviceId(""); setFingerprint("");
+      setNotice("Relay target berhasil ditambahkan.");
+      await load();
+    } catch (err) { setError(err instanceof Error ? err.message : "Unable to create relay target."); }
+    finally { setSaving(false); }
+  }
+
+  async function updatePin(target: RelayTarget) {
+    const pin = (pinDrafts[target.id] || "").trim();
+    if (!pin) { setError("Masukkan fingerprint SHA-256 baru (64 karakter hex)."); return; }
+    setBusyTarget(target.id); setError(""); setNotice("");
+    try {
+      await novaApi.updateRelayTargetPin(agentId, target.id, pin);
+      setPinDrafts((current) => ({ ...current, [target.id]: "" }));
+      setNotice("Fingerprint pin berhasil diganti.");
+      await load();
+    } catch (err) { setError(err instanceof Error ? err.message : "Unable to update fingerprint."); }
+    finally { setBusyTarget(null); }
+  }
+
+  async function clearPin(target: RelayTarget) {
+    if (!window.confirm("Hapus TLS pin untuk target " + target.name + "?")) return;
+    setBusyTarget(target.id); setError(""); setNotice("");
+    try {
+      await novaApi.updateRelayTargetPin(agentId, target.id, null);
+      setNotice("TLS pin dihapus.");
+      await load();
+    } catch (err) { setError(err instanceof Error ? err.message : "Unable to clear fingerprint."); }
+    finally { setBusyTarget(null); }
+  }
+
+  async function removeTarget(target: RelayTarget) {
+    if (!window.confirm("Hapus relay target " + target.name + "?")) return;
+    setBusyTarget(target.id); setError(""); setNotice("");
+    try {
+      await novaApi.deleteRelayTarget(agentId, target.id);
+      setTargets((current) => current.filter((item) => item.id !== target.id));
+      setNotice("Relay target dihapus.");
+    } catch (err) { setError(err instanceof Error ? err.message : "Unable to delete relay target."); }
+    finally { setBusyTarget(null); }
+  }
+
+  return (
+    <section className="border-t border-white/[0.06] bg-black/10 px-4 py-4">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <div><h4 className="text-xs font-semibold text-slate-200">Relay targets</h4><p className="mt-1 text-[10px] text-slate-500">Allow-listed destinations reachable through this Agent.</p></div>
+        <span className="rounded-md border border-cyan-400/15 bg-cyan-400/[0.06] px-2 py-1 text-[10px] text-cyan-200">{targets.length} targets</span>
+      </div>
+      {error && <p role="alert" className="mb-2 rounded-lg border border-rose-400/20 bg-rose-400/[0.06] p-2 text-[11px] text-rose-200">{error}</p>}
+      {notice && <p role="status" className="mb-2 rounded-lg border border-emerald-400/20 bg-emerald-400/[0.06] p-2 text-[11px] text-emerald-200">{notice}</p>}
+      {loading ? <p className="py-3 text-xs text-slate-500">Loading relay targets…</p> : targets.length === 0 ? (
+        <p className="mb-3 rounded-lg border border-dashed border-white/10 px-3 py-4 text-center text-xs text-slate-500">Belum ada relay target untuk Agent ini.</p>
+      ) : (
+        <div className="mb-4 space-y-2">
+          {targets.map((target) => (
+            <div key={target.id} className="rounded-xl border border-white/[0.08] bg-white/[0.02] p-3">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs font-semibold text-slate-200">{target.name}</p>
+                  <p className="mt-1 break-all font-mono text-[11px] text-slate-400">{target.host} · {target.ports.join(", ")}</p>
+                  <div className="mt-2 flex flex-wrap items-center gap-2">
+                    <span className="text-[10px] uppercase tracking-wider text-slate-600">target_id</span>
+                    <code className="break-all text-[10px] text-cyan-200">{target.id}</code>
+                    <CopyButton value={target.id} label="Copy target_id" />
+                  </div>
+                  <div className="mt-2">
+                    <p className="text-[10px] uppercase tracking-wider text-slate-600">TLS SHA-256 fingerprint</p>
+                    <code className="mt-1 block break-all text-[10px] text-slate-300">{target.tls_fingerprint || "Not pinned"}</code>
+                  </div>
+                  {target.device_id && <p className="mt-1 text-[10px] text-slate-500">Linked device: {devices.find((device) => device.id === target.device_id)?.name || target.device_id}</p>}
+                </div>
+                <button disabled={busyTarget === target.id} onClick={() => void removeTarget(target)} className="rounded-lg border border-rose-400/20 px-2.5 py-1.5 text-[10px] text-rose-200 hover:bg-rose-400/10 disabled:opacity-50"><Trash2 size={12} className="mr-1 inline" />Delete</button>
+              </div>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <input value={pinDrafts[target.id] || ""} onChange={(e) => setPinDrafts((current) => ({ ...current, [target.id]: e.target.value }))} placeholder="New SHA-256 fingerprint (64 hex)" className="h-8 min-w-[220px] flex-1 rounded-lg border border-white/10 bg-black/30 px-2.5 font-mono text-[10px] text-slate-200 outline-none focus:border-cyan-400/40" />
+                <button disabled={busyTarget === target.id} onClick={() => void updatePin(target)} className="rounded-lg border border-cyan-400/20 px-3 py-1.5 text-[10px] text-cyan-200 hover:bg-cyan-400/10 disabled:opacity-50">Replace PIN</button>
+                {target.tls_fingerprint && <button disabled={busyTarget === target.id} onClick={() => void clearPin(target)} className="rounded-lg border border-amber-400/20 px-3 py-1.5 text-[10px] text-amber-200 hover:bg-amber-400/10 disabled:opacity-50">Clear PIN</button>}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+      <form onSubmit={createTarget} className="grid gap-2 rounded-xl border border-white/[0.08] bg-white/[0.02] p-3 sm:grid-cols-2">
+        <div className="sm:col-span-2"><p className="mb-2 text-[11px] font-semibold text-slate-300">Add relay target</p></div>
+        <input value={name} onChange={(e) => setName(e.target.value)} maxLength={100} placeholder="Target name, e.g. Core Router" className="h-9 rounded-lg border border-white/10 bg-black/30 px-3 text-xs outline-none focus:border-cyan-400/40" required />
+        <input value={host} onChange={(e) => setHost(e.target.value)} maxLength={255} placeholder="Router IP / hostname" className="h-9 rounded-lg border border-white/10 bg-black/30 px-3 text-xs outline-none focus:border-cyan-400/40" required />
+        <input value={ports} onChange={(e) => setPorts(e.target.value)} placeholder="Ports, e.g. 8729, 22" className="h-9 rounded-lg border border-white/10 bg-black/30 px-3 font-mono text-xs outline-none focus:border-cyan-400/40" required />
+        <select value={deviceId} onChange={(e) => setDeviceId(e.target.value)} className="h-9 rounded-lg border border-white/10 bg-[#11151e] px-3 text-xs text-slate-300">
+          <option value="">No linked device (optional)</option>
+          {devices.map((device) => <option key={device.id} value={device.id}>{device.name} · {device.host}</option>)}
+        </select>
+        <input value={fingerprint} onChange={(e) => setFingerprint(e.target.value)} placeholder="Optional TLS SHA-256 fingerprint" className="h-9 rounded-lg border border-white/10 bg-black/30 px-3 font-mono text-[10px] outline-none focus:border-cyan-400/40 sm:col-span-2" />
+        <div className="flex items-center justify-between gap-3 sm:col-span-2">
+          <p className="text-[10px] leading-4 text-slate-500">Fingerprint dapat berupa 64 hex atau format dipisah titik dua. Host divalidasi backend.</p>
+          <button type="submit" disabled={saving || !name.trim() || !host.trim()} className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-cyan-400 px-3 py-2 text-[10px] font-semibold text-slate-950 hover:bg-cyan-300 disabled:opacity-50">{saving ? <Loader2 size={12} className="animate-spin" /> : <Plus size={12} />} Add target</button>
+        </div>
+      </form>
+    </section>
   );
 }
 
@@ -315,6 +459,7 @@ export default function AgentPage() {
                   <button disabled={busyId === agent.id} onClick={() => void deleteAgent(agent)} title="Delete agent" className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-rose-400/20 px-2.5 text-[11px] text-rose-200 hover:bg-rose-400/10 disabled:opacity-50"><Trash2 size={13} /> Delete</button>
                 </div>
               </article>
+              <RelayTargetsPanel agentId={agent.id} />
             ))}
           </div>
         )}
