@@ -296,13 +296,13 @@ async def apply_configuration_endpoint(
     except DriftDetectedError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Device state changed; review the plan and retry.") from None
     except StateConflictError as exc:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Configuration operation failed; refresh state and check operator audit logs.") from None
     except VerificationFailedError as exc:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Configuration verification or execution failed. Check operator audit logs.") from None
     except Exception as exc:
         if "tidak ditemukan" in str(exc).lower():
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Configuration proposal tidak ditemukan.") from exc
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Configuration operation failed; refresh state and check operator audit logs.") from None
 
 
 @router.post("/{configuration_id}/rollback", response_model=ConfigurationResponse)
@@ -328,8 +328,8 @@ async def rollback_configuration_endpoint(
         )
         return ConfigurationResponse.model_validate(config)
     except StateConflictError as exc:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Configuration operation failed; refresh state and check operator audit logs.") from None
     except Exception as exc:
         if "tidak ditemukan" in str(exc).lower():
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Configuration proposal tidak ditemukan.") from exc
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Configuration operation failed; refresh state and check operator audit logs.") from None
