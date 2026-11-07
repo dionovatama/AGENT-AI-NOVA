@@ -63,6 +63,22 @@ async function request<T>(
   return (text ? JSON.parse(text) : undefined) as T;
 }
 
+export type MikrotikMonitoringSnapshot = {
+  device_id: string;
+  collected_at: string;
+  router: {
+    identity?: string; board_name?: string; model?: string; routeros_version?: string;
+    uptime?: string; cpu_load_percent?: number; free_memory_bytes?: number;
+    total_memory_bytes?: number; memory_used_percent?: number;
+    free_storage_bytes?: number; total_storage_bytes?: number; storage_used_percent?: number;
+  };
+  interfaces: Array<{ name: string; type?: string; running: boolean; disabled: boolean; rx_bps?: number; tx_bps?: number; mac_address?: string }>;
+  neighbors: Array<{ identity?: string; address?: string; mac_address?: string; interface?: string; platform?: string; version?: string }>;
+  arp: Array<{ address?: string; mac_address?: string; interface?: string; complete?: boolean }>;
+  dhcp_leases: Array<{ address?: string; mac_address?: string; host_name?: string; status?: string }>;
+  bridge_hosts: Array<{ mac_address?: string; bridge?: string; on_interface?: string }>;
+};
+
 export interface HealthResponse {
   status: string;
   service: string;
@@ -219,6 +235,8 @@ export const novaApi = {
   // Authorization header selama auth=true (default).
 
   listDevices: () => request<Device[]>("/devices"),
+  getMikrotikMonitoring: (deviceId: string) =>
+    request<MikrotikMonitoringSnapshot>(`/devices/${deviceId}/monitoring`),
 
   deleteDevice: (deviceId: string) =>
     request<void>(`/devices/${deviceId}`, { method: "DELETE" }),
