@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { novaApi } from "@/lib/api";
 import type { Device, DevicePlatform, RemoteAgent } from "@/lib/types";
 import {
-  Activity, Bot, Cpu, Loader2, Plus, RefreshCw, Router, Search, Server, Send,
+  Activity, Cpu, Loader2, Plus, RefreshCw, Router, Search, Server,
   Wifi, Pencil, Trash2, X, Network, RadioTower, Cable, Globe2,
 } from "lucide-react";
 
@@ -68,13 +68,11 @@ export default function NetworkPage() {
   const [routerStatusError, setRouterStatusError] = useState<string | null>(null);
   const [checkingRouter, setCheckingRouter] = useState(false);
   const [nodePositions, setNodePositions] = useState<Record<string, { x: number; y: number }>>({});
-  const [copilotOpen, setCopilotOpen] = useState(false);
-  const [copilotInput, setCopilotInput] = useState("");
-  const [copilotBusy, setCopilotBusy] = useState(false);
-  const [copilotError, setCopilotError] = useState<string | null>(null);
-  const [copilotMessages, setCopilotMessages] = useState<{ role: "user" | "assistant"; content: string }[]>([
-    { role: "assistant", content: "NMS Copilot aktif. Saya bisa membantu menganalisis inventory perangkat NOVA. Saya hanya akan menyebut status atau telemetry yang benar-benar tersedia dari backend." },
-  ]);
+
+
+
+
+
 
   const loadData = useCallback(async (quiet = false) => {
     if (quiet) setRefreshing(true);
@@ -169,44 +167,7 @@ export default function NetworkPage() {
     }
   };
 
-  const sendCopilotMessage = async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    const prompt = copilotInput.trim();
-    if (!prompt || copilotBusy) return;
-    const context = {
-      source: "nova-network-device-inventory",
-      devices: devices.map(({ id, name, platform, host, port, connection_type, updated_at }) => ({
-        id, name, platform, host, port, connection_type, updated_at,
-      })),
-      selected_device: selectedDevice ? {
-        id: selectedDevice.id, name: selectedDevice.name, platform: selectedDevice.platform,
-        host: selectedDevice.host, port: selectedDevice.port,
-      } : null,
-      telemetry_available: false,
-      note: "Inventory data only. No live ping, CPU, RAM, traffic, routing or interface telemetry is included unless returned by a diagnostic tool in the conversation.",
-    };
-    const systemPrompt = `Anda adalah NMS Copilot di NOVA Network Management.
-Bantu operator memahami inventory dan melakukan troubleshooting jaringan.
-Gunakan hanya konteks JSON yang diberikan. Jangan mengarang status online/offline, ping, CPU, RAM, traffic, interface, routing, firewall, atau hasil pemeriksaan yang tidak tersedia.
-Jika data tidak cukup, jelaskan data apa yang perlu diambil melalui diagnostic backend. Berikan langkah pemeriksaan yang aman dan read-only terlebih dahulu. Jangan menyarankan perubahan konfigurasi destruktif tanpa menjelaskan risiko dan meminta persetujuan operator.
-Jawab dalam Bahasa Indonesia, ringkas, jelas, gunakan daftar bila membantu.
-KONTEKS INVENTORY: ${JSON.stringify(context)}
-PERTANYAAN OPERATOR: ${prompt}`;
-    setCopilotMessages((items) => [...items, { role: "user", content: prompt }]);
-    setCopilotInput("");
-    setCopilotBusy(true);
-    setCopilotError(null);
-    try {
-      const result = await novaApi.chatCompletion(systemPrompt, "troubleshooting", false);
-      const answer = typeof result?.content === "string" ? result.content.trim() : "";
-      if (!answer) throw new Error("NMS Copilot tidak mengembalikan jawaban.");
-      setCopilotMessages((items) => [...items, { role: "assistant", content: answer }]);
-    } catch (err) {
-      setCopilotError(err instanceof Error ? err.message : "Gagal menghubungi NMS Copilot.");
-    } finally {
-      setCopilotBusy(false);
-    }
-  };
+
 
   const onlineAgents = agents.filter((agent) => agent.status === "online").length;
 
@@ -325,26 +286,6 @@ PERTANYAAN OPERATOR: ${prompt}`;
         <div className="flex items-start gap-2 rounded-lg border border-amber-300/15 bg-amber-300/[0.035] p-3 text-[10px] leading-5 text-amber-100/80"><Activity size={13} className="mt-0.5 shrink-0 text-amber-300"/> Halaman ini menampilkan inventory Device dan status Remote Agent yang tersedia saat ini. Backend branch ini belum menyediakan API topology/link manual atau telemetry perangkat; karena itu koneksi antar-node, ping, dan status online Device tidak dibuat-buat.</div>
       </main>
 
-      <button type="button" onClick={() => setCopilotOpen((value) => !value)} aria-label={copilotOpen ? "Close NMS Copilot" : "Open NMS Copilot"} className="fixed bottom-6 right-6 z-[70] flex h-12 items-center gap-2 rounded-full border border-cyan-300/30 bg-[#10202c] px-4 text-xs font-semibold text-cyan-100 shadow-2xl shadow-black/50 transition hover:bg-[#163044]">
-        {copilotOpen ? <X size={16}/> : <Bot size={17}/>} {copilotOpen ? "Close Copilot" : "NMS Copilot"}
-      </button>
-      {copilotOpen && <section className="fixed bottom-20 right-6 z-[70] flex h-[min(620px,calc(100vh-120px))] w-[min(420px,calc(100vw-32px))] flex-col overflow-hidden rounded-xl border border-cyan-300/20 bg-[#0a111a] shadow-2xl shadow-black/60">
-        <header className="flex items-center justify-between border-b border-white/[0.08] px-4 py-3">
-          <div className="flex items-center gap-2"><span className="flex h-8 w-8 items-center justify-center rounded-lg border border-cyan-300/20 bg-cyan-300/10 text-cyan-200"><Bot size={17}/></span><div><p className="text-xs font-semibold text-slate-100">NMS Copilot</p><p className="text-[9px] text-slate-500">NOVA · Device inventory aware</p></div></div>
-          <button type="button" onClick={() => setCopilotMessages([{ role: "assistant", content: "Percakapan dibersihkan. Konteks inventory terbaru akan digunakan." }])} className="rounded-md border border-white/10 px-2 py-1 text-[10px] text-slate-400 hover:bg-white/5">Clear chat</button>
-        </header>
-        <div className="flex items-center gap-2 border-b border-amber-300/10 bg-amber-300/[0.04] px-4 py-2 text-[9px] text-amber-200"><Activity size={12}/> Inventory API · live telemetry hanya dari diagnostic yang berhasil</div>
-        <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3">
-          {copilotMessages.map((message, index) => <div key={index} className={`max-w-[92%] whitespace-pre-wrap rounded-lg px-3 py-2.5 text-[11px] leading-5 ${message.role === "user" ? "ml-auto border border-cyan-300/15 bg-cyan-300/[0.08] text-cyan-50" : "border border-white/[0.07] bg-white/[0.035] text-slate-300"}`}>{message.content}</div>)}
-          {copilotBusy && <div className="flex items-center gap-2 px-2 text-[10px] text-cyan-200"><Loader2 size={13} className="animate-spin"/> Menganalisis inventory…</div>}
-          {copilotError && <div role="alert" className="rounded-lg border border-rose-400/25 bg-rose-400/[0.07] px-3 py-2 text-[10px] leading-4 text-rose-200">{copilotError}</div>}
-        </div>
-        <div className="border-t border-white/[0.08] p-3">
-          <div className="mb-2 flex flex-wrap gap-1.5">{["Ringkas inventory perangkat", "Perangkat mana yang perlu diperiksa?", "Bantu troubleshooting router"].map((suggestion) => <button key={suggestion} type="button" onClick={() => setCopilotInput(suggestion)} className="rounded-full border border-white/[0.09] px-2 py-1 text-[9px] text-slate-400 hover:border-cyan-300/30 hover:text-cyan-100">{suggestion}</button>)}</div>
-          <form onSubmit={sendCopilotMessage} className="flex items-end gap-2"><textarea value={copilotInput} onChange={(event) => setCopilotInput(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); (event.currentTarget.form as HTMLFormElement)?.requestSubmit(); } }} rows={2} placeholder="Tanyakan kondisi jaringan…" className="min-h-[42px] flex-1 resize-none rounded-lg border border-white/10 bg-[#070b11] px-3 py-2 text-[11px] text-slate-100 outline-none placeholder:text-slate-600 focus:border-cyan-300/40"/>
-            <button type="submit" disabled={copilotBusy || !copilotInput.trim()} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-cyan-500 text-slate-950 disabled:opacity-40"><Send size={15}/></button></form>
-        </div>
-      </section>}
       {selectedDevice && <div className="fixed inset-0 z-[60] flex justify-end bg-black/65 backdrop-blur-[2px]" onMouseDown={(event)=>{if(event.target===event.currentTarget)setSelectedDevice(null);}}>
         <aside className="flex h-full w-full max-w-lg flex-col overflow-y-auto border-l border-white/[0.1] bg-[#0b1119] shadow-2xl">
           <div className="flex items-start justify-between border-b border-white/[0.08] p-5"><div className="flex items-center gap-3"><div className="flex h-11 w-11 items-center justify-center rounded-lg border border-cyan-300/20 bg-cyan-300/[0.08] text-cyan-200"><Router size={21}/></div><div><p className="text-[9px] font-semibold uppercase tracking-[.18em] text-cyan-300">Device details</p><h2 className="mt-1 text-base font-semibold">{selectedDevice.name}</h2><p className="mt-1 font-mono text-[10px] text-slate-400">{selectedDevice.host}:{selectedDevice.port}</p></div></div><button type="button" onClick={()=>setSelectedDevice(null)} className="rounded-md p-2 text-slate-400 hover:bg-white/[.06]"><X size={17}/></button></div>
