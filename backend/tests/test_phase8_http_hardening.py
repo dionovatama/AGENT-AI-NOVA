@@ -127,3 +127,62 @@ async def test_http_hardening_rejects_chunked_oversized_body():
         receive, send,
     )
     assert sent[0]["status"] == 413
+
+
+
+@pytest.mark.asyncio
+async def test_http_rate_limit_blocks_eleventh_auth_attempt_and_sets_headers():
+    async def downstream(scope, receive, send):
+        await send({"type": "http.response.start", "status": 200, "headers": []})
+        await send({"type": "http.response.body", "body": b"ok"})
+
+    middleware = HttpHardeningMiddleware(downstream)
+
+    async def receive():
+        return {"type": "http.request", "body": b"", "more_body": False}
+
+    async def invoke():
+        sent = []
+
+        async def send(message):
+            sent.append(message)
+
+        await middleware(
+            {"type": "http", "path": "/auth/login", "headers": [],
+             "client": ("198.51.100.9", 4321)},
+            receive, send,
+        )
+        return sent
+
+    for _ in range(10):
+        assert (await invoke())[0]["status"] == 200
+    blocked = await invoke()
+    assert blocked[0]["status"] == 429
+    headers = dict(blocked[0]["headers"])
+    assert headers[b"retry-after"] == b"60"
+    assert headers[b"x-content-type-options"] == b"nosniff"
+
+
+@pytest.mark.asyncio
+async def test_http_security_headers_are_added_to_normal_responses():
+    async def downstream(scope, receive, send):
+        await send({"type": "http.response.start", "status": 204, "headers": []})
+        await send({"type": "http.response.body", "body": b""})
+
+    middleware = HttpHardeningMiddleware(downstream)
+    sent = []
+
+    async def receive():
+        return {"type": "http.request", "body": b"", "more_body": False}
+
+    async def send(message):
+        sent.append(message)
+
+    await middleware(
+        {"type": "http", "path": "/health", "headers": [], "client": ("127.0.0.1", 1)},
+        receive, send,
+    )
+    headers = dict(sent[0]["headers"])
+    assert headers[b"x-content-type-options"] == b"nosniff"
+    assert headers[b"x-frame-options"] == b"DENY"
+    assert headers[b"referrer-policy"] == b"strict-origin-when-cross-origin"
