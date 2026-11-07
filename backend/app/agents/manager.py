@@ -187,10 +187,8 @@ class AgentConnectionManager:
             await self._handle(sock, agent_id_raw)
         except asyncio.CancelledError:
             raise
-        except Exception:  # noqa: BLE001 -- jaring pengaman terakhir
-            # Tidak ada pesan/frame klien di scope ini, jadi token tidak
-            # mungkin ikut tercatat di traceback.
-            logger.exception("agent ws: error tak terduga sebelum sesi aktif")
+        except Exception as exc:  # noqa: BLE001 -- jaring pengaman terakhir
+            logger.error("agent ws unexpected pre-session error type=%s", type(exc).__name__)
             await sock.close(CloseCode.INTERNAL, "internal error")
 
     async def _handle(self, sock: SocketLike, agent_id_raw: str) -> None:
@@ -525,7 +523,7 @@ class AgentConnectionManager:
             logger.debug("relay frame agent=%s type=%s session=%s", s.agent_id, msg.type, msg.session_id)
         except (RelayProtocolError, RelaySessionError, ValueError) as exc:
             logger.warning("invalid relay frame agent=%s type=%s", s.agent_id, type(exc).__name__)
-            await self._audit("agent.relay.protocol_error", "FAILED", s, {"reason": "invalid_relay_frame"}, error=str(exc)[:160])
+            await self._audit("agent.relay.protocol_error", "FAILED", s, {"reason": "invalid_relay_frame"}, error=type(exc).__name__)
             raise ProtocolError("invalid relay frame")
 
     async def open_relay_tunnel(
@@ -680,8 +678,8 @@ class AgentConnectionManager:
                 await self.sweep_once()
             except asyncio.CancelledError:
                 raise
-            except Exception:  # noqa: BLE001
-                logger.exception("agent sweeper iterasi gagal")
+            except Exception as exc:  # noqa: BLE001
+                logger.error("agent sweeper iterasi gagal type=%s", type(exc).__name__)
             await asyncio.sleep(self.cfg.sweep_interval_seconds)
 
     def start(self) -> None:
