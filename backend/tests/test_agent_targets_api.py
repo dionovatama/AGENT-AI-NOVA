@@ -219,25 +219,25 @@ def test_relay_pin_rotation_requires_confirmation_and_current_pin():
 
     denied = client.patch(url, headers=h, json={
         "tls_fingerprint": "cd" * 32,
-        "expected_current_fingerprint": "ab" * 32,
+        "expected_current_fingerprint_prefix": "ab" * 8,
         "confirm": False,
     })
     assert denied.status_code == 409
 
     stale = client.patch(url, headers=h, json={
         "tls_fingerprint": "cd" * 32,
-        "expected_current_fingerprint": "ef" * 32,
+        "expected_current_fingerprint_prefix": "ef" * 8,
         "confirm": True,
     })
     assert stale.status_code == 409
 
     accepted = client.patch(url, headers=h, json={
         "tls_fingerprint": "cd" * 32,
-        "expected_current_fingerprint": "ab" * 32,
+        "expected_current_fingerprint_prefix": "ab" * 8,
         "confirm": True,
     })
     assert accepted.status_code == 200, accepted.text
-    assert accepted.json()["tls_fingerprint"] == "cd" * 32
+    assert accepted.json()["tls_fingerprint"] == "cd" * 8
     with SessionLocal() as db:
         event = db.query(AuditLog).filter(
             AuditLog.action == "agent.target.pin_updated"
