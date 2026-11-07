@@ -15,6 +15,7 @@ from app.schemas.relay_targets import (
 )
 from app.security.audit import record_audit_event
 from app.security.dependencies import get_current_user
+from app.network.remote_transport import clear_observed_fingerprint, get_observed_fingerprint
 
 router = APIRouter(tags=["agent-targets"])
 
@@ -82,6 +83,25 @@ def list_targets(
     return [_to_response(t) for t in rows]
 
 
+@router.get("/agents/{agent_id}/targets/{target_id}/observed-fingerprint")
+def get_target_observed_fingerprint(
+    agent_id: uuid.UUID, target_id: uuid.UUID,
+    current_user: User = Depends(get_current_user), db: Session = Depends(get_db),
+) -> dict:
+    """Operator-only retrieval of the last observed mismatch; never used by LLM tools."""
+    agent = _owned_agent(db, agent_id, current_user)
+    target = db.query(RelayTarget).filter(
+        RelayTarget.id == target_id, RelayTarget.agent_id == agent.id,
+        RelayTarget.owner_id == current_user.id,
+    ).first()
+    if target is None:
+        raise HTTPException(status_code=404, detail="Target not found.")
+    observed = get_observed_fingerprint(current_user.id, target.id)
+    if observed is None:
+        raise HTTPException(status_code=404, detail="No recent observed certificate fingerprint.")
+    return {"observed": observed, "expires_in_seconds": 900}
+
+
 @router.patch("/agents/{agent_id}/targets/{target_id}", response_model=RelayTargetResponse)
 def update_target_pin(
     agent_id: uuid.UUID, target_id: uuid.UUID, payload: RelayTargetPinUpdateRequest,
@@ -102,6 +122,7 @@ def update_target_pin(
                             detail="The current pin changed. Refresh the target and confirm again.")
     previous_pin = target.tls_fingerprint
     target.tls_fingerprint = payload.tls_fingerprint
+    clear_observed_fingerprint(current_user.id, target.id)
     db.commit()
     db.refresh(target)
     record_audit_event(
