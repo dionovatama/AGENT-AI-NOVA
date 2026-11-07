@@ -70,6 +70,21 @@ async def _agent(agent_id: str, token: str, url_template: str, heartbeat_seconds
         backoff = min(30.0, backoff * 2)
 
 
+async def _sample_backend_process(pid: int, samples: list[dict]):
+    try:
+        import psutil
+        process = psutil.Process(pid)
+        process.cpu_percent(interval=None)
+        while not STOP.is_set():
+            await asyncio.sleep(1)
+            samples.append({
+                "cpu_percent": process.cpu_percent(interval=None),
+                "rss_mb": round(process.memory_info().rss / 1024 / 1024, 2),
+            })
+    except (ImportError, psutil.NoSuchProcess, psutil.AccessDenied):
+        return
+
+
 async def main():
     raw = os.environ.get("NOVA_LOADTEST_AGENT_TOKENS_JSON", "")
     url = os.environ.get("NOVA_LOADTEST_WSS_URL", "")
@@ -83,6 +98,7 @@ async def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--count", type=int, default=50, choices=(50, 200))
     parser.add_argument("--heartbeat-seconds", type=float, default=30.0)
+    parser.add_argument("--backend-pid", type=int, default=int(os.environ.get("NOVA_BACKEND_PID", "0")))
     args = parser.parse_args()
     selected = list(agents.items())[:args.count]
     if len(selected) < args.count:
@@ -103,11 +119,16 @@ async def main():
         asyncio.create_task(_agent(agent_id, token, url, args.heartbeat_seconds, stats, index * 0.05))
         for index, (agent_id, token) in enumerate(selected)
     ]
+    process_samples: list[dict] = []
+    sampler = asyncio.create_task(_sample_backend_process(args.backend_pid, process_samples)) if args.backend_pid else None
     print(f"Connected simulator tasks: {len(tasks)}. Press Ctrl+C to stop.")
     await STOP.wait()
     for task in tasks:
         task.cancel()
     await asyncio.gather(*tasks, return_exceptions=True)
+    if sampler:
+        sampler.cancel()
+        await asyncio.gather(sampler, return_exceptions=True)
     values = sorted(stats["heartbeat_latency_ms"])
     def pct(p):
         return round(values[min(len(values)-1, int((len(values)-1)*p))], 2) if values else None
@@ -121,6 +142,14 @@ async def main():
         "heartbeat_ack_p50_ms": pct(0.50),
         "heartbeat_ack_p95_ms": pct(0.95),
         "heartbeat_ack_p99_ms": pct(0.99),
+        "backend_process_cpu_percent_min_max": [
+            min((s["cpu_percent"] for s in process_samples), default=None),
+            max((s["cpu_percent"] for s in process_samples), default=None),
+        ],
+        "backend_process_rss_mb_min_max": [
+            min((s["rss_mb"] for s in process_samples), default=None),
+            max((s["rss_mb"] for s in process_samples), default=None),
+        ],
     }, indent=2))
 
 
