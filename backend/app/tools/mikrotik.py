@@ -59,6 +59,7 @@ from pydantic import BaseModel, Field
 from app.database.models import Device
 from app.config import settings
 from app.network.relay_tls import RelayTlsError, normalize_fingerprint, verify_certificate_pin
+from app.network.device_executor import acquire_device_slot
 from app.tools.context import ExecutionContext
 from app.tools.schemas import (
     LoggingPolicy,
@@ -242,24 +243,23 @@ def _connection_error_message(exc: Exception) -> str:
 
 
 async def _run_on_device(sync_fn, ctx: ExecutionContext):
-    """Jalankan ``sync_fn(device, password[, sock])`` di thread.
+    """Run synchronous RouterOS I/O with per-device and global concurrency bounds."""
+    slot = await acquire_device_slot(ctx.device.id)
+    try:
+        if ctx.db is None or ctx.user is None:
+            return await slot.run(sync_fn, ctx.device, ctx.credential_plaintext)
 
-    Device berjalur lokal -> persis perilaku lama. Device dengan relay target ->
-    soket TLS terpin lewat Remote Agent disuntikkan sebagai argumen ketiga.
-    Import lazy: remote_transport mengimpor modul ini (hindari siklus).
-    """
-    if ctx.db is None or ctx.user is None:  # tanpa DB tidak mungkin ada relay target: jalur lokal
-        return await asyncio.to_thread(sync_fn, ctx.device, ctx.credential_plaintext)
+        from app.network.remote_transport import remote_api_socket
 
-    from app.network.remote_transport import remote_api_socket
-
-    async with remote_api_socket(ctx.device, ctx) as sock:
-        if sock is None:
-            return await asyncio.to_thread(sync_fn, ctx.device, ctx.credential_plaintext)
-        return await asyncio.to_thread(sync_fn, ctx.device, ctx.credential_plaintext, sock)
+        async with remote_api_socket(ctx.device, ctx) as sock:
+            if sock is None:
+                return await slot.run(sync_fn, ctx.device, ctx.credential_plaintext)
+            return await slot.run(sync_fn, ctx.device, ctx.credential_plaintext, sock)
+    finally:
+        # If timed out/cancelled, release is deferred until the blocking thread exits.
+        slot.release()
 
 
-# ============================================================
 # mikrotik.system_resource
 # ============================================================
 
