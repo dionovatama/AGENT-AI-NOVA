@@ -24,6 +24,8 @@ class DeviceCreateRequest(BaseModel):
     status: str = Field(default="active", max_length=50)
     credential_id: uuid.UUID | None = None
     metadata: dict[str, Any] | None = None
+    tls_fingerprint: str | None = Field(default=None, max_length=128)
+    confirm_tls_fingerprint_change: bool = False
 
 
 class DeviceResponse(BaseModel):
