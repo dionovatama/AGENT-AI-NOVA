@@ -102,7 +102,7 @@ export default function NetworkPage() {
     if (!window.confirm(`Hapus node "${node.name}" dari canvas? Perangkat inventory tidak ikut dihapus.`)) return;
     try {
       await novaApi.deleteManualNode(node.id);
-      setTopology((v) => ({ nodes: v.nodes.filter((n) => n.id !== node.id), links: v.links.filter((l) => l.source_node_id !== node.id && l.target_node_id !== node.id) }));
+      setTopology((v) => ({ ...v, nodes: v.nodes.filter((n) => n.id !== node.id), links: v.links.filter((l) => l.source_node_id !== node.id && l.target_node_id !== node.id) }));
       if (selected?.id === node.id) setSelected(null);
     } catch (e) { setError(e instanceof Error ? e.message : "Node gagal dihapus."); }
   };
