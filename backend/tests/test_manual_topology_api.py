@@ -71,7 +71,7 @@ def test_manual_topology_node_link_crud_and_device_status_payload():
     saved = client.get("/network/manual-topology", headers=headers)
     assert saved.status_code == 200
     assert len(saved.json()["nodes"]) == 2
-    assert len(saved.json()["links"]) == 1
+    assert len(saved.json()["links"]) == 1\n    assert saved.json()["available_devices"] == []
 
     deleted = client.delete(f"/network/manual-topology/nodes/{node_a['id']}", headers=headers)
     assert deleted.status_code == 204
@@ -100,4 +100,4 @@ def test_manual_topology_rejects_cross_owner_device_and_node_access():
     assert client.patch(f"/network/manual-topology/nodes/{node['id']}", headers=headers_b,
                         json={"x": 999}).status_code == 404
     assert client.delete(f"/network/manual-topology/nodes/{node['id']}", headers=headers_b).status_code == 404
-    assert client.get("/network/manual-topology", headers=headers_b).json() == {"nodes": [], "links": []}
+    assert client.get("/network/manual-topology", headers=headers_b).json() == {"nodes": [], "links": [], "available_devices": []}
