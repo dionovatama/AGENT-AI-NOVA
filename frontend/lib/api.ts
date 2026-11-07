@@ -12,7 +12,10 @@ import type {
   ConversationSummary,
   PersistedChatMessage,
   RelayTarget,
-  RelayTargetCreateInput,\n  ManualTopology,\n  ManualTopologyNode,\n  ManualTopologyLink,
+  RelayTargetCreateInput,
+  ManualTopology,
+  ManualTopologyNode,
+  ManualTopologyLink,
 } from "./types";
 
 const BASE_URL =
