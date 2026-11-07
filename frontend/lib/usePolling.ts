@@ -17,7 +17,7 @@ export function usePolling<T>({ enabled, intervalMs, fetcher }: PollingOptions<T
   const [stopped, setStopped] = useState(false);
   const [retryKey, setRetryKey] = useState(0);
   const dataRef = useRef<T | null>(null);
-  const inFlight = useRef(false);
+  const inFlight = useRef<AbortController | null>(null);
   const controllerRef = useRef<AbortController | null>(null);
 
   useEffect(() => { dataRef.current = data; }, [data]);
@@ -26,7 +26,7 @@ export function usePolling<T>({ enabled, intervalMs, fetcher }: PollingOptions<T
     if (!enabled) {
       controllerRef.current?.abort();
       controllerRef.current = null;
-      inFlight.current = false;
+      inFlight.current = null;
       setLoading(false);
       return;
     }
@@ -44,8 +44,8 @@ export function usePolling<T>({ enabled, intervalMs, fetcher }: PollingOptions<T
 
     const run = async () => {
       if (disposed || halted || document.visibilityState === "hidden" || inFlight.current) return;
-      inFlight.current = true;
       const controller = new AbortController();
+      inFlight.current = controller;
       controllerRef.current = controller;
       setLoading(!dataRef.current);
       try {
@@ -75,7 +75,7 @@ export function usePolling<T>({ enabled, intervalMs, fetcher }: PollingOptions<T
         }
       } finally {
         if (controllerRef.current === controller) controllerRef.current = null;
-        inFlight.current = false;
+        if (inFlight.current === controller) inFlight.current = null;
         if (!disposed) setLoading(false);
       }
     };
@@ -94,7 +94,7 @@ export function usePolling<T>({ enabled, intervalMs, fetcher }: PollingOptions<T
       document.removeEventListener("visibilitychange", onVisibility);
       controllerRef.current?.abort();
       controllerRef.current = null;
-      inFlight.current = false;
+      if (inFlight.current === controllerRef.current) inFlight.current = null;
     };
   }, [enabled, intervalMs, fetcher, retryKey]);
 
