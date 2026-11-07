@@ -9,7 +9,7 @@ Client → FastAPI → Auth → PostgreSQL
 
 import asyncio
 import sys
-from app.api import auth, chat, configurations, devices, tools, mikrotik_generator, images, linux_generator, agent, agents, agent_targets, conversations, network
+from app.api import auth, chat, configurations, devices, tools, mikrotik_generator, images, linux_generator, agent, agents, agent_targets, conversations, network, mikrotik_monitoring
 
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
@@ -54,6 +54,7 @@ app.include_router(auth.router)
 app.include_router(chat.router)
 app.include_router(conversations.router)
 app.include_router(network.router)  # Phase 6: topology nyata + refresh status device
+app.include_router(mikrotik_monitoring.router)  # Read-only RouterOS v6/v7 live monitoring
 app.include_router(tools.router)
 app.include_router(devices.router)
 app.include_router(configurations.router)
