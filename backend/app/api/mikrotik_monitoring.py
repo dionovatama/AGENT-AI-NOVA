@@ -24,10 +24,20 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/devices", tags=["mikrotik-monitoring"])
 
 
+# librouteros melempar MultiTrapError (bukan subclass TrapError) saat menu tidak
+# ada, mis. /system routerboard di CHR/x86/VM. Wajib ikut ditangkap.
+_MENU_ERRORS = (
+    librouteros.exceptions.TrapError,
+    librouteros.exceptions.MultiTrapError,
+    KeyError,
+    AttributeError,
+)
+
+
 def _rows(api, *path):
     try:
         return list(api.path(*path))
-    except (librouteros.exceptions.TrapError, KeyError, AttributeError):
+    except _MENU_ERRORS:
         # RouterOS menu differs by package/version/device role; unsupported
         # optional menus are reported as empty rather than failing core metrics.
         return []
@@ -39,19 +49,24 @@ def _monitor_sync(device, password, sock=None):
         identity_rows = _rows(api, "system", "identity")
         board_rows = _rows(api, "system", "routerboard")
         interfaces = _rows(api, "interface")
+        # Satu call monitor-traffic untuk SEMUA interface (bukan N call berurutan)
+        # -> jauh lebih cepat lewat Agent relay, mengurangi risiko timeout.
+        names = [r["name"] for r in interfaces if r.get("name")]
+        traffic_by_name = {}
+        if names:
+            try:
+                for t in api.path("interface")(
+                    "monitor-traffic", **{"interface": ",".join(names), "once": ""}
+                ):
+                    traffic_by_name[t.get("name")] = t
+            except _MENU_ERRORS + (TypeError,):
+                logger.warning("monitor-traffic batch gagal; traffic dikosongkan")
         iface_data = []
         for row in interfaces:
             name = row.get("name")
             if not name:
                 continue
-            traffic = {}
-            try:
-                traffic_rows = list(api.path("interface")(
-                    "monitor-traffic", **{"interface": name, "once": ""}
-                ))
-                traffic = traffic_rows[0] if traffic_rows else {}
-            except (librouteros.exceptions.TrapError, KeyError, TypeError):
-                pass
+            traffic = traffic_by_name.get(name, {})
             iface_data.append({
                 "name": name, "type": row.get("type"),
                 "running": _to_bool(row.get("running", False)),
@@ -122,7 +137,7 @@ async def get_mikrotik_monitoring(
         logger.exception("MikroTik monitoring failed for device %s (%s)", device_id, type(exc).__name__)
         raise HTTPException(
             status_code=502,
-            detail=f"RouterOS monitoring failed ({type(exc).__name__}). Check backend logs for the device-specific cause.",
+            detail=f"RouterOS monitoring failed ({type(exc).__name__}): {exc}",
         ) from exc
 
     resource = raw["resource"]
