@@ -12,7 +12,7 @@ import type {
   ConversationSummary,
   PersistedChatMessage,
   RelayTarget,
-  RelayTargetCreateInput,
+  RelayTargetCreateInput,\n  ManualTopology,\n  ManualTopologyNode,\n  ManualTopologyLink,
 } from "./types";
 
 const BASE_URL =
@@ -293,6 +293,18 @@ export const novaApi = {
     }),
   deleteRelayTarget: (agentId: string, targetId: string) =>
     request<void>(`/agents/${agentId}/targets/${targetId}`, { method: "DELETE" }),
+
+  getManualTopology: () => request<ManualTopology>("/network/manual-topology"),
+  createManualNode: (payload: { device_id?: string | null; name: string; kind?: string; x?: number; y?: number }) =>
+    request<ManualTopologyNode>("/network/manual-topology/nodes", { method: "POST", body: JSON.stringify(payload) }),
+  updateManualNode: (nodeId: string, payload: Partial<Pick<ManualTopologyNode, "name" | "kind" | "x" | "y">>) =>
+    request<ManualTopologyNode>(`/network/manual-topology/nodes/${nodeId}`, { method: "PATCH", body: JSON.stringify(payload) }),
+  deleteManualNode: (nodeId: string) =>
+    request<void>(`/network/manual-topology/nodes/${nodeId}`, { method: "DELETE" }),
+  createManualLink: (payload: { source_node_id: string; target_node_id: string; label?: string | null; connection_type?: string }) =>
+    request<ManualTopologyLink>("/network/manual-topology/links", { method: "POST", body: JSON.stringify(payload) }),
+  deleteManualLink: (linkId: string) =>
+    request<void>(`/network/manual-topology/links/${linkId}`, { method: "DELETE" }),
 
   listAuditLogs: () => request<AuditLogEntry[]>("/audit-logs"),
 };
