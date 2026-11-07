@@ -75,6 +75,21 @@ def fingerprint_of_der(der: bytes) -> str:
     return hashlib.sha256(der).hexdigest()
 
 
+def verify_certificate_pin(der: bytes, expected_fingerprint: str) -> str:
+    """Shared SHA-256 pin verification for relay and direct local TLS sockets."""
+    if not der:
+        raise RelayTlsError("NO_CERTIFICATE", "peer presented no certificate")
+    expected = normalize_fingerprint(expected_fingerprint)
+    observed = fingerprint_of_der(der)
+    if not hmac.compare_digest(observed, expected):
+        raise RelayTlsError(
+            "FINGERPRINT_MISMATCH",
+            "peer certificate does not match the configured fingerprint",
+            observed=observed,
+        )
+    return observed
+
+
 def _client_context() -> ssl.SSLContext:
     ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
     ctx.minimum_version = ssl.TLSVersion.TLSv1_2
@@ -259,14 +274,13 @@ async def open_pinned_tls_socket(
     if not der:
         await _abort("no peer certificate")
         raise RelayTlsError("NO_CERTIFICATE", "router presented no certificate")
-    observed = fingerprint_of_der(der)
-    if not hmac.compare_digest(observed, expected):
-        logger.warning("relay tls pin mismatch session=%s observed=%s",
-                       getattr(channel, "session_id", "?"), observed)
+    try:
+        verify_certificate_pin(der, expected)
+    except RelayTlsError as exc:
+        logger.warning("relay tls pin mismatch session=%s reason=%s",
+                       getattr(channel, "session_id", "?"), exc.reason)
         await _abort("fingerprint mismatch")
-        raise RelayTlsError("FINGERPRINT_MISMATCH",
-                            "router certificate does not match the pinned fingerprint",
-                            observed=observed)
+        raise
 
     app_sock, pump_sock = socket.socketpair()
     app_sock.settimeout(io_timeout)
