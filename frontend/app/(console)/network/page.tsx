@@ -1,478 +1,252 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { novaApi } from "@/lib/api";
+import type { Device, DevicePlatform, RemoteAgent } from "@/lib/types";
 import {
-  Activity, Cable, CircleHelp, Cloud, Cpu, Gauge, Globe2, MessageSquare, Send, Bot, Loader2,
-  Maximize2, Minus, Plus, RadioTower, Router, Save, Search, Server,
-  ShieldCheck, Wifi, X, Pencil, Trash2, Network, RefreshCw, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Minimize2,
+  Activity, Bot, Cpu, Loader2, Plus, RefreshCw, Router, Search, Server,
+  Wifi, Pencil, Trash2, X, Network, RadioTower, Cable, Globe2,
 } from "lucide-react";
 
-type DeviceType = "router" | "switch" | "server" | "access-point" | "client" | "gateway";
-type DeviceNode = {
-  id: string; name: string; type: DeviceType; ip: string; vendor: string;
-  x: number; y: number; status: "unknown" | "online";
+type DeviceForm = {
+  name: string;
+  platform: DevicePlatform;
+  host: string;
+  port: string;
+  connection_type: string;
 };
-type LinkEdge = { id: string; source: string; target: string };
-const STORAGE_KEY = "nova-network-topology-v1";
-const INITIAL: DeviceNode[] = [
-  { id: "gw-01", name: "Internet Gateway", type: "gateway", ip: "192.168.88.254", vendor: "Upstream", x: 500, y: 40, status: "unknown" },
-  { id: "rtr-01", name: "CHR", type: "router", ip: "192.168.88.1", vendor: "MikroTik", x: 500, y: 235, status: "unknown" },
-  { id: "sw-01", name: "Core Switch", type: "switch", ip: "192.168.88.2", vendor: "Managed switch", x: 500, y: 455, status: "unknown" },
-  { id: "srv-01", name: "NOVA Server", type: "server", ip: "192.168.88.10", vendor: "Linux", x: 140, y: 650, status: "unknown" },
-  { id: "ap-01", name: "Access Point", type: "access-point", ip: "192.168.88.3", vendor: "Wireless", x: 500, y: 650, status: "unknown" },
-  { id: "pc-01", name: "Admin Workstation", type: "client", ip: "192.168.88.20", vendor: "Endpoint", x: 860, y: 650, status: "unknown" },
-];
-const INITIAL_EDGES: LinkEdge[] = [
-  { id: "e1", source: "gw-01", target: "rtr-01" }, { id: "e2", source: "rtr-01", target: "sw-01" },
-  { id: "e3", source: "sw-01", target: "srv-01" }, { id: "e4", source: "sw-01", target: "ap-01" }, { id: "e5", source: "sw-01", target: "pc-01" },
-];
-const TYPES: { type: DeviceType; label: string; icon: typeof Router }[] = [
-  { type: "router", label: "Router", icon: Router }, { type: "switch", label: "Switch", icon: Cable },
-  { type: "server", label: "Server", icon: Server }, { type: "access-point", label: "Access Point", icon: Wifi },
-  { type: "client", label: "Endpoint", icon: Cpu }, { type: "gateway", label: "Gateway", icon: Globe2 },
-];
-const iconFor = (type: DeviceType) => TYPES.find((item) => item.type === type)?.icon ?? CircleHelp;
+
+const EMPTY_FORM: DeviceForm = {
+  name: "",
+  platform: "linux",
+  host: "",
+  port: "22",
+  connection_type: "ssh",
+};
+
+const PLATFORM_LABELS: Record<DevicePlatform, string> = {
+  linux: "Linux",
+  windows: "Windows",
+  mikrotik: "MikroTik",
+  cisco: "Cisco",
+};
+
+function deviceIcon(platform: string) {
+  if (platform === "mikrotik" || platform === "cisco") return Router;
+  if (platform === "windows" || platform === "linux") return Server;
+  return Cpu;
+}
+
+function agentStatus(status: string) {
+  if (status === "online") return { label: "ONLINE", className: "border-emerald-400/25 bg-emerald-400/10 text-emerald-300", dot: "bg-emerald-400" };
+  if (status === "connecting") return { label: "CONNECTING", className: "border-amber-400/25 bg-amber-400/10 text-amber-300", dot: "bg-amber-400" };
+  if (status === "error") return { label: "ERROR", className: "border-rose-400/25 bg-rose-400/10 text-rose-300", dot: "bg-rose-400" };
+  return { label: status.toUpperCase(), className: "border-slate-500/25 bg-slate-500/10 text-slate-400", dot: "bg-slate-500" };
+}
+
+function formatDate(value: string | null | undefined) {
+  if (!value) return "Belum ada";
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "—" : date.toLocaleString("id-ID", { dateStyle: "medium", timeStyle: "short" });
+}
 
 export default function NetworkPage() {
-  const [nodes, setNodes] = useState<DeviceNode[]>(INITIAL);
-  const [edges, setEdges] = useState<LinkEdge[]>(INITIAL_EDGES);
-  const [selected, setSelected] = useState<string | null>("rtr-01");
-  const [saved, setSaved] = useState(true);
-  const [adding, setAdding] = useState(false);
-  const [editing, setEditing] = useState(false);
-  const [name, setName] = useState("");
-  const [ip, setIp] = useState("");
-  const [vendor, setVendor] = useState("");
-  const [type, setType] = useState<DeviceType>("router");
-  const [zoom, setZoom] = useState(1);
-  const [pan, setPan] = useState({ x: 0, y: 0 });
-  const [connectMode, setConnectMode] = useState(false);
-  const [connectFrom, setConnectFrom] = useState<string | null>(null);
+  const [devices, setDevices] = useState<Device[]>([]);
+  const [agents, setAgents] = useState<RemoteAgent[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
-  const [leftPanelOpen, setLeftPanelOpen] = useState(true);
-  const [rightPanelOpen, setRightPanelOpen] = useState(true);
-  const [isFullscreen, setIsFullscreen] = useState(false);
-  const workspaceRef = useRef<HTMLDivElement>(null);
-  const [copilotOpen, setCopilotOpen] = useState(false);
-  const [copilotInput, setCopilotInput] = useState("");
-  const [copilotBusy, setCopilotBusy] = useState(false);
-  const [pendingOperations, setPendingOperations] = useState<Array<Record<string, unknown>> | null>(null);
-  const [copilotError, setCopilotError] = useState<string | null>(null);
-  const [copilotMessages, setCopilotMessages] = useState<{ role: "user" | "assistant"; content: string }[]>([
-    { role: "assistant", content: "NMS Copilot siap. Saya dapat menganalisis inventory dan koneksi pada topology lokal ini. Status perangkat dan telemetry live belum tersedia." },
-  ]);
-  const canvasRef = useRef<HTMLDivElement>(null);
-  const dragRef = useRef<{ id: string; dx: number; dy: number } | null>(null);
-  const panRef = useRef<{ x: number; y: number; sx: number; sy: number } | null>(null);
+  const [modalOpen, setModalOpen] = useState(false);
+  const [editing, setEditing] = useState<Device | null>(null);
+  const [form, setForm] = useState<DeviceForm>(EMPTY_FORM);
+  const [saving, setSaving] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
-  useEffect(() => {
+  const loadData = useCallback(async (quiet = false) => {
+    if (quiet) setRefreshing(true);
+    else setLoading(true);
+    setError(null);
     try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (!raw) return;
-      const data = JSON.parse(raw);
-      if (Array.isArray(data.nodes) && Array.isArray(data.edges)) {
-        setNodes(data.nodes); setEdges(data.edges);
-      }
-    } catch { /* Keep default topology if local data is invalid. */ }
+      const [deviceRows, agentRows] = await Promise.all([
+        novaApi.listDevices(),
+        novaApi.listAgents(),
+      ]);
+      setDevices(deviceRows);
+      setAgents(agentRows);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Gagal mengambil inventory dari API.");
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
   }, []);
 
-  const current = nodes.find((node) => node.id === selected) ?? null;
-  const visibleNodes = useMemo(
-    () => nodes.filter((node) => (node.name + node.ip + node.type).toLowerCase().includes(query.toLowerCase())),
-    [nodes, query],
-  );
-  const save = useCallback(() => {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify({ nodes, edges }));
-      setSaved(true);
-    } catch { setSaved(false); }
-  }, [nodes, edges]);
-
-  const openAdd = () => {
-    setEditing(false); setName(""); setIp(""); setVendor(""); setType("router"); setAdding(true);
-  };
-  const openEdit = () => {
-    if (!current) return;
-    setEditing(true); setName(current.name); setIp(current.ip); setVendor(current.vendor); setType(current.type); setAdding(true);
-  };
-  const submitDevice = (event: React.FormEvent) => {
-    event.preventDefault();
-    if (!name.trim()) return;
-    if (editing && current) {
-      setNodes((items) => items.map((node) => node.id === current.id
-        ? { ...node, name: name.trim(), ip: ip.trim() || "Not assigned", vendor: vendor.trim() || "Unspecified", type }
-        : node));
-    } else {
-      const id = `device-${Date.now()}`;
-      setNodes((items) => [...items, {
-        id, name: name.trim(), type, ip: ip.trim() || "Not assigned",
-        vendor: vendor.trim() || "Manual", x: 500 + Math.round(Math.random() * 220 - 110),
-        y: 180 + Math.round(Math.random() * 130), status: "unknown",
-      }]);
-      setSelected(id);
-    }
-    setSaved(false); setAdding(false);
-  };
-  const startDrag = (event: React.PointerEvent, node: DeviceNode) => {
-    if (connectMode) {
-      if (!connectFrom) setConnectFrom(node.id);
-      else if (connectFrom !== node.id && !edges.some((edge) =>
-        (edge.source === connectFrom && edge.target === node.id) ||
-        (edge.source === node.id && edge.target === connectFrom))) {
-        setEdges((items) => [...items, { id: `edge-${Date.now()}`, source: connectFrom, target: node.id }]);
-        setSaved(false); setConnectFrom(null); setConnectMode(false);
-      }
-      return;
-    }
-    event.stopPropagation();
-    (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
-    const rect = canvasRef.current?.getBoundingClientRect();
-    if (!rect) return;
-    dragRef.current = {
-      id: node.id,
-      dx: (event.clientX - rect.left - pan.x) / zoom - node.x,
-      dy: (event.clientY - rect.top - pan.y) / zoom - node.y,
-    };
-    setSelected(node.id);
-  };
-  const movePointer = (event: React.PointerEvent) => {
-    if (dragRef.current) {
-      const rect = canvasRef.current?.getBoundingClientRect();
-      if (!rect) return;
-      const { id, dx, dy } = dragRef.current;
-      setNodes((items) => items.map((node) => node.id === id ? {
-        ...node,
-        x: Math.max(12, (event.clientX - rect.left - pan.x) / zoom - dx),
-        y: Math.max(12, (event.clientY - rect.top - pan.y) / zoom - dy),
-      } : node));
-      setSaved(false);
-    } else if (panRef.current) {
-      setPan({ x: panRef.current.x + event.clientX - panRef.current.sx, y: panRef.current.y + event.clientY - panRef.current.sy });
-    }
-  };
-  const endPointer = () => { dragRef.current = null; panRef.current = null; };
-  const removeNode = (id: string) => {
-    setNodes((items) => items.filter((node) => node.id !== id));
-    setEdges((items) => items.filter((edge) => edge.source !== id && edge.target !== id));
-    setSelected(null); setSaved(false);
-  };
-  const resetView = () => { setZoom(1); setPan({ x: 0, y: 0 }); };
-  const nodeById = (id: string) => nodes.find((node) => node.id === id);
-  const connectedCount = current ? edges.filter((edge) => edge.source === current.id || edge.target === current.id).length : 0;
-
   useEffect(() => {
-    const syncFullscreen = () => setIsFullscreen(document.fullscreenElement === workspaceRef.current);
-    document.addEventListener("fullscreenchange", syncFullscreen);
-    return () => document.removeEventListener("fullscreenchange", syncFullscreen);
-  }, []);
+    void loadData();
+  }, [loadData]);
 
-  const toggleFullscreen = async () => {
-    try {
-      if (document.fullscreenElement === workspaceRef.current) await document.exitFullscreen();
-      else await workspaceRef.current?.requestFullscreen();
-    } catch (error) {
-      console.error("Unable to toggle Network workspace fullscreen:", error);
-    }
+  const filteredDevices = useMemo(() => {
+    const needle = query.trim().toLocaleLowerCase();
+    if (!needle) return devices;
+    return devices.filter((device) =>
+      [device.name, device.host, device.platform, device.connection_type]
+        .some((value) => value.toLocaleLowerCase().includes(needle)),
+    );
+  }, [devices, query]);
+
+  const openCreate = () => {
+    setEditing(null);
+    setForm(EMPTY_FORM);
+    setActionError(null);
+    setModalOpen(true);
   };
 
-  const applyCopilotOperations = () => {
-    if (!pendingOperations?.length) return;
-    let nextNodes = [...nodes];
-    let nextEdges = [...edges];
-    const getString = (value: unknown) => typeof value === "string" ? value.trim() : "";
-    for (const operation of pendingOperations) {
-      const action = getString(operation.action);
-      if (action === "add_node") {
-        const node = operation.node as Record<string, unknown> | undefined;
-        if (!node) continue;
-        const id = getString(node.id) || `nova-${Date.now()}-${nextNodes.length}`;
-        const nodeType = getString(node.type) as DeviceType;
-        if (!getString(node.name) || !TYPES.some((item) => item.type === nodeType) || nextNodes.some((item) => item.id === id)) continue;
-        nextNodes.push({
-          id, name: getString(node.name), type: nodeType,
-          ip: getString(node.ip) || "Not assigned", vendor: getString(node.vendor) || "AI Copilot",
-          x: Number.isFinite(Number(node.x)) ? Number(node.x) : 180 + (nextNodes.length % 3) * 250,
-          y: Number.isFinite(Number(node.y)) ? Number(node.y) : 160 + Math.floor(nextNodes.length / 3) * 160,
-          status: "unknown",
-        });
-      } else if (action === "update_node") {
-        const id = getString(operation.id), patch = (operation.changes ?? {}) as Record<string, unknown>;
-        nextNodes = nextNodes.map((node) => node.id !== id ? node : ({
-          ...node,
-          ...(getString(patch.name) ? { name: getString(patch.name) } : {}),
-          ...(getString(patch.ip) ? { ip: getString(patch.ip) } : {}),
-          ...(getString(patch.vendor) ? { vendor: getString(patch.vendor) } : {}),
-          ...(TYPES.some((item) => item.type === patch.type) ? { type: patch.type as DeviceType } : {}),
-          ...(Number.isFinite(Number(patch.x)) ? { x: Number(patch.x) } : {}),
-          ...(Number.isFinite(Number(patch.y)) ? { y: Number(patch.y) } : {}),
-        }));
-      } else if (action === "remove_node") {
-        const id = getString(operation.id);
-        nextNodes = nextNodes.filter((node) => node.id !== id);
-        nextEdges = nextEdges.filter((edge) => edge.source !== id && edge.target !== id);
-      } else if (action === "create_link") {
-        const source = getString(operation.source), target = getString(operation.target);
-        if (source !== target && nextNodes.some((node) => node.id === source) && nextNodes.some((node) => node.id === target)
-          && !nextEdges.some((edge) => (edge.source === source && edge.target === target) || (edge.source === target && edge.target === source))) {
-          nextEdges.push({ id: `nova-edge-${Date.now()}-${nextEdges.length}`, source, target });
-        }
-      } else if (action === "remove_link") {
-        const id = getString(operation.id);
-        nextEdges = nextEdges.filter((edge) => edge.id !== id);
-      } else if (action === "arrange_topology") {
-        nextNodes = nextNodes.map((node, index) => ({
-          ...node, x: 160 + (index % 3) * 280, y: 140 + Math.floor(index / 3) * 180,
-        }));
-      }
-    }
-    setNodes(nextNodes);
-    setEdges(nextEdges);
-    setSelected((id) => id && nextNodes.some((node) => node.id === id) ? id : null);
-    setSaved(false);
-    setPendingOperations(null);
-    setCopilotMessages((items) => [...items, { role: "assistant", content: "Operasi diterapkan ke canvas lokal. Perubahan belum tersimpan permanen; tekan Save untuk menyimpan topology." }]);
+  const openEdit = (device: Device) => {
+    setEditing(device);
+    setForm({
+      name: device.name,
+      platform: (["linux", "windows", "mikrotik", "cisco"].includes(device.platform) ? device.platform : "linux") as DevicePlatform,
+      host: device.host,
+      port: String(device.port),
+      connection_type: device.connection_type || "ssh",
+    });
+    setActionError(null);
+    setModalOpen(true);
   };
 
-  const sendCopilotMessage = async (event: React.FormEvent) => {
+  const submitDevice = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    const prompt = copilotInput.trim();
-    if (!prompt || copilotBusy) return;
-    const topologyContext = {
-      source: "local-manual-topology", telemetry_available: false,
-      devices: nodes.map(({ id, name, type, ip, vendor, status, x, y }) => ({ id, name, type, ip, vendor, status, x, y })),
-      links: edges.map(({ id, source, target }) => ({ id, source, target })),
-      selected_device: current ? { id: current.id, name: current.name } : null,
+    if (saving) return;
+    setSaving(true);
+    setActionError(null);
+    const payload = {
+      name: form.name.trim(),
+      platform: form.platform,
+      host: form.host.trim(),
+      port: Number(form.port),
+      connection_type: form.connection_type.trim() || "ssh",
     };
-    const systemPrompt = `Anda adalah NMS Copilot pada workspace Network Management NOVA.
-Analisis hanya JSON topology berikut. Tidak ada live telemetry; jangan klaim ping, CPU, traffic, routing, firewall atau status aktual telah diperiksa.
-Jika user meminta perubahan diagram, keluarkan operasi JSON yang diusulkan. Jangan pernah mengklaim operasi telah diterapkan.
-Balas WAJIB dalam JSON valid saja, tanpa markdown:
-{"message":"ringkasan singkat dalam Bahasa Indonesia","operations":[]}
-Operasi yang diizinkan:
-- {"action":"add_node","node":{"id":"opsional","name":"...","type":"router|switch|server|access-point|client|gateway","ip":"opsional","vendor":"opsional","x":180,"y":160}}
-- {"action":"update_node","id":"ID_NODE","changes":{"name":"opsional","type":"opsional","ip":"opsional","vendor":"opsional","x":180,"y":160}}
-- {"action":"remove_node","id":"ID_NODE"}
-- {"action":"create_link","source":"ID_SUMBER","target":"ID_TUJUAN"}
-- {"action":"remove_link","id":"ID_LINK"}
-- {"action":"arrange_topology"}
-Aturan:
-- Gunakan ID persis dari context untuk semua perangkat yang sudah ada.
-- Jika user menyebut nama perangkat tujuan, cocokkan dengan nama perangkat di context dan gunakan ID perangkat itu secara persis.
-- DILARANG mengganti target yang diminta dengan perangkat lain yang dianggap mirip. Jika target tidak ditemukan, kembalikan operations:[] dan jelaskan perangkat tujuan tidak ditemukan.
-- Untuk create_link, source dan target wajib berupa ID perangkat yang benar-benar ada di context atau ID add_node yang dibuat dalam proposal yang sama.
-- Jangan membuat operasi untuk permintaan ambigu atau tidak didukung; operations harus [] untuk analisis/pertanyaan biasa.
-- Jangan pernah mengubah konfigurasi perangkat fisik. Semua operasi hanya mengubah diagram lokal setelah user menekan Approve.
-TOPOLOGY:${JSON.stringify(topologyContext)}
-USER REQUEST:${prompt}`;
-    setCopilotMessages((items) => [...items, { role: "user", content: prompt }]);
-    setCopilotInput("");
-    setCopilotBusy(true);
-    setCopilotError(null);
-    setPendingOperations(null);
     try {
-      const result = await novaApi.chatCompletion(systemPrompt, "troubleshooting", false);
-      const raw = typeof result?.content === "string" ? result.content.trim() : "";
-      console.info("🔎 Raw NMS Copilot /chat/completions response:", result);
-      const cleaned = raw.replace(/^\`\`\`(?:json)?\\s*/i, "").replace(/\\s*\`\`\`$/, "").trim();
-
-      let parsed: { message?: string; operations?: Array<Record<string, unknown>> };
-      try {
-        parsed = JSON.parse(cleaned);
-      } catch (parseError) {
-        console.warn("🟠 NMS Copilot response is not valid JSON:", raw, parseError);
-        setCopilotError("Respons Copilot tidak dapat diproses sebagai JSON. Tidak ada perubahan topology yang diterapkan.");
-        setCopilotMessages((items) => [...items, { role: "assistant", content: "Maaf, respons Copilot tidak dapat diproses. Silakan coba ulangi perintah." }]);
-        return;
+      if (editing) {
+        await novaApi.updateDevice(editing.id, payload);
+      } else {
+        await novaApi.createDevice(payload);
       }
-
-      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-        console.warn("⚠️ Unexpected NMS Copilot payload:", parsed);
-        setCopilotError("Format respons Copilot tidak dikenali. Tidak ada perubahan topology yang diterapkan.");
-        setCopilotMessages((items) => [...items, { role: "assistant", content: "Format respons Copilot tidak dikenali. Silakan coba ulangi perintah." }]);
-        return;
-      }
-
-      const allowed = new Set(["add_node", "update_node", "remove_node", "create_link", "remove_link", "arrange_topology"]);
-      const isRecord = (value: unknown): value is Record<string, unknown> =>
-        typeof value === "object" && value !== null && !Array.isArray(value);
-      const isValidOperation = (item: unknown): item is Record<string, unknown> => {
-        if (!isRecord(item) || !allowed.has(String(item.action))) return false;
-        switch (item.action) {
-          case "add_node": {
-            const node = item.node;
-            if (!isRecord(node)) return false;
-            return typeof node.name === "string" &&
-              TYPES.some((entry) => entry.type === node.type);
-          }
-          case "update_node":
-            return typeof item.id === "string" && isRecord(item.changes);
-          case "remove_node":
-          case "remove_link":
-            return typeof item.id === "string" && item.id.trim().length > 0;
-          case "create_link":
-            return typeof item.source === "string" && typeof item.target === "string" &&
-              item.source !== item.target;
-          case "arrange_topology":
-            return true;
-          default:
-            return false;
-        }
-      };
-
-      if (parsed.operations !== undefined && !Array.isArray(parsed.operations)) {
-        console.warn("⚠️ NMS Copilot operations must be an array:", parsed);
-        setCopilotError("Daftar operasi Copilot tidak valid. Tidak ada perubahan topology yang diterapkan.");
-        setCopilotMessages((items) => [...items, { role: "assistant", content: "Daftar operasi yang diterima tidak valid. Silakan coba ulangi perintah." }]);
-        return;
-      }
-      const proposed = parsed.operations ?? [];
-      if (!proposed.every(isValidOperation)) {
-        console.warn("⚠️ NMS Copilot contains unsupported or malformed operations:", proposed);
-        setCopilotError("Satu atau lebih operasi topology tidak valid. Seluruh proposal dibatalkan.");
-        setCopilotMessages((items) => [...items, { role: "assistant", content: "Proposal berisi operasi yang tidak valid. Tidak ada perubahan yang diterapkan." }]);
-        return;
-      }
-
-      // Guard against the model linking to a different existing device than the one named by the user.
-      const addedIds = new Set(proposed
-        .filter((item) => item.action === "add_node" && isRecord(item.node))
-        .map((item) => typeof (item.node as Record<string, unknown>).id === "string"
-          ? String((item.node as Record<string, unknown>).id).trim() : ""));
-      const validDeviceIds = new Set([...nodes.map((node) => node.id), ...addedIds].filter(Boolean));
-      const mentionedExistingIds = nodes
-        .filter((node) => prompt.toLocaleLowerCase().includes(node.name.toLocaleLowerCase()))
-        .map((node) => node.id);
-      const invalidLink = proposed.find((item) => {
-        if (item.action !== "create_link") return false;
-        const source = String(item.source).trim();
-        const target = String(item.target).trim();
-        if (!validDeviceIds.has(source) || !validDeviceIds.has(target)) return true;
-        return mentionedExistingIds.some((id) => id !== source && id !== target);
-      });
-      if (invalidLink) {
-        console.warn("NMS Copilot proposed an unresolved or mismatched device link:", invalidLink);
-        setCopilotError("Target koneksi tidak cocok dengan perangkat yang disebutkan. Proposal dibatalkan agar tidak menghubungkan ke perangkat yang salah.");
-        setCopilotMessages((items) => [...items, { role: "assistant", content: "Saya belum bisa memastikan perangkat tujuan yang tepat. Pastikan perangkat tersebut tersedia di inventory, lalu ulangi perintah. Tidak ada perubahan topology yang diterapkan." }]);
-        return;
-      }
-
-      if (typeof parsed.message === "string" && parsed.message.trim()) {
-        setCopilotMessages((items) => [...items, { role: "assistant", content: parsed.message!.trim() }]);
-      } else if (proposed.length === 0) {
-        setCopilotMessages((items) => [...items, { role: "assistant", content: "Copilot tidak memberikan pesan atau usulan perubahan yang dapat diproses." }]);
-      }
-      setPendingOperations(proposed.length ? proposed : null);
-    } catch (error) {
-      console.error("NMS Copilot request failed:", error);
-      setCopilotError("Permintaan Copilot gagal. Periksa koneksi API dan coba kembali.");
-      setCopilotMessages((items) => [...items, { role: "assistant", content: `Permintaan gagal: ${error instanceof Error ? error.message : "Unknown error"}` }]);
-      setPendingOperations(null);
-    } finally { setCopilotBusy(false); }
+      setModalOpen(false);
+      await loadData(true);
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : "Perubahan device gagal disimpan.");
+    } finally {
+      setSaving(false);
+    }
   };
+
+  const removeDevice = async (device: Device) => {
+    if (!window.confirm(`Hapus device "${device.name}" dari inventory?`)) return;
+    setDeletingId(device.id);
+    setError(null);
+    try {
+      await novaApi.deleteDevice(device.id);
+      setDevices((items) => items.filter((item) => item.id !== device.id));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Device gagal dihapus.");
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
+  const onlineAgents = agents.filter((agent) => agent.status === "online").length;
 
   return (
-    <div ref={workspaceRef} className={`relative flex h-full min-h-0 flex-col bg-[#07090d] text-slate-100 ${isFullscreen ? "h-screen w-screen" : ""}`}>
-      <header className="shrink-0 border-b border-white/[0.08] bg-[#0a0d13]">
-        <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-3">
+    <div className="flex h-full min-h-0 flex-col overflow-y-auto bg-[#07090d] text-slate-100">
+      <header className="shrink-0 border-b border-white/[0.08] bg-[#0a0d13] px-5 py-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-lg border border-cyan-400/20 bg-cyan-400/[0.08] text-cyan-300"><Network size={18}/></div>
-            <div><p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-cyan-300">NOVA / Infrastructure</p><h1 className="text-base font-semibold tracking-wide">Network Management</h1></div>
+            <div className="flex h-10 w-10 items-center justify-center rounded-lg border border-cyan-400/20 bg-cyan-400/[0.08] text-cyan-300"><Network size={19}/></div>
+            <div>
+              <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-cyan-300">NOVA / Infrastructure</p>
+              <h1 className="text-lg font-semibold tracking-wide">Network Management</h1>
+              <p className="mt-0.5 text-[11px] text-slate-500">Inventory perangkat dan koneksi Remote Agent dari backend.</p>
+            </div>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <button type="button" onClick={() => setLeftPanelOpen((value) => !value)} title={leftPanelOpen ? "Hide inventory panel" : "Show inventory panel"} className="flex items-center gap-1.5 rounded-md border border-white/[0.09] px-2.5 py-2 text-[11px] text-slate-300 hover:bg-white/[0.05]">{leftPanelOpen ? <PanelLeftClose size={14}/> : <PanelLeftOpen size={14}/>} <span className="hidden sm:inline">Inventory</span></button>
-            <button type="button" onClick={() => setRightPanelOpen((value) => !value)} title={rightPanelOpen ? "Hide inspector panel" : "Show inspector panel"} className="flex items-center gap-1.5 rounded-md border border-white/[0.09] px-2.5 py-2 text-[11px] text-slate-300 hover:bg-white/[0.05]">{rightPanelOpen ? <PanelRightClose size={14}/> : <PanelRightOpen size={14}/>} <span className="hidden sm:inline">Inspector</span></button>
-            <button type="button" onClick={toggleFullscreen} title={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"} className="flex items-center gap-1.5 rounded-md border border-cyan-300/20 bg-cyan-300/[0.06] px-2.5 py-2 text-[11px] text-cyan-100 hover:bg-cyan-300/[0.12]">{isFullscreen ? <Minimize2 size={14}/> : <Maximize2 size={14}/>} <span className="hidden sm:inline">{isFullscreen ? "Exit Focus" : "Focus Mode"}</span></button>
-            <span className="mr-1 flex items-center gap-1.5 rounded-md border border-white/[0.08] bg-white/[0.03] px-2.5 py-2 text-[11px] text-slate-400"><span className="h-1.5 w-1.5 rounded-full bg-amber-400" />Local inventory</span>
-            <button type="button" title="Discovery belum terhubung ke backend" className="flex items-center gap-1.5 rounded-md border border-white/[0.09] px-3 py-2 text-[11px] text-slate-400"><RefreshCw size={13}/> Auto Discover <span className="text-[9px] text-amber-300">SOON</span></button>
-            <button type="button" onClick={() => setConnectMode((value) => !value)} className={`flex items-center gap-1.5 rounded-md border px-3 py-2 text-[11px] transition ${connectMode ? "border-cyan-300/50 bg-cyan-300/10 text-cyan-200" : "border-white/[0.09] text-slate-300 hover:bg-white/[0.05]"}`}><Cable size={13}/>{connectMode ? "Select devices…" : "Wiring"}</button>
-            <button type="button" onClick={openAdd} className="flex items-center gap-1.5 rounded-md bg-gradient-to-r from-cyan-500 to-blue-600 px-3 py-2 text-[11px] font-semibold text-white shadow-[0_0_18px_rgba(6,182,212,.15)]"><Plus size={14}/> Node</button>
-            <button type="button" onClick={save} className="flex items-center gap-1.5 rounded-md border border-white/[0.1] px-3 py-2 text-[11px] text-slate-300 hover:bg-white/[0.05]"><Save size={13}/> Save</button>
+          <div className="flex items-center gap-2">
+            <button type="button" onClick={() => void loadData(true)} disabled={refreshing || loading} className="flex items-center gap-2 rounded-md border border-white/[0.1] px-3 py-2 text-[11px] text-slate-300 hover:bg-white/[0.05] disabled:opacity-50">
+              {refreshing ? <Loader2 size={13} className="animate-spin"/> : <RefreshCw size={13}/>} Refresh
+            </button>
+            <button type="button" onClick={openCreate} className="flex items-center gap-2 rounded-md bg-cyan-500 px-3 py-2 text-[11px] font-semibold text-slate-950 hover:bg-cyan-400">
+              <Plus size={14}/> Add device
+            </button>
           </div>
         </div>
-        <div className="flex flex-wrap items-center gap-x-5 gap-y-2 border-t border-white/[0.06] px-5 py-2 text-[10px]">
-          <span className="text-slate-500">INVENTORY SCOPE</span>
-          <span className="rounded-full bg-cyan-400/10 px-2.5 py-1 font-medium text-cyan-200">Manual topology</span>
-          <span className="text-slate-400">All devices <b className="ml-1 text-slate-200">{nodes.length}</b></span>
-          <span className="text-slate-400">Owned <b className="ml-1 text-emerald-300">{nodes.length}</b></span>
-          <span className="text-slate-400">Links <b className="ml-1 text-slate-200">{edges.length}</b></span>
-          <span className="text-slate-400">Interfaces <b className="ml-1 text-slate-200">—</b></span>
-          <span className="ml-auto flex items-center gap-1.5 text-amber-300"><ShieldCheck size={12}/> Discovery & live telemetry not connected</span>
+        <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
+          <div className="rounded-lg border border-white/[0.07] bg-white/[0.025] px-3 py-2.5"><p className="text-[9px] uppercase tracking-wider text-slate-500">Registered devices</p><p className="mt-1 text-xl font-semibold">{devices.length}</p></div>
+          <div className="rounded-lg border border-white/[0.07] bg-white/[0.025] px-3 py-2.5"><p className="text-[9px] uppercase tracking-wider text-slate-500">Remote agents</p><p className="mt-1 text-xl font-semibold">{agents.length}</p></div>
+          <div className="rounded-lg border border-white/[0.07] bg-white/[0.025] px-3 py-2.5"><p className="text-[9px] uppercase tracking-wider text-slate-500">Agents online</p><p className="mt-1 text-xl font-semibold text-emerald-300">{onlineAgents}</p></div>
+          <div className="rounded-lg border border-white/[0.07] bg-white/[0.025] px-3 py-2.5"><p className="text-[9px] uppercase tracking-wider text-slate-500">Topology links</p><p className="mt-1 text-xl font-semibold text-slate-500">—</p></div>
         </div>
       </header>
 
-      <div className="flex min-h-0 flex-1">
-        {leftPanelOpen && <aside className="w-[218px] shrink-0 flex-col border-r border-white/[0.07] bg-[#0a0d13] p-3 hidden lg:flex">
-          <div className="relative mb-4"><Search size={13} className="absolute left-3 top-2.5 text-slate-500"/><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search inventory…" className="w-full rounded-md border border-white/[0.09] bg-[#07090d] py-2 pl-8 pr-3 text-[11px] outline-none placeholder:text-slate-600 focus:border-cyan-400/50"/></div>
-          <div className="mb-2 flex items-center justify-between text-[9px] font-semibold uppercase tracking-[0.18em] text-slate-500"><span>Inventory</span><span>{visibleNodes.length}/{nodes.length}</span></div>
-          <div className="min-h-0 flex-1 space-y-1 overflow-y-auto">
-            {visibleNodes.map((node) => { const Icon = iconFor(node.type); return <button key={node.id} type="button" onClick={() => setSelected(node.id)} className={`flex w-full items-center gap-2 rounded-md border px-2 py-2 text-left transition ${selected === node.id ? "border-cyan-400/20 bg-cyan-400/[0.08]" : "border-transparent hover:bg-white/[0.04]"}`}><Icon size={14} className="shrink-0 text-cyan-300"/><span className="min-w-0 flex-1"><span className="block truncate text-[11px] text-slate-200">{node.name}</span><span className="block truncate font-mono text-[9px] text-slate-500">{node.ip}</span></span><span className="h-1.5 w-1.5 rounded-full bg-slate-600" title="Status unknown"/></button>; })}
-            {visibleNodes.length === 0 && <p className="px-2 py-4 text-[10px] text-slate-500">No matching devices.</p>}
-          </div>
-          <div className="mt-3 border-t border-white/[0.07] pt-3"><p className="mb-2 text-[9px] font-semibold uppercase tracking-[0.18em] text-slate-500">Legend</p><div className="space-y-2 text-[10px] text-slate-400"><div className="flex items-center gap-2"><span className="h-1.5 w-1.5 rounded-full bg-emerald-400"/> Online (not verified)</div><div className="flex items-center gap-2"><span className="h-1.5 w-1.5 rounded-full bg-slate-500"/> Unknown status</div><div className="flex items-center gap-2"><span className="h-px w-5 bg-cyan-400"/> Manual link</div></div></div>
-        </aside>}
+      <main className="min-h-0 flex-1 space-y-6 p-5">
+        {error && <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-rose-400/20 bg-rose-400/[0.06] px-4 py-3 text-[11px] text-rose-200"><span>{error}</span><button type="button" onClick={() => void loadData(true)} className="underline underline-offset-2">Coba lagi</button></div>}
 
-        <main className="relative min-w-0 flex-1 overflow-hidden bg-[#070b11]" ref={canvasRef}
-          onPointerMove={movePointer} onPointerUp={endPointer} onPointerLeave={endPointer}
-          onPointerDown={(event) => { if (!(event.target as HTMLElement).closest("button")) panRef.current = { ...pan, sx: event.clientX, sy: event.clientY }; }}
-          onWheel={(event) => { if (event.ctrlKey || event.metaKey) { event.preventDefault(); setZoom((value) => Math.min(1.65, Math.max(.4, value - event.deltaY * .001))); } }}
-          style={{ touchAction: "none" }}>
-          <div className="pointer-events-none absolute inset-0 opacity-35" style={{ backgroundImage: "radial-gradient(#334155 1px, transparent 1px)", backgroundSize: `${25 * zoom}px ${25 * zoom}px`, backgroundPosition: `${pan.x}px ${pan.y}px` }}/>
-          <div className="absolute inset-0" style={{ transform: `translate(${pan.x}px,${pan.y}px) scale(${zoom})`, transformOrigin: "0 0" }}>
-            <svg className="pointer-events-none absolute left-0 top-0 h-[1200px] w-[1400px] overflow-visible">
-              {edges.map((edge) => { const a = nodeById(edge.source), b = nodeById(edge.target); if (!a || !b) return null; const x1 = a.x + 105, y1 = a.y + 48, x2 = b.x + 105, y2 = b.y + 48, mid = (y1 + y2) / 2; return <g key={edge.id}><path d={`M ${x1} ${y1} C ${x1} ${mid}, ${x2} ${mid}, ${x2} ${y2}`} fill="none" stroke="#164e63" strokeWidth="7" strokeOpacity=".18"/><path d={`M ${x1} ${y1} C ${x1} ${mid}, ${x2} ${mid}, ${x2} ${y2}`} fill="none" stroke="#22d3ee" strokeWidth="1.5" strokeOpacity=".65"/><circle cx={x2} cy={y2} r="3" fill="#67e8f9"/></g>; })}
-            </svg>
-            {nodes.map((node) => { const Icon = iconFor(node.type); const active = selected === node.id; return <button key={node.id} type="button" onPointerDown={(event) => startDrag(event, node)} onClick={() => setSelected(node.id)} style={{ left: node.x, top: node.y }} className={`absolute flex h-[96px] w-[210px] flex-col justify-center rounded-xl border px-3.5 text-left transition-colors ${active ? "border-cyan-300/80 bg-[#101f2b] shadow-[0_0_0_1px_rgba(34,211,238,.12),0_0_28px_rgba(34,211,238,.16)]" : "border-[#263746] bg-[#0d151e] shadow-[0_12px_28px_rgba(0,0,0,.25)] hover:border-cyan-400/40"} ${connectMode && connectFrom === node.id ? "ring-2 ring-cyan-300" : ""}`}><span className="mb-2 flex items-center justify-between"><span className="rounded-sm border border-emerald-400/20 bg-emerald-400/[0.08] px-1.5 py-0.5 text-[8px] font-semibold uppercase tracking-wider text-emerald-300">Manual</span><span className="flex items-center gap-1.5 text-[8px] text-slate-500">{node.vendor}<span className="h-1.5 w-1.5 rounded-full bg-slate-500"/></span></span><span className="flex items-center gap-2.5"><span className={`flex h-9 w-9 items-center justify-center rounded-lg border ${active ? "border-cyan-300/20 bg-cyan-300/10 text-cyan-200" : "border-white/[0.07] bg-white/[0.04] text-slate-300"}`}><Icon size={18}/></span><span className="min-w-0 flex-1"><span className="block truncate text-[12px] font-semibold text-slate-100">{node.name}</span><span className="mt-0.5 block text-[9px] capitalize text-slate-500">{node.type.replace("-", " ")}</span></span></span><span className="mt-2 truncate font-mono text-[9px] text-slate-400">{node.ip}</span></button>; })}
+        <section>
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+            <div><div className="flex items-center gap-2"><Server size={15} className="text-cyan-300"/><h2 className="text-sm font-semibold">Device inventory</h2></div><p className="mt-1 text-[10px] text-slate-500">Data tersimpan pada backend dan dibatasi berdasarkan akun yang login.</p></div>
+            <div className="relative w-full sm:w-64"><Search size={13} className="absolute left-3 top-2.5 text-slate-500"/><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Cari nama, host, platform…" className="w-full rounded-md border border-white/[0.09] bg-[#0a0d13] py-2 pl-8 pr-3 text-[11px] outline-none placeholder:text-slate-600 focus:border-cyan-400/50"/></div>
           </div>
 
-          <div className="absolute left-4 top-4 flex items-center gap-2 rounded-md border border-white/[0.08] bg-[#0b1119]/90 px-3 py-2 backdrop-blur"><span className="h-1.5 w-1.5 rounded-full bg-cyan-300"/><span className="text-[10px] font-medium text-slate-300">TOPOLOGY CANVAS</span><span className="text-[9px] text-slate-600">/ LOCAL</span></div>
-          <div className="absolute bottom-4 left-4 flex items-center gap-1 rounded-lg border border-white/[0.09] bg-[#0b1119]/95 p-1 backdrop-blur"><button type="button" onClick={() => setZoom((value) => Math.min(1.65, value + .1))} className="rounded p-2 text-slate-300 hover:bg-white/10" title="Zoom in"><Plus size={13}/></button><span className="w-11 text-center font-mono text-[9px] text-slate-500">{Math.round(zoom * 100)}%</span><button type="button" onClick={() => setZoom((value) => Math.max(.4, value - .1))} className="rounded p-2 text-slate-300 hover:bg-white/10" title="Zoom out"><Minus size={13}/></button><button type="button" onClick={resetView} className="rounded p-2 text-slate-300 hover:bg-white/10" title="Reset view"><Maximize2 size={13}/></button></div>
-          <div className="absolute bottom-4 right-4 hidden rounded-md border border-white/[0.08] bg-[#0b1119]/90 px-3 py-2 text-[9px] text-slate-500 sm:block">Drag nodes · Ctrl + scroll to zoom · Drag canvas to pan</div>
-          {connectMode && <div className="absolute left-1/2 top-4 -translate-x-1/2 rounded-md border border-cyan-300/30 bg-[#0b1119] px-3 py-2 text-[10px] text-cyan-200 shadow-lg">{connectFrom ? "Select target device" : "Select source device"} · click a node</div>}
-        </main>
+          {loading ? <div className="flex items-center justify-center gap-2 rounded-lg border border-white/[0.07] py-16 text-[11px] text-slate-400"><Loader2 size={16} className="animate-spin"/> Memuat inventory dari API…</div> :
+            filteredDevices.length === 0 ? <div className="rounded-lg border border-dashed border-white/[0.1] px-4 py-12 text-center"><RadioTower size={24} className="mx-auto mb-2 text-slate-600"/><p className="text-xs font-medium text-slate-300">{devices.length === 0 ? "Belum ada device terdaftar" : "Device tidak ditemukan"}</p><p className="mt-1 text-[10px] text-slate-500">{devices.length === 0 ? "Tambahkan perangkat untuk mengisi inventory akun ini." : "Coba kata kunci pencarian lain."}</p>{devices.length === 0 && <button type="button" onClick={openCreate} className="mt-4 rounded-md bg-cyan-500 px-3 py-2 text-[10px] font-semibold text-slate-950">Tambah device</button>}</div> :
+            <div className="grid gap-3 md:grid-cols-2 2xl:grid-cols-3">
+              {filteredDevices.map((device) => {
+                const Icon = deviceIcon(device.platform);
+                return <article key={device.id} className="rounded-lg border border-white/[0.08] bg-[#0b1119] p-4 transition hover:border-cyan-300/25">
+                  <div className="flex items-start gap-3">
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-cyan-300/15 bg-cyan-300/[0.07] text-cyan-200"><Icon size={18}/></div>
+                    <div className="min-w-0 flex-1"><h3 className="truncate text-xs font-semibold text-slate-100">{device.name}</h3><p className="mt-1 truncate font-mono text-[10px] text-slate-400">{device.host}:{device.port}</p><p className="mt-1 text-[9px] uppercase tracking-wider text-slate-500">{PLATFORM_LABELS[device.platform as DevicePlatform] ?? device.platform} · {device.connection_type}</p></div>
+                    <span className="rounded border border-cyan-300/15 bg-cyan-300/[0.06] px-2 py-1 text-[8px] font-semibold uppercase tracking-wider text-cyan-200">REGISTERED</span>
+                  </div>
+                  <div className="mt-4 flex items-center justify-between border-t border-white/[0.06] pt-3"><span className="text-[9px] text-slate-600">Updated {formatDate(device.updated_at)}</span><div className="flex gap-1"><button type="button" onClick={() => openEdit(device)} className="flex items-center gap-1 rounded border border-white/[0.08] px-2 py-1.5 text-[9px] text-slate-300 hover:bg-white/[0.05]"><Pencil size={11}/> Edit</button><button type="button" onClick={() => void removeDevice(device)} disabled={deletingId === device.id} className="flex items-center gap-1 rounded border border-rose-400/15 px-2 py-1.5 text-[9px] text-rose-300 hover:bg-rose-400/[0.07] disabled:opacity-50"><Trash2 size={11}/>{deletingId === device.id ? "Deleting…" : "Delete"}</button></div></div>
+                </article>;
+              })}
+            </div>
+          }
+        </section>
 
-        {rightPanelOpen && <aside className="hidden w-[286px] shrink-0 flex-col overflow-y-auto border-l border-white/[0.07] bg-[#0a0d13] p-4 xl:flex">
-          <div className="mb-4 flex items-center justify-between"><div><p className="text-[9px] font-semibold uppercase tracking-[0.2em] text-cyan-300">Selected resource</p><h2 className="mt-1 text-xs font-semibold text-slate-200">Device Inspector</h2></div><button type="button" onClick={() => setSelected(null)} className="rounded p-1 text-slate-500 hover:bg-white/[0.06] hover:text-white"><X size={14}/></button></div>
-          {current ? <>
-            <div className="mb-4 rounded-lg border border-white/[0.08] bg-white/[0.025] p-3"><div className="flex items-center gap-2.5"><div className="flex h-10 w-10 items-center justify-center rounded-lg border border-cyan-300/20 bg-cyan-300/[0.08] text-cyan-200">{(() => { const Icon = iconFor(current.type); return <Icon size={20}/>; })()}</div><div className="min-w-0"><h3 className="truncate text-sm font-semibold">{current.name}</h3><p className="text-[9px] capitalize text-slate-500">{current.type.replace("-", " ")} · {current.vendor}</p></div></div><div className="mt-3 flex items-center justify-between border-t border-white/[0.07] pt-2"><span className="text-[9px] text-slate-500">Inventory status</span><span className="rounded bg-slate-500/10 px-2 py-1 text-[9px] text-slate-400">UNKNOWN</span></div></div>
-            <section className="mb-3"><h4 className="mb-2 flex items-center gap-2 text-[9px] font-semibold uppercase tracking-[0.16em] text-slate-500"><Gauge size={12}/> Management</h4><div className="space-y-2 rounded-lg border border-white/[0.07] p-3"><div className="flex justify-between gap-2 text-[10px]"><span className="text-slate-500">Management IP</span><span className="font-mono text-slate-200">{current.ip}</span></div><div className="flex justify-between gap-2 text-[10px]"><span className="text-slate-500">Vendor / Platform</span><span className="text-slate-200">{current.vendor}</span></div><div className="flex justify-between gap-2 text-[10px]"><span className="text-slate-500">Node ID</span><span className="max-w-[130px] truncate font-mono text-slate-400">{current.id}</span></div></div></section>
-            <section className="mb-3"><h4 className="mb-2 flex items-center gap-2 text-[9px] font-semibold uppercase tracking-[0.16em] text-slate-500"><Activity size={12}/> NMS Live Telemetry & Traffic</h4><div className="rounded-lg border border-amber-400/15 bg-amber-400/[0.035] p-3"><p className="text-[10px] font-medium text-amber-200">Waiting for integration</p><p className="mt-1 text-[9px] leading-4 text-slate-500">CPU, memory, interface traffic, ICMP latency, and freshness data are not available in local topology mode.</p></div></section>
-            <section className="mb-3"><h4 className="mb-2 text-[9px] font-semibold uppercase tracking-[0.16em] text-slate-500">Connectivity</h4><div className="grid grid-cols-2 gap-2"><div className="rounded-lg border border-white/[0.07] p-2.5"><p className="text-[9px] text-slate-500">Linked nodes</p><p className="mt-1 text-lg font-semibold text-slate-200">{connectedCount}</p></div><div className="rounded-lg border border-white/[0.07] p-2.5"><p className="text-[9px] text-slate-500">ICMP latency</p><p className="mt-1 text-sm font-semibold text-slate-500">— ms</p></div></div></section>
-            <div className="mt-auto flex gap-2 border-t border-white/[0.07] pt-3"><button type="button" onClick={openEdit} className="flex flex-1 items-center justify-center gap-1.5 rounded-md border border-white/[0.1] py-2 text-[10px] text-slate-300 hover:bg-white/[0.05]"><Pencil size={12}/> Edit</button><button type="button" onClick={() => removeNode(current.id)} className="flex items-center justify-center gap-1.5 rounded-md border border-rose-400/20 px-3 py-2 text-[10px] text-rose-300 hover:bg-rose-400/[0.08]"><Trash2 size={12}/> Remove</button></div>
-          </> : <div className="rounded-lg border border-dashed border-white/[0.1] p-4 text-center"><RadioTower size={20} className="mx-auto mb-2 text-slate-600"/><p className="text-[10px] text-slate-500">Select a node on the canvas to inspect its properties.</p></div>}
-          <div className="mt-4 flex items-center justify-between border-t border-white/[0.07] pt-3 text-[9px]"><span className="text-slate-500">{saved ? "Layout saved locally" : "Unsaved changes"}</span><span className={saved ? "text-emerald-300" : "text-amber-300"}>{saved ? "SAVED" : "MODIFIED"}</span></div>
-        </aside>}
-      </div>
+        <section>
+          <div className="mb-3 flex items-center gap-2"><Bot size={15} className="text-cyan-300"/><h2 className="text-sm font-semibold">Remote Agents</h2><span className="rounded bg-white/[0.05] px-2 py-0.5 text-[9px] text-slate-500">{agents.length}</span></div>
+          <p className="mb-3 text-[10px] text-slate-500">Status koneksi berasal dari heartbeat/session Agent backend; bukan hasil pemindaian jaringan.</p>
+          {loading ? <div className="flex items-center gap-2 rounded-lg border border-white/[0.07] px-4 py-6 text-[11px] text-slate-400"><Loader2 size={14} className="animate-spin"/> Memuat Agent…</div> :
+            agents.length === 0 ? <div className="rounded-lg border border-dashed border-white/[0.1] px-4 py-8 text-center"><Wifi size={22} className="mx-auto mb-2 text-slate-600"/><p className="text-xs text-slate-300">Belum ada Remote Agent</p><p className="mt-1 text-[10px] text-slate-500">Buat dan provision Agent melalui halaman Agents.</p></div> :
+            <div className="grid gap-3 md:grid-cols-2 2xl:grid-cols-3">
+              {agents.map((agent) => {
+                const status = agentStatus(agent.status);
+                return <article key={agent.id} className="rounded-lg border border-white/[0.08] bg-[#0b1119] p-4">
+                  <div className="flex items-start justify-between gap-3"><div className="flex min-w-0 items-center gap-2.5"><div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-violet-300/15 bg-violet-300/[0.07] text-violet-200"><RadioTower size={17}/></div><div className="min-w-0"><h3 className="truncate text-xs font-semibold">{agent.name}</h3><p className="mt-1 truncate font-mono text-[9px] text-slate-500">{agent.id}</p></div></div><span className={`flex shrink-0 items-center gap-1.5 rounded border px-2 py-1 text-[8px] font-semibold tracking-wider ${status.className}`}><span className={`h-1.5 w-1.5 rounded-full ${status.dot}`}/>{status.label}</span></div>
+                  <div className="mt-4 grid grid-cols-2 gap-3 border-t border-white/[0.06] pt-3"><div><p className="text-[9px] text-slate-500">Hostname</p><p className="mt-1 truncate text-[10px] text-slate-300">{agent.hostname || "—"}</p></div><div><p className="text-[9px] text-slate-500">OS</p><p className="mt-1 truncate text-[10px] text-slate-300">{agent.os || "—"}</p></div><div><p className="text-[9px] text-slate-500">Last heartbeat</p><p className="mt-1 text-[10px] text-slate-300">{formatDate(agent.last_heartbeat_at)}</p></div><div><p className="text-[9px] text-slate-500">Agent version</p><p className="mt-1 text-[10px] text-slate-300">{agent.agent_version || "—"}</p></div></div>
+                  {agent.last_error && <p className="mt-3 rounded bg-rose-400/[0.06] px-2 py-1.5 text-[9px] text-rose-200">{agent.last_error}</p>}
+                </article>;
+              })}
+            </div>
+          }
+        </section>
 
+        <div className="flex items-start gap-2 rounded-lg border border-amber-300/15 bg-amber-300/[0.035] p-3 text-[10px] leading-5 text-amber-100/80"><Activity size={13} className="mt-0.5 shrink-0 text-amber-300"/> Halaman ini menampilkan inventory Device dan status Remote Agent yang tersedia saat ini. Backend branch ini belum menyediakan API topology/link manual atau telemetry perangkat; karena itu koneksi antar-node, ping, dan status online Device tidak dibuat-buat.</div>
+      </main>
 
-      <button type="button" onClick={() => setCopilotOpen((value) => !value)} aria-label={copilotOpen ? "Close NMS Copilot" : "Open NMS Copilot"} className="fixed bottom-6 right-6 z-[60] flex h-12 items-center gap-2 rounded-full border border-cyan-300/30 bg-[#10202c] px-4 text-xs font-semibold text-cyan-100 shadow-2xl hover:bg-[#163044]">
-        {copilotOpen ? <X size={16}/> : <Bot size={17}/>} {copilotOpen ? "Close Copilot" : "NMS Copilot"}
-      </button>
-      {copilotOpen && <section className="fixed bottom-20 right-6 z-[60] flex h-[min(620px,calc(100vh-120px))] w-[min(420px,calc(100vw-32px))] flex-col overflow-hidden rounded-xl border border-cyan-300/20 bg-[#0a111a] shadow-2xl shadow-black/60">
-        <header className="flex items-center justify-between border-b border-white/[0.08] px-4 py-3">
-          <div className="flex items-center gap-2"><span className="flex h-8 w-8 items-center justify-center rounded-lg border border-cyan-300/20 bg-cyan-300/10 text-cyan-200"><Bot size={17}/></span><div><p className="text-xs font-semibold text-slate-100">NMS Copilot</p><p className="text-[9px] text-slate-500">Workspace-aware · Local topology</p></div></div>
-          <button type="button" onClick={() => setCopilotMessages([{ role: "assistant", content: "Percakapan dibersihkan. Konteks topology terbaru akan digunakan." }])} className="rounded-md border border-white/10 px-2 py-1 text-[10px] text-slate-400 hover:bg-white/5">Clear chat</button>
-        </header>
-        <div className="flex items-center gap-2 border-b border-amber-300/10 bg-amber-300/[0.04] px-4 py-2 text-[9px] text-amber-200"><ShieldCheck size={12}/> Inventory lokal saja — live discovery & telemetry belum aktif</div>
-        <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3">
-          {copilotMessages.map((message, index) => <div key={index} className={`max-w-[92%] whitespace-pre-wrap rounded-lg px-3 py-2.5 text-[11px] leading-5 ${message.role === "user" ? "ml-auto border border-cyan-300/15 bg-cyan-300/[0.08] text-cyan-50" : "border border-white/[0.07] bg-white/[0.035] text-slate-300"}`}>{message.content}</div>)}
-          {copilotBusy && <div className="flex items-center gap-2 px-2 text-[10px] text-cyan-200"><Loader2 size={13} className="animate-spin"/> Menganalisis topology…</div>}
-          {copilotError && <div role="alert" className="rounded-lg border border-rose-400/25 bg-rose-400/[0.07] px-3 py-2 text-[10px] leading-4 text-rose-200">{copilotError}</div>}
-          {pendingOperations && <div className="rounded-lg border border-amber-300/25 bg-amber-300/[0.05] p-3">
-            <div className="mb-2 flex items-center justify-between"><p className="text-[10px] font-semibold text-amber-200">Proposed topology changes</p><span className="text-[9px] text-slate-500">{pendingOperations.length} operation(s)</span></div>
-            <div className="mb-3 space-y-1.5">{pendingOperations.map((op, index) => <div key={index} className="rounded border border-white/[0.07] bg-black/20 px-2 py-1.5 text-[9px] text-slate-300"><span className="font-mono text-cyan-200">{String(op.action)}</span><span className="ml-2 text-slate-400">{String(op.id || (op.node as Record<string, unknown> | undefined)?.name || (op.source && op.target ? `${op.source} → ${op.target}` : ""))}</span></div>)}</div>
-            <p className="mb-3 text-[9px] leading-4 text-slate-500">Belum diterapkan. Approve hanya mengubah canvas lokal, bukan perangkat fisik.</p>
-            <div className="flex gap-2"><button type="button" onClick={applyCopilotOperations} className="flex-1 rounded-md bg-cyan-500 px-3 py-2 text-[10px] font-semibold text-slate-950">Approve & Apply</button><button type="button" onClick={() => setPendingOperations(null)} className="rounded-md border border-white/10 px-3 py-2 text-[10px] text-slate-300">Reject</button></div>
-          </div>}
-        </div>
-        <div className="border-t border-white/[0.08] p-3">
-          <div className="mb-2 flex flex-wrap gap-1.5">{["Ringkas topology", "Perangkat belum terhubung", "Analisis jalur server ke gateway"].map((suggestion) => <button key={suggestion} type="button" onClick={() => setCopilotInput(suggestion)} className="rounded-full border border-white/[0.09] px-2 py-1 text-[9px] text-slate-400 hover:border-cyan-300/30 hover:text-cyan-100">{suggestion}</button>)}</div>
-          <form onSubmit={sendCopilotMessage} className="flex items-end gap-2"><textarea value={copilotInput} onChange={(event) => setCopilotInput(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); (event.currentTarget.form as HTMLFormElement)?.requestSubmit(); } }} rows={2} placeholder="Tanyakan kondisi topology…" className="min-h-[42px] flex-1 resize-none rounded-lg border border-white/10 bg-[#070b11] px-3 py-2 text-[11px] text-slate-100 outline-none placeholder:text-slate-600 focus:border-cyan-300/40"/>
-            <button type="submit" disabled={copilotBusy || !copilotInput.trim()} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-cyan-500 text-slate-950 disabled:opacity-40"><Send size={15}/></button></form>
-        </div>
-      </section>}
-
-      {adding && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm"><form onSubmit={submitDevice} className="w-full max-w-md rounded-xl border border-white/[0.12] bg-[#0c1119] p-5 shadow-2xl"><div className="mb-4 flex items-center justify-between"><div><p className="text-[9px] uppercase tracking-[0.2em] text-cyan-300">Inventory</p><h2 className="mt-1 text-sm font-semibold">{editing ? "Edit device" : "Add network device"}</h2></div><button type="button" onClick={() => setAdding(false)} className="rounded p-1 text-slate-500 hover:bg-white/[0.06]"><X size={16}/></button></div><label className="mb-1 block text-[10px] text-slate-400">Device name</label><input autoFocus value={name} onChange={(event) => setName(event.target.value)} required placeholder="e.g. Distribution Switch" className="mb-3 w-full rounded-md border border-white/[0.1] bg-[#07090d] px-3 py-2.5 text-xs outline-none focus:border-cyan-400/50"/><label className="mb-1 block text-[10px] text-slate-400">Device type</label><select value={type} onChange={(event) => setType(event.target.value as DeviceType)} className="mb-3 w-full rounded-md border border-white/[0.1] bg-[#07090d] px-3 py-2.5 text-xs">{TYPES.map((item) => <option key={item.type} value={item.type}>{item.label}</option>)}</select><label className="mb-1 block text-[10px] text-slate-400">Management IP</label><input value={ip} onChange={(event) => setIp(event.target.value)} placeholder="192.168.1.1" className="mb-3 w-full rounded-md border border-white/[0.1] bg-[#07090d] px-3 py-2.5 font-mono text-xs outline-none focus:border-cyan-400/50"/><label className="mb-1 block text-[10px] text-slate-400">Vendor / Platform</label><input value={vendor} onChange={(event) => setVendor(event.target.value)} placeholder="MikroTik, Linux, Cisco…" className="mb-5 w-full rounded-md border border-white/[0.1] bg-[#07090d] px-3 py-2.5 text-xs outline-none focus:border-cyan-400/50"/><div className="flex justify-end gap-2"><button type="button" onClick={() => setAdding(false)} className="rounded-md border border-white/[0.1] px-3 py-2 text-[11px] text-slate-300">Cancel</button><button type="submit" className="rounded-md bg-cyan-500 px-4 py-2 text-[11px] font-semibold text-slate-950">{editing ? "Save changes" : "Add device"}</button></div></form></div>}
+      {modalOpen && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm">
+        <form onSubmit={submitDevice} className="w-full max-w-md rounded-xl border border-white/[0.12] bg-[#0c1119] p-5 shadow-2xl">
+          <div className="mb-4 flex items-center justify-between"><div><p className="text-[9px] uppercase tracking-[0.2em] text-cyan-300">Backend inventory</p><h2 className="mt-1 text-sm font-semibold">{editing ? "Edit device" : "Register device"}</h2></div><button type="button" onClick={() => setModalOpen(false)} className="rounded p-1 text-slate-500 hover:bg-white/[0.06]"><X size={16}/></button></div>
+          <label className="mb-1 block text-[10px] text-slate-400">Device name</label><input autoFocus value={form.name} onChange={(event) => setForm((value) => ({ ...value, name: event.target.value }))} required maxLength={100} placeholder="Core Router" className="mb-3 w-full rounded-md border border-white/[0.1] bg-[#07090d] px-3 py-2.5 text-xs outline-none focus:border-cyan-400/50"/>
+          <label className="mb-1 block text-[10px] text-slate-400">Platform</label><select value={form.platform} onChange={(event) => setForm((value) => ({ ...value, platform: event.target.value as DevicePlatform }))} className="mb-3 w-full rounded-md border border-white/[0.1] bg-[#07090d] px-3 py-2.5 text-xs">{Object.entries(PLATFORM_LABELS).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select>
+          <label className="mb-1 block text-[10px] text-slate-400">Host / IP address</label><input value={form.host} onChange={(event) => setForm((value) => ({ ...value, host: event.target.value }))} required maxLength={255} placeholder="192.168.1.1" className="mb-3 w-full rounded-md border border-white/[0.1] bg-[#07090d] px-3 py-2.5 font-mono text-xs outline-none focus:border-cyan-400/50"/>
+          <div className="mb-4 grid grid-cols-2 gap-3"><div><label className="mb-1 block text-[10px] text-slate-400">Port</label><input type="number" min="1" max="65535" required value={form.port} onChange={(event) => setForm((value) => ({ ...value, port: event.target.value }))} className="w-full rounded-md border border-white/[0.1] bg-[#07090d] px-3 py-2.5 font-mono text-xs outline-none focus:border-cyan-400/50"/></div><div><label className="mb-1 block text-[10px] text-slate-400">Connection</label><select value={form.connection_type} onChange={(event) => setForm((value) => ({ ...value, connection_type: event.target.value }))} className="w-full rounded-md border border-white/[0.1] bg-[#07090d] px-3 py-2.5 text-xs"><option value="ssh">SSH</option><option value="api">API</option><option value="winrm">WinRM</option></select></div></div>
+          {actionError && <p role="alert" className="mb-3 rounded-md border border-rose-400/20 bg-rose-400/[0.06] p-2 text-[10px] text-rose-200">{actionError}</p>}
+          <div className="flex justify-end gap-2"><button type="button" onClick={() => setModalOpen(false)} className="rounded-md border border-white/[0.1] px-3 py-2 text-[11px] text-slate-300">Cancel</button><button type="submit" disabled={saving} className="flex items-center gap-2 rounded-md bg-cyan-500 px-4 py-2 text-[11px] font-semibold text-slate-950 disabled:opacity-50">{saving && <Loader2 size={12} className="animate-spin"/>}{editing ? "Save changes" : "Register device"}</button></div>
+        </form>
+      </div>}
     </div>
   );
 }
