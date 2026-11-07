@@ -15,6 +15,7 @@ from typing import Any, Callable
 GLOBAL_LIMIT = 16
 PER_DEVICE_LIMIT = 1
 OPERATION_TIMEOUT_SECONDS = 30.0
+QUEUE_TIMEOUT_SECONDS = 5.0
 
 _executor = ThreadPoolExecutor(max_workers=GLOBAL_LIMIT, thread_name_prefix="nova-routeros")
 _global_slots = asyncio.Semaphore(GLOBAL_LIMIT)
@@ -58,10 +59,15 @@ class DeviceExecutionSlot:
 async def acquire_device_slot(device_id: object) -> DeviceExecutionSlot:
     key = str(device_id)
     device_slot = _device_slots.setdefault(key, asyncio.Semaphore(PER_DEVICE_LIMIT))
-    await _global_slots.acquire()
     try:
-        await device_slot.acquire()
+        await asyncio.wait_for(_global_slots.acquire(), timeout=QUEUE_TIMEOUT_SECONDS)
+    except asyncio.TimeoutError:
+        raise TimeoutError("RouterOS executor is at global capacity; retry shortly.") from None
+    try:
+        await asyncio.wait_for(device_slot.acquire(), timeout=QUEUE_TIMEOUT_SECONDS)
     except BaseException:
         _global_slots.release()
+        if isinstance(_, asyncio.TimeoutError):
+            raise TimeoutError("RouterOS device is busy; retry shortly.") from None
         raise
     return DeviceExecutionSlot(_global_slots, device_slot)
