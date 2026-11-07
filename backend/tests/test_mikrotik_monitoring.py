@@ -200,3 +200,50 @@ def test_rows_catches_multitraperror_for_optional_menus():
             raise librouteros.exceptions.MultiTrapError.__new__(librouteros.exceptions.MultiTrapError)
 
     assert monitoring._rows(MissingMenu(), "system", "routerboard") == []
+
+
+def test_monitoring_response_survives_sample_database_failure(monkeypatch):
+    import asyncio
+
+    owner_id = uuid.uuid4()
+    device = Device(
+        id=uuid.uuid4(), owner_id=owner_id, name="best-effort-router",
+        platform="mikrotik", host="192.0.2.11", port=8729,
+        connection_type="api-ssl",
+    )
+    user = User(
+        id=owner_id, email="best-effort@example.com",
+        hashed_password="placeholder_hash", is_active=True,
+    )
+
+    class LookupQuery:
+        def filter(self, *args):
+            return self
+
+        def first(self):
+            return device
+
+    class FailingHistorySession:
+        calls = 0
+
+        def query(self, *args):
+            self.calls += 1
+            if self.calls == 1:
+                return LookupQuery()
+            raise RuntimeError("history storage unavailable")
+
+        def rollback(self):
+            pass
+
+    monkeypatch.setattr(monitoring, "build_device_context", lambda *args: object())
+
+    async def fake_run(*args):
+        return _raw_snapshot()
+
+    monkeypatch.setattr(monitoring, "_run_on_device", fake_run)
+    response = asyncio.run(monitoring.get_mikrotik_monitoring(
+        device.id, user, FailingHistorySession()
+    ))
+
+    assert response["device_id"] == str(device.id)
+    assert response["router"]["cpu_load_percent"] == 12
