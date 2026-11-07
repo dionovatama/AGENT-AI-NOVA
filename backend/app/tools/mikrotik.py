@@ -166,8 +166,11 @@ def _connect(device: Device, password: str | None, sock=None):
                 wrapped = context.wrap_socket(raw_socket)
                 try:
                     verify_certificate_pin(wrapped.getpeercert(binary_form=True), expected_pin)
-                except RelayTlsError:
+                except RelayTlsError as exc:
                     wrapped.close()
+                    if exc.reason == "FINGERPRINT_MISMATCH" and exc.observed:
+                        from app.network.remote_transport import record_observed_fingerprint
+                        record_observed_fingerprint(device.owner_id, device.id, exc.observed)
                     raise MikrotikConnectionError("Sertifikat API-SSL lokal tidak cocok dengan pin. Koneksi ditolak.") from None
                 return wrapped
 
