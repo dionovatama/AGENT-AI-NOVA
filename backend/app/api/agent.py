@@ -12,6 +12,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from app.config import settings
+from app.security.http_hardening import websocket_origin_allowed
 
 router = APIRouter(prefix="/agent", tags=["remote-agent"])
 _active_agents: dict[str, WebSocket] = {}
@@ -35,6 +36,9 @@ def _agent_token_map() -> dict[str, str]:
 @router.websocket("/ws")
 async def agent_websocket(websocket: WebSocket) -> None:
     """Accept a pre-provisioned Agent identity and maintain its heartbeat session."""
+    if not websocket_origin_allowed(websocket.headers.get("origin"), settings.cors_origins):
+        await websocket.close(code=4403, reason="Origin not allowed")
+        return
     await websocket.accept()
     agent_id: str | None = None
 
