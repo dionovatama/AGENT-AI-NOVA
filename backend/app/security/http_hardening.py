@@ -22,19 +22,40 @@ _RULES = (
 
 
 class _Window:
-    def __init__(self, limit: int, seconds: float, clock: Callable[[], float] = time.monotonic):
-        self.limit, self.seconds, self.clock = limit, seconds, clock
+    def __init__(self, limit: int, seconds: float, clock: Callable[[], float] = time.monotonic, max_keys: int = 10_000):
+        self.limit, self.seconds, self.clock, self.max_keys = limit, seconds, clock, max_keys
         self.events: dict[str, deque[float]] = {}
+
+    def _prune(self, now: float) -> None:
+        cutoff = now - self.seconds
+        for key, queue in list(self.events.items()):
+            while queue and queue[0] <= cutoff:
+                queue.popleft()
+            if not queue:
+                self.events.pop(key, None)
 
     def hit(self, key: str) -> bool:
         now = self.clock()
-        queue = self.events.setdefault(key, deque())
+        queue = self.events.get(key)
+        if queue is None:
+            if len(self.events) >= self.max_keys:
+                self._prune(now)
+            if len(self.events) >= self.max_keys:
+                return False
+            queue = self.events.setdefault(key, deque())
         while queue and queue[0] <= now - self.seconds:
             queue.popleft()
         if len(queue) >= self.limit:
             return False
         queue.append(now)
         return True
+
+
+def websocket_origin_allowed(origin: str | None, allowed_origins: list[str]) -> bool:
+    """Allow native clients without Origin; enforce configured origins for browsers."""
+    if not origin:
+        return True
+    return origin.rstrip("/") in {item.rstrip("/") for item in allowed_origins}
 
 
 class HttpHardeningMiddleware:
