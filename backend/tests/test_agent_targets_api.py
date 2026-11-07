@@ -208,3 +208,33 @@ def test_target_rejects_bad_fingerprint(bad):
     _, h = _user()
     agent = _agent(h)
     assert _target(h, agent["id"], tls_fingerprint=bad).status_code == 422
+
+
+
+def test_relay_pin_rotation_requires_confirmation_and_current_pin():
+    _, h = _user()
+    agent = _agent(h)
+    target = _target(h, agent["id"], tls_fingerprint="ab" * 32).json()
+    url = f"/agents/{agent['id']}/targets/{target['id']}"
+
+    denied = client.patch(url, headers=h, json={
+        "tls_fingerprint": "cd" * 32,
+        "expected_current_fingerprint": "ab" * 32,
+        "confirm": False,
+    })
+    assert denied.status_code == 409
+
+    stale = client.patch(url, headers=h, json={
+        "tls_fingerprint": "cd" * 32,
+        "expected_current_fingerprint": "ef" * 32,
+        "confirm": True,
+    })
+    assert stale.status_code == 409
+
+    accepted = client.patch(url, headers=h, json={
+        "tls_fingerprint": "cd" * 32,
+        "expected_current_fingerprint": "ab" * 32,
+        "confirm": True,
+    })
+    assert accepted.status_code == 200, accepted.text
+    assert accepted.json()["tls_fingerprint"] == "cd" * 32
