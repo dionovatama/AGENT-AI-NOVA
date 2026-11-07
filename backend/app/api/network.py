@@ -238,7 +238,7 @@ def create_manual_link(
             "connection_type": link.connection_type}
 
 
-@router.delete("/manual-topology/links/{link_id}", status_code=status.HTTP_204_NO_CONTENT, response_class=Response)
+@router.delete("/manual-topology/links/{link_id}", status_code=status.HTTP_204_NO_CONTENT, response_class=Response, response_model=None)
 def delete_manual_link(
     link_id: uuid.UUID, current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
