@@ -16,7 +16,9 @@ def _stop(*_):
     STOP.set()
 
 
-async def _agent(agent_id: str, token: str, url_template: str, heartbeat_seconds: float, stats: dict):
+async def _agent(agent_id: str, token: str, url_template: str, heartbeat_seconds: float, stats: dict, initial_delay: float = 0.0):
+    if initial_delay:
+        await asyncio.sleep(initial_delay)
     backoff = 1.0
     connected_before = False
     while not STOP.is_set():
@@ -64,7 +66,7 @@ async def _agent(agent_id: str, token: str, url_template: str, heartbeat_seconds
 
         if STOP.is_set():
             break
-        await asyncio.sleep(backoff)
+        await asyncio.sleep(backoff + (backoff * 0.1))
         backoff = min(30.0, backoff * 2)
 
 
@@ -98,8 +100,8 @@ async def main():
         "heartbeats": 0, "auth_failures": 0, "heartbeat_latency_ms": [],
     }
     tasks = [
-        asyncio.create_task(_agent(agent_id, token, url, args.heartbeat_seconds, stats))
-        for agent_id, token in selected
+        asyncio.create_task(_agent(agent_id, token, url, args.heartbeat_seconds, stats, index * 0.05))
+        for index, (agent_id, token) in enumerate(selected)
     ]
     print(f"Connected simulator tasks: {len(tasks)}. Press Ctrl+C to stop.")
     await STOP.wait()
