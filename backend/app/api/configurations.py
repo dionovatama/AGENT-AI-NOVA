@@ -100,10 +100,10 @@ async def create_configuration(
         ctx = build_device_context(device, current_user, db) if device.platform in ("mikrotik", "linux") else None
         device_state = await adapter.get_device_state(device, ctx)
     except Exception as exc:
-        logger.error("Gagal membaca state perangkat %s: %s", device.id, exc)
+        logger.error("Gagal membaca state perangkat %s (%s)", device.id, type(exc).__name__)
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"Gagal membaca state dari perangkat: {exc}",
+            detail="Gagal membaca state dari perangkat. Periksa koneksi dan log operator.",
         )
 
     # 3. Validasi terhadap state perangkat dan kebijakan
