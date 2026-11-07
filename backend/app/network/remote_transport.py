@@ -13,12 +13,13 @@ thread librouteros (``asyncio.to_thread``) dan ditutup di sini setelah thread se
 from __future__ import annotations
 
 import logging
+import time
 from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING, AsyncIterator
 
 from app.agents.relay_service import RelayUnavailable, open_relay
 from app.database.models import RelayTarget
-from app.network.relay_tls import RelayTlsError, open_pinned_tls_socket
+from app.network.relay_tls import RelayTlsError, normalize_fingerprint, open_pinned_tls_socket
 from app.tools.mikrotik import MikrotikConnectionError
 
 if TYPE_CHECKING:
@@ -28,6 +29,38 @@ if TYPE_CHECKING:
     from app.tools.context import ExecutionContext
 
 logger = logging.getLogger("nova.network.remote_transport")
+
+# Ephemeral, owner-scoped observation cache. Exposed only by an authenticated
+# operator API route; never included in tool results, LLM context, or logs.
+_OBSERVED_PIN_TTL_SECONDS = 900.0
+_observed_pins: dict[tuple[str, str], tuple[str, float]] = {}
+
+
+def record_observed_fingerprint(owner_id, target_id, fingerprint: str) -> None:
+    now = time.monotonic()
+    for key, (_, created) in list(_observed_pins.items()):
+        if now - created > _OBSERVED_PIN_TTL_SECONDS:
+            _observed_pins.pop(key, None)
+    if len(_observed_pins) >= 10_000:
+        oldest = min(_observed_pins, key=lambda key: _observed_pins[key][1])
+        _observed_pins.pop(oldest, None)
+    _observed_pins[(str(owner_id), str(target_id))] = (normalize_fingerprint(fingerprint), now)
+
+
+def get_observed_fingerprint(owner_id, target_id) -> str | None:
+    key = (str(owner_id), str(target_id))
+    value = _observed_pins.get(key)
+    if value is None:
+        return None
+    fingerprint, created = value
+    if time.monotonic() - created > _OBSERVED_PIN_TTL_SECONDS:
+        _observed_pins.pop(key, None)
+        return None
+    return fingerprint
+
+
+def clear_observed_fingerprint(owner_id, target_id) -> None:
+    _observed_pins.pop((str(owner_id), str(target_id)), None)
 
 _TLS_MESSAGES = {
     "FINGERPRINT_MISMATCH": "Sertifikat router tidak cocok dengan fingerprint yang di-pin. "
@@ -95,6 +128,8 @@ async def remote_api_socket(
     try:
         tls = await open_pinned_tls_socket(channel, fingerprint=target.tls_fingerprint)
     except RelayTlsError as exc:  # channel sudah ditutup oleh open_pinned_tls_socket
+        if exc.reason == "FINGERPRINT_MISMATCH" and exc.observed:
+            record_observed_fingerprint(ctx.user.id, target.id, exc.observed)
         logger.warning("remote tls failed device=%s target=%s reason=%s",
                        device.id, target.id, exc.reason)
         raise RemoteTransportError(
