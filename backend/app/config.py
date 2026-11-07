@@ -18,6 +18,9 @@ class Settings(BaseSettings):
 
     # --- Database ---
     database_url: str
+    db_pool_size: int = 10
+    db_max_overflow: int = 20
+    db_pool_timeout_seconds: float = 30.0
 
     # --- JWT ---
     jwt_secret_key: str
