@@ -211,7 +211,7 @@ export default function NetworkPage() {
                 <div className="flex items-center gap-2 text-[9px]"><span className="text-slate-500">Interval</span><select value={pollInterval} onChange={(e) => setPollInterval(Number(e.target.value))} className="rounded border border-white/[.1] bg-[#07090d] px-2 py-1"><option value={10}>10s</option><option value={30}>30s</option><option value={60}>60s</option></select><button onClick={() => setLiveEnabled(true)} className="ml-auto rounded border border-cyan-300/30 px-2 py-1 text-cyan-200">Mulai / ambil data</button></div>
                 {monitoringPoll.loading && !monitoring && <p className="text-[10px] text-slate-400">Mengambil snapshot RouterOS…</p>}
                 {monitoringPoll.error && <div role="status" className="rounded border border-amber-300/20 bg-amber-300/[.05] p-2 text-[9px] text-amber-100">{monitoringPoll.stale ? "Data stale — menampilkan snapshot valid terakhir. " : ""}{monitoringPoll.error}{monitoringPoll.stopped && <><p className="mt-1">Polling dihentikan setelah {monitoringPoll.consecutiveErrors} kegagalan atau respons client 4xx.</p><button onClick={monitoringPoll.retry} className="mt-2 rounded border border-amber-200/30 px-2 py-1">Coba lagi</button></>}</div>}
-                {monitoring && <>
+                {monitoring && monitoring.device_id === selected.device_id && <>
                   <div className="grid grid-cols-2 gap-2 text-[10px]">
                     <div><span className="text-slate-500">CPU</span><p className="font-semibold">{monitoring.router.cpu_load_percent ?? "—"}%</p></div>
                     <div><span className="text-slate-500">Memory</span><p className="font-semibold">{monitoring.router.memory_used_percent ?? "—"}%</p></div>
@@ -223,7 +223,7 @@ export default function NetworkPage() {
                   <div><p className="mb-1 text-[9px] font-semibold text-slate-400">INTERFACES / TRAFFIC</p>{monitoring.interfaces.map((iface) => <div key={iface.name} className="flex items-center justify-between gap-2 border-t border-white/[.05] py-1.5 text-[9px]"><span className="truncate">{iface.name} <span className={iface.running ? "text-emerald-300" : "text-rose-300"}>{iface.running ? "UP" : "DOWN"}</span></span><span className="shrink-0 font-mono text-slate-400">↓ {iface.rx_bps ?? "—"} / ↑ {iface.tx_bps ?? "—"} bps</span></div>)}</div>
                   <p className="text-[8px] text-slate-600">Collected: {new Date(monitoring.collected_at).toLocaleString("id-ID")}</p>
                 </>}
-                <MikrotikHistoryChart deviceId={selected.device_id!} interfaces={monitoring?.interfaces.map((item) => item.name) ?? []} />
+                <MikrotikHistoryChart deviceId={selected.device_id!} interfaces={monitoring?.device_id === selected.device_id ? monitoring.interfaces.map((item) => item.name) : []} />
               </div>}</> : <p className="mt-3 text-[10px] text-slate-500">Node manual untuk merepresentasikan perangkat/komponen tambahan.</p>}
             <button onClick={() => void removeNode(selected)} className="mt-3 flex w-full items-center justify-center gap-2 rounded border border-rose-400/20 px-3 py-2 text-[10px] text-rose-300"><Trash2 size={12}/> Remove from canvas</button>
           </> : <div className="flex min-h-[140px] flex-col items-center justify-center text-center"><Activity size={22} className="mb-2 text-slate-600"/><p className="text-xs text-slate-300">Node inspector</p><p className="mt-1 text-[9px] text-slate-500">Klik node untuk melihat status dan detail.</p></div>}
