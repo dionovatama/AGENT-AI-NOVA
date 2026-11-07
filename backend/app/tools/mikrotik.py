@@ -303,7 +303,7 @@ async def execute_system_resource(
     try:
         raw = await _run_on_device(_system_resource_sync, ctx)
     except MikrotikConnectionError as exc:
-        return SystemResourceOutput(success=False, error=str(exc))
+        return SystemResourceOutput(success=False, error=f"MikroTik operation failed ({type(exc).__name__}).")
     except librouteros.exceptions.TrapError as exc:
         return SystemResourceOutput(success=False, error="RouterOS API rejected the request.")
     except (OSError, librouteros.exceptions.ConnectionClosed, librouteros.exceptions.ProtocolError) as exc:
@@ -378,9 +378,9 @@ async def execute_interface_status(
     try:
         rows = await _run_on_device(_interface_status_sync, ctx)
     except MikrotikConnectionError as exc:
-        return InterfaceStatusOutput(success=False, error=str(exc))
+        return InterfaceStatusOutput(success=False, error=f"MikroTik operation failed ({type(exc).__name__}).")
     except librouteros.exceptions.TrapError as exc:
-        return InterfaceStatusOutput(success=False, error=f"RouterOS API error: {exc}")
+        return InterfaceStatusOutput(success=False, error="RouterOS API rejected the request.")
     except (OSError, librouteros.exceptions.ConnectionClosed, librouteros.exceptions.ProtocolError) as exc:
         return InterfaceStatusOutput(success=False, error=_connection_error_message(exc))
 
@@ -447,9 +447,9 @@ async def execute_ip_address(
     try:
         rows = await _run_on_device(_ip_address_sync, ctx)
     except MikrotikConnectionError as exc:
-        return IpAddressOutput(success=False, error=str(exc))
+        return IpAddressOutput(success=False, error=f"MikroTik operation failed ({type(exc).__name__}).")
     except librouteros.exceptions.TrapError as exc:
-        return IpAddressOutput(success=False, error=f"RouterOS API error: {exc}")
+        return IpAddressOutput(success=False, error="RouterOS API rejected the request.")
     except (OSError, librouteros.exceptions.ConnectionClosed, librouteros.exceptions.ProtocolError) as exc:
         return IpAddressOutput(success=False, error=_connection_error_message(exc))
 
@@ -518,9 +518,9 @@ async def execute_route_table(
     try:
         rows = await _run_on_device(_route_table_sync, ctx)
     except MikrotikConnectionError as exc:
-        return RouteTableOutput(success=False, error=str(exc))
+        return RouteTableOutput(success=False, error=f"MikroTik operation failed ({type(exc).__name__}).")
     except librouteros.exceptions.TrapError as exc:
-        return RouteTableOutput(success=False, error=f"RouterOS API error: {exc}")
+        return RouteTableOutput(success=False, error="RouterOS API rejected the request.")
     except (OSError, librouteros.exceptions.ConnectionClosed, librouteros.exceptions.ProtocolError) as exc:
         return RouteTableOutput(success=False, error=_connection_error_message(exc))
 
@@ -594,9 +594,9 @@ async def execute_arp_table(
     try:
         rows = await _run_on_device(_arp_table_sync, ctx)
     except MikrotikConnectionError as exc:
-        return ArpTableOutput(success=False, error=str(exc))
+        return ArpTableOutput(success=False, error=f"MikroTik operation failed ({type(exc).__name__}).")
     except librouteros.exceptions.TrapError as exc:
-        return ArpTableOutput(success=False, error=f"RouterOS API error: {exc}")
+        return ArpTableOutput(success=False, error="RouterOS API rejected the request.")
     except (OSError, librouteros.exceptions.ConnectionClosed, librouteros.exceptions.ProtocolError) as exc:
         return ArpTableOutput(success=False, error=_connection_error_message(exc))
 
@@ -669,9 +669,9 @@ async def execute_dhcp_leases(
     try:
         rows = await _run_on_device(_dhcp_leases_sync, ctx)
     except MikrotikConnectionError as exc:
-        return DhcpLeasesOutput(success=False, error=str(exc))
+        return DhcpLeasesOutput(success=False, error=f"MikroTik operation failed ({type(exc).__name__}).")
     except librouteros.exceptions.TrapError as exc:
-        return DhcpLeasesOutput(success=False, error=f"RouterOS API error: {exc}")
+        return DhcpLeasesOutput(success=False, error="RouterOS API rejected the request.")
     except (OSError, librouteros.exceptions.ConnectionClosed, librouteros.exceptions.ProtocolError) as exc:
         return DhcpLeasesOutput(success=False, error=_connection_error_message(exc))
 
@@ -761,9 +761,9 @@ async def execute_firewall_rules(
     try:
         rows = await _run_on_device(_firewall_rules_sync, ctx)
     except MikrotikConnectionError as exc:
-        return FirewallRulesOutput(success=False, error=str(exc))
+        return FirewallRulesOutput(success=False, error=f"MikroTik operation failed ({type(exc).__name__}).")
     except librouteros.exceptions.TrapError as exc:
-        return FirewallRulesOutput(success=False, error=f"RouterOS API error: {exc}")
+        return FirewallRulesOutput(success=False, error="RouterOS API rejected the request.")
     except (OSError, librouteros.exceptions.ConnectionClosed, librouteros.exceptions.ProtocolError) as exc:
         return FirewallRulesOutput(success=False, error=_connection_error_message(exc))
 
