@@ -11,6 +11,8 @@ import type {
   ConfigurationProposal,
   ConversationSummary,
   PersistedChatMessage,
+  RelayTarget,
+  RelayTargetCreateInput,
 } from "./types";
 
 const BASE_URL =
@@ -279,6 +281,18 @@ export const novaApi = {
     request<{ disconnected: boolean }>(`/agents/${agentId}/disconnect`, { method: "POST" }),
   deleteAgent: (agentId: string) =>
     request<void>(`/agents/${agentId}`, { method: "DELETE" }),
+  listRelayTargets: (agentId: string) =>
+    request<RelayTarget[]>(`/agents/${agentId}/targets`),
+  createRelayTarget: (agentId: string, payload: RelayTargetCreateInput) =>
+    request<RelayTarget>(`/agents/${agentId}/targets`, {
+      method: "POST", body: JSON.stringify(payload),
+    }),
+  updateRelayTargetPin: (agentId: string, targetId: string, tls_fingerprint: string | null) =>
+    request<RelayTarget>(`/agents/${agentId}/targets/${targetId}`, {
+      method: "PATCH", body: JSON.stringify({ tls_fingerprint }),
+    }),
+  deleteRelayTarget: (agentId: string, targetId: string) =>
+    request<void>(`/agents/${agentId}/targets/${targetId}`, { method: "DELETE" }),
 
   listAuditLogs: () => request<AuditLogEntry[]>("/audit-logs"),
 };
