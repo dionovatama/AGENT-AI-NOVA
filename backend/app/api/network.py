@@ -192,7 +192,7 @@ def update_manual_node(
     return _manual_node_payload(node, device)
 
 
-@router.delete("/manual-topology/nodes/{node_id}", status_code=status.HTTP_204_NO_CONTENT, response_class=Response)
+@router.delete("/manual-topology/nodes/{node_id}", status_code=status.HTTP_204_NO_CONTENT, response_class=Response, response_model=None)
 def delete_manual_node(
     node_id: uuid.UUID, current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
