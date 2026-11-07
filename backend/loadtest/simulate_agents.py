@@ -18,6 +18,7 @@ def _stop(*_):
 
 async def _agent(agent_id: str, token: str, url_template: str, heartbeat_seconds: float, stats: dict):
     backoff = 1.0
+    connected_before = False
     while not STOP.is_set():
         uri = url_template.format(agent_id=agent_id)
         try:
@@ -35,7 +36,9 @@ async def _agent(agent_id: str, token: str, url_template: str, heartbeat_seconds
                     stats["auth_failures"] += 1
                     return
                 stats["connections"] += 1
-                stats["reconnects"] += 1 if backoff < 1.0 else 0
+                if connected_before:
+                    stats["reconnects"] += 1
+                connected_before = True
                 backoff = 1.0
                 interval = max(1.0, float(registered.get("heartbeat_interval_seconds", heartbeat_seconds)))
                 seq = 0
