@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { novaApi } from "@/lib/api";
 import type { Device, DevicePlatform, ManualTopology, ManualTopologyNode } from "@/lib/types";
-import { Activity, Cpu, Loader2, Plus, RefreshCw, Router, Server, Network, Trash2, X, Link2 } from "lucide-react";
+import { Activity, Cpu, Loader2, Plus, RefreshCw, Router, Server, Network, Trash2, X, Link2, Unlink } from "lucide-react";
 
 const PLATFORM_LABELS: Record<DevicePlatform, string> = { linux: "Linux", windows: "Windows", mikrotik: "MikroTik", cisco: "Cisco" };
 function DeviceIcon({ platform }: { platform: string }) {
