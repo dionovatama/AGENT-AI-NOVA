@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { novaApi } from "@/lib/api";
 import type { Device, DevicePlatform, ManualTopology, ManualTopologyNode } from "@/lib/types";
-import { Activity, Cpu, Loader2, Plus, RefreshCw, Router, Server, Network, Trash2, X, Link2, Unlink, Save } from "lucide-react";
+import { Activity, Cpu, Loader2, Plus, RefreshCw, Router, Server, Network, Trash2, X, Link2 } from "lucide-react";
 
 const PLATFORM_LABELS: Record<DevicePlatform, string> = { linux: "Linux", windows: "Windows", mikrotik: "MikroTik", cisco: "Cisco" };
 function DeviceIcon({ platform }: { platform: string }) {
@@ -45,10 +45,7 @@ export default function NetworkPage() {
 
   useEffect(() => { void load(); }, [load]);
 
-  const availableDevices = useMemo(() => {
-    const placed = new Set(topology.nodes.map((n) => n.device_id).filter(Boolean));
-    return devices.filter((d) => !placed.has(d.id));
-  }, [devices, topology.nodes]);
+  const availableDevices = useMemo(() => topology.available_devices, [topology.available_devices]);
 
   const addDeviceNode = async () => {
     const device = devices.find((d) => d.id === addingDevice);
