@@ -8,6 +8,7 @@ Client → FastAPI → Auth → PostgreSQL
 """
 
 import asyncio
+import logging
 import sys
 from app.api import auth, chat, configurations, devices, tools, mikrotik_generator, images, linux_generator, agent, agents, agent_targets, conversations, network, mikrotik_monitoring
 
@@ -44,6 +45,8 @@ from app.tools.web import web_search_tool, web_read_page_tool
 from app.tools.diagram import diagram_create_tool
 from app.security.audit_retention import audit_retention_loop
 from app.agents.wiring import agent_manager
+
+logger = logging.getLogger("nova.startup")
 
 app = FastAPI(
     title=settings.app_name,
@@ -110,6 +113,8 @@ async def start_background_tasks():
     rasional kenapa ini otomatis, bukan tombol hapus manual.
     """
     validate_production_settings(settings)
+    if settings.app_env.lower() == "production" and settings.allow_unpinned_local_tls:
+        logger.warning("SECURITY: ALLOW_UNPINNED_LOCAL_TLS is enabled; local MikroTik API-SSL peers are not certificate-pinned.")
     asyncio.create_task(audit_retention_loop())
     # Remote Agent Phase A: sweeper untuk status agent basi (idempoten, per worker).
     agent_manager.start()
