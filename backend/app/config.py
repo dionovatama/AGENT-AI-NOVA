@@ -13,6 +13,8 @@ class Settings(BaseSettings):
     # --- Application ---
     app_name: str = "N.O.V.A"
     app_env: str = "development"
+    # Comma-separated origins; localhost defaults are development-only.
+    cors_allowed_origins: str = "http://localhost:3000,http://127.0.0.1:3000"
 
     # --- Database ---
     database_url: str
@@ -170,6 +172,29 @@ class Settings(BaseSettings):
         env_file_encoding="utf-8",
         case_sensitive=False,
     )
+
+
+    @property
+    def cors_origins(self) -> list[str]:
+        return [origin.strip().rstrip("/") for origin in self.cors_allowed_origins.split(",") if origin.strip()]
+
+
+def validate_production_settings(config: "Settings") -> None:
+    """Fail closed before serving traffic when public deployment settings are weak."""
+    if config.app_env.strip().lower() != "production":
+        return
+    secret = config.jwt_secret_key or ""
+    if len(secret) < 32 or secret.lower() in {"changeme", "secret", "your-secret-key", "dev-secret"}:
+        raise RuntimeError("Production requires JWT_SECRET_KEY with at least 32 characters of high-entropy secret.")
+    if config.agent_require_tls is not True:
+        raise RuntimeError("Production requires AGENT_REQUIRE_TLS=true.")
+    origins = config.cors_origins
+    if not origins:
+        raise RuntimeError("Production requires CORS_ALLOWED_ORIGINS with at least one HTTPS origin.")
+    for origin in origins:
+        low = origin.lower()
+        if "localhost" in low or "127.0.0.1" in low or not low.startswith("https://"):
+            raise RuntimeError("Production CORS origins must be explicit HTTPS origins and must not include localhost.")
 
 
 # Singleton settings instance, di-import oleh module lain.
