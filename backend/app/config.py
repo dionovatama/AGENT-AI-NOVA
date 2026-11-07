@@ -221,6 +221,14 @@ class Settings(BaseSettings):
             v = v.strip()
             if not v:
                 return []
+            if v.startswith("[") and v.endswith("]"):
+                import json
+                try:
+                    parsed = json.loads(v)
+                    if isinstance(parsed, list):
+                        return [str(item).strip() for item in parsed if str(item).strip()]
+                except Exception:
+                    pass
             return [item.strip() for item in v.split(",") if item.strip()]
         if isinstance(v, (list, set, tuple)):
             return [str(item).strip() for item in v if str(item).strip()]
