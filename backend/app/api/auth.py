@@ -1,11 +1,4 @@
-"""
-Authentication endpoints — register, login, & current-user identity.
-
-Belum ada di sini (sengaja, sesuai scope Milestone 1):
-- RBAC / permission levels
-- OpenRouter / AI orchestration
-- Tool Manager
-"""
+"""Authentication endpoints — register, login, & current-user identity."""
 
 import uuid
 
@@ -13,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy.orm import Session
 
+from app.config import settings
 from app.database.session import get_db
 from app.database.models import User
 from app.security.dependencies import get_current_user
@@ -21,8 +15,6 @@ from app.security.rate_limiter import rate_limit_auth_login, rate_limit_auth_reg
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
-
-# --- Schemas ---
 
 class RegisterRequest(BaseModel):
     email: EmailStr
@@ -47,15 +39,18 @@ class TokenResponse(BaseModel):
     token_type: str = "bearer"
 
 
-# --- Endpoints ---
-
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED, dependencies=[Depends(rate_limit_auth_register)])
 def register(payload: RegisterRequest, db: Session = Depends(get_db)):
+    # Public self-registration is opt-in for development only. Production
+    # startup rejects this flag; accounts must be provisioned by an operator.
+    if not settings.public_registration_enabled:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Public registration is disabled.",
+        )
+
     existing = db.query(User).filter(User.email == payload.email).first()
     if existing:
-        # Pesan generik — tidak membedakan "email tidak ditemukan" vs error lain
-        # untuk mengurangi enumerasi akun, meski di endpoint register ini
-        # transparansi tetap diperlukan.
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Email already registered.",
@@ -76,8 +71,6 @@ def register(payload: RegisterRequest, db: Session = Depends(get_db)):
 def login(payload: LoginRequest, db: Session = Depends(get_db)):
     user = db.query(User).filter(User.email == payload.email).first()
 
-    # Pesan error disamakan untuk "user tidak ada" dan "password salah"
-    # agar tidak membocorkan informasi mana yang salah (anti user-enumeration).
     invalid_credentials = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Invalid email or password.",
@@ -98,12 +91,4 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)):
 
 @router.get("/me", response_model=UserResponse)
 def get_me(current_user: User = Depends(get_current_user)):
-    """
-    Identitas user yang sedang login lewat token Bearer.
-
-    Ditambahkan khusus supaya frontend (Sidebar profile row) bisa
-    menampilkan email asli, BUKAN placeholder hardcoded seperti
-    "sysadmin@nova" -- reuse penuh get_current_user yang sudah ada,
-    tidak ada logic auth baru.
-    """
     return current_user
