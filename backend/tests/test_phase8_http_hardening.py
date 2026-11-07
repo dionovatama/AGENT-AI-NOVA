@@ -3,6 +3,7 @@ from types import SimpleNamespace
 import pytest
 
 from app.config import validate_production_settings
+from app.security.sanitization import sanitize_error_message
 from app.security.http_hardening import MAX_REQUEST_BODY_BYTES, HttpHardeningMiddleware, _Window, websocket_origin_allowed
 
 
@@ -186,3 +187,15 @@ async def test_http_security_headers_are_added_to_normal_responses():
     assert headers[b"x-content-type-options"] == b"nosniff"
     assert headers[b"x-frame-options"] == b"DENY"
     assert headers[b"referrer-policy"] == b"strict-origin-when-cross-origin"
+
+
+
+def test_error_sanitizer_redacts_inline_secrets_and_full_fingerprints():
+    fingerprint = "ab" * 32
+    message = sanitize_error_message(
+        f"password=router-pass token:jwt-value sha256:{fingerprint} Basic dXNlcjpwYXNz"
+    )
+    assert "router-pass" not in message
+    assert "jwt-value" not in message
+    assert fingerprint not in message
+    assert "dXNlcjpwYXNz" not in message
