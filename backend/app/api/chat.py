@@ -333,7 +333,7 @@ async def chat_completions(
         except OpenRouterError as exc:
             raise HTTPException(
                 status_code=status.HTTP_502_BAD_GATEWAY,
-                detail=f"AI Gateway gagal memproses request: {exc}",
+                detail="AI Gateway gagal memproses request. Silakan coba lagi.",
             )
         return ChatCompletionResult(
             content=result.content,
@@ -436,6 +436,6 @@ async def chat_with_document(
     except OpenRouterError as exc:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"AI Gateway gagal menganalisis dokumen: {exc}",
+            detail="AI Gateway gagal menganalisis dokumen. Silakan coba lagi.",
         ) from exc
     return result
