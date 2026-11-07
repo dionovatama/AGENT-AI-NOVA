@@ -142,10 +142,10 @@ async def get_mikrotik_monitoring(
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except Exception as exc:
         # Include the exception class in server logs, never credentials or API payloads.
-        logger.exception("MikroTik monitoring failed for device %s (%s)", device_id, type(exc).__name__)
+        logger.exception("MikroTik monitoring failed for device %s (%s): %s", device_id, type(exc).__name__, exc)
         raise HTTPException(
             status_code=502,
-            detail=f"RouterOS monitoring failed ({type(exc).__name__}): {exc}",
+            detail=f"RouterOS monitoring failed [{type(exc).__name__}]",
         ) from exc
 
     resource = raw["resource"]

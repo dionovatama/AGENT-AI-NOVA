@@ -72,6 +72,7 @@ def sanitize_metadata(data: Any) -> Any:
                 sanitized[str(k)] = sanitize_metadata(v)
         return sanitized
 
+
     if isinstance(data, (list, tuple, set)):
         return [sanitize_metadata(item) for item in data]
 
@@ -111,3 +112,9 @@ def sanitize_error_message(error: str | None) -> str | None:
     )
 
     return sanitized
+
+
+def format_safe_exception_response(exc: Exception, prefix: str = "Operation failed") -> str:
+    """Format safe client response exposing only the exception class name and safe message."""
+    return f"{prefix} [{type(exc).__name__}]"
+

@@ -1,6 +1,7 @@
 """
 Chat endpoint with safe, offline MikroTik configuration generation.
 """
+import logging
 import re
 import uuid
 from io import BytesIO
@@ -29,6 +30,7 @@ from app.api.mikrotik_generator import (
     generate_configuration,
 )
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/chat", tags=["chat"])
 
 
@@ -332,9 +334,10 @@ async def chat_completions(
                 system_prompt=NOVA_SYSTEM_PROMPT, user=current_user,
             )
         except OpenRouterError as exc:
+            logger.error("AI Gateway tool completion failed (%s): %s", type(exc).__name__, exc)
             raise HTTPException(
                 status_code=status.HTTP_502_BAD_GATEWAY,
-                detail=f"AI Gateway gagal memproses request: {exc}",
+                detail=f"AI Gateway request failed [{type(exc).__name__}]",
             )
         return ChatCompletionResult(
             content=result.content,
@@ -349,9 +352,10 @@ async def chat_completions(
     try:
         return await get_completion(messages, payload.category)
     except OpenRouterError as exc:
+        logger.error("AI Gateway completion failed (%s): %s", type(exc).__name__, exc)
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"AI Gateway gagal memproses request: {exc}",
+            detail=f"AI Gateway request failed [{type(exc).__name__}]",
         )
 
 
@@ -435,8 +439,9 @@ async def chat_with_document(
     try:
         result = await get_completion([ChatMessage(role="user", content=prompt)], TaskCategory.SUMMARIZATION)
     except OpenRouterError as exc:
+        logger.error("AI Gateway document analysis failed (%s): %s", type(exc).__name__, exc)
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"AI Gateway gagal menganalisis dokumen: {exc}",
+            detail=f"AI Gateway document analysis failed [{type(exc).__name__}]",
         ) from exc
     return result

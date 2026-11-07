@@ -208,11 +208,15 @@ def _safe_int(value) -> int | None:
 
 
 def _connection_error_message(exc: Exception) -> str:
-    """Pesan error seragam untuk seluruh tool di file ini — TIDAK PERNAH
-    menyertakan password (exc dari librouteros tidak membawa password,
-    tapi tetap dilewatkan lewat sanitasi umum di app/security/sanitization
-    sebagai lapisan pertahanan kedua di app/tools/manager.py)."""
-    return f"Connection error: {exc}"
+    """Pesan error seragam untuk seluruh tool di file ini: hanya nama class/kode aman, detail ke log."""
+    logger.warning("MikroTik connection failed (%s): %s", type(exc).__name__, exc)
+    return f"Connection error [{type(exc).__name__}]"
+
+
+def _api_error_message(exc: Exception) -> str:
+    """Pesan error API seragam: hanya nama class/kode aman ke output, detail ke log."""
+    logger.warning("MikroTik API call failed (%s): %s", type(exc).__name__, exc)
+    return f"RouterOS API error [{type(exc).__name__}]"
 
 
 async def _run_on_device(sync_fn, ctx: ExecutionContext):
@@ -276,7 +280,7 @@ async def execute_system_resource(
     except MikrotikConnectionError as exc:
         return SystemResourceOutput(success=False, error=str(exc))
     except librouteros.exceptions.TrapError as exc:
-        return SystemResourceOutput(success=False, error=f"RouterOS API error: {exc}")
+        return SystemResourceOutput(success=False, error=_api_error_message(exc))
     except (OSError, librouteros.exceptions.ConnectionClosed, librouteros.exceptions.ProtocolError) as exc:
         return SystemResourceOutput(success=False, error=_connection_error_message(exc))
 
@@ -351,7 +355,7 @@ async def execute_interface_status(
     except MikrotikConnectionError as exc:
         return InterfaceStatusOutput(success=False, error=str(exc))
     except librouteros.exceptions.TrapError as exc:
-        return InterfaceStatusOutput(success=False, error=f"RouterOS API error: {exc}")
+        return InterfaceStatusOutput(success=False, error=_api_error_message(exc))
     except (OSError, librouteros.exceptions.ConnectionClosed, librouteros.exceptions.ProtocolError) as exc:
         return InterfaceStatusOutput(success=False, error=_connection_error_message(exc))
 
@@ -420,7 +424,7 @@ async def execute_ip_address(
     except MikrotikConnectionError as exc:
         return IpAddressOutput(success=False, error=str(exc))
     except librouteros.exceptions.TrapError as exc:
-        return IpAddressOutput(success=False, error=f"RouterOS API error: {exc}")
+        return IpAddressOutput(success=False, error=_api_error_message(exc))
     except (OSError, librouteros.exceptions.ConnectionClosed, librouteros.exceptions.ProtocolError) as exc:
         return IpAddressOutput(success=False, error=_connection_error_message(exc))
 
@@ -491,7 +495,7 @@ async def execute_route_table(
     except MikrotikConnectionError as exc:
         return RouteTableOutput(success=False, error=str(exc))
     except librouteros.exceptions.TrapError as exc:
-        return RouteTableOutput(success=False, error=f"RouterOS API error: {exc}")
+        return RouteTableOutput(success=False, error=_api_error_message(exc))
     except (OSError, librouteros.exceptions.ConnectionClosed, librouteros.exceptions.ProtocolError) as exc:
         return RouteTableOutput(success=False, error=_connection_error_message(exc))
 
@@ -567,7 +571,7 @@ async def execute_arp_table(
     except MikrotikConnectionError as exc:
         return ArpTableOutput(success=False, error=str(exc))
     except librouteros.exceptions.TrapError as exc:
-        return ArpTableOutput(success=False, error=f"RouterOS API error: {exc}")
+        return ArpTableOutput(success=False, error=_api_error_message(exc))
     except (OSError, librouteros.exceptions.ConnectionClosed, librouteros.exceptions.ProtocolError) as exc:
         return ArpTableOutput(success=False, error=_connection_error_message(exc))
 
@@ -642,7 +646,7 @@ async def execute_dhcp_leases(
     except MikrotikConnectionError as exc:
         return DhcpLeasesOutput(success=False, error=str(exc))
     except librouteros.exceptions.TrapError as exc:
-        return DhcpLeasesOutput(success=False, error=f"RouterOS API error: {exc}")
+        return DhcpLeasesOutput(success=False, error=_api_error_message(exc))
     except (OSError, librouteros.exceptions.ConnectionClosed, librouteros.exceptions.ProtocolError) as exc:
         return DhcpLeasesOutput(success=False, error=_connection_error_message(exc))
 
@@ -734,7 +738,7 @@ async def execute_firewall_rules(
     except MikrotikConnectionError as exc:
         return FirewallRulesOutput(success=False, error=str(exc))
     except librouteros.exceptions.TrapError as exc:
-        return FirewallRulesOutput(success=False, error=f"RouterOS API error: {exc}")
+        return FirewallRulesOutput(success=False, error=_api_error_message(exc))
     except (OSError, librouteros.exceptions.ConnectionClosed, librouteros.exceptions.ProtocolError) as exc:
         return FirewallRulesOutput(success=False, error=_connection_error_message(exc))
 
