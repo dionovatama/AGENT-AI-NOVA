@@ -65,9 +65,10 @@ async def acquire_device_slot(device_id: object) -> DeviceExecutionSlot:
         raise TimeoutError("RouterOS executor is at global capacity; retry shortly.") from None
     try:
         await asyncio.wait_for(device_slot.acquire(), timeout=QUEUE_TIMEOUT_SECONDS)
+    except asyncio.TimeoutError:
+        _global_slots.release()
+        raise TimeoutError("RouterOS device is busy; retry shortly.") from None
     except BaseException:
         _global_slots.release()
-        if isinstance(_, asyncio.TimeoutError):
-            raise TimeoutError("RouterOS device is busy; retry shortly.") from None
         raise
     return DeviceExecutionSlot(_global_slots, device_slot)
