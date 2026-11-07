@@ -1,20 +1,11 @@
-"""
-HTTP Rate Limiting module for N.O.V.A endpoints.
-
-Provides in-memory sliding-window rate limiting for:
-- /auth/login (keyed by IP)
-- /auth/register (keyed by IP)
-- /chat/* (keyed by user ID, fallback IP)
-- /tools/execute (keyed by user ID, fallback IP)
-- monitoring endpoints (keyed by user ID, fallback IP)
-
-Per-process limitation: documented under SEC-04/SEC-14 until shared cache (Redis) is introduced.
-"""
+"""HTTP rate limiting with trusted-proxy-aware client identity."""
 
 from __future__ import annotations
 
+import ipaddress
 import math
 from typing import Callable
+
 from fastapi import Depends, HTTPException, Request, status
 
 from app.agents.ratelimit import SlidingWindowLimiter
@@ -23,25 +14,53 @@ from app.database.models import User
 from app.security.dependencies import get_current_user
 
 
+def _is_trusted_proxy(address: str) -> bool:
+    try:
+        peer = ipaddress.ip_address(address)
+    except ValueError:
+        return False
+
+    for configured in settings.trusted_proxy_ips:
+        try:
+            if peer in ipaddress.ip_network(configured, strict=False):
+                return True
+        except ValueError:
+            # Settings validation should catch this; fail closed if mutated at runtime.
+            continue
+    return False
+
+
 def get_client_ip(request: Request) -> str:
-    """Extract client IP, inspecting X-Forwarded-For if behind trusted proxy."""
-    forwarded = request.headers.get("x-forwarded-for")
-    if forwarded:
-        return forwarded.split(",")[0].strip()
-    if request.client and request.client.host:
-        return request.client.host
-    return "127.0.0.1"
+    """Return the socket peer unless it is an explicitly trusted reverse proxy.
+
+    X-Forwarded-For is attacker-controlled unless the immediate TCP peer is
+    trusted. For trusted proxies, walk the chain right-to-left and select the
+    first address that is not itself a trusted proxy.
+    """
+    peer = request.client.host if request.client and request.client.host else None
+    if not peer:
+        return "unknown"
+
+    if not _is_trusted_proxy(peer):
+        return peer
+
+    forwarded = request.headers.get("x-forwarded-for", "")
+    chain = [part.strip() for part in forwarded.split(",") if part.strip()]
+    for candidate in reversed(chain):
+        try:
+            ipaddress.ip_address(candidate)
+        except ValueError:
+            continue
+        if not _is_trusted_proxy(candidate):
+            return candidate
+
+    return peer
 
 
 class HttpRateLimiter:
     """Wrapper around SlidingWindowLimiter providing HTTP 429 semantics."""
 
-    def __init__(
-        self,
-        limit_getter: Callable[[], int],
-        window_getter: Callable[[], float],
-        name: str,
-    ) -> None:
+    def __init__(self, limit_getter: Callable[[], int], window_getter: Callable[[], float], name: str) -> None:
         self.limit_getter = limit_getter
         self.window_getter = window_getter
         self.name = name
@@ -75,66 +94,28 @@ class HttpRateLimiter:
         self._limiter._events.clear()
 
 
-auth_login_limiter = HttpRateLimiter(
-    lambda: settings.rate_limit_auth_login_limit,
-    lambda: settings.rate_limit_auth_login_window_seconds,
-    name="login",
-)
-
-auth_register_limiter = HttpRateLimiter(
-    lambda: settings.rate_limit_auth_register_limit,
-    lambda: settings.rate_limit_auth_register_window_seconds,
-    name="register",
-)
-
-chat_limiter = HttpRateLimiter(
-    lambda: settings.rate_limit_chat_limit,
-    lambda: settings.rate_limit_chat_window_seconds,
-    name="chat",
-)
-
-tools_execute_limiter = HttpRateLimiter(
-    lambda: settings.rate_limit_tools_execute_limit,
-    lambda: settings.rate_limit_tools_execute_window_seconds,
-    name="tools_execute",
-)
-
-monitoring_limiter = HttpRateLimiter(
-    lambda: settings.rate_limit_monitoring_limit,
-    lambda: settings.rate_limit_monitoring_window_seconds,
-    name="monitoring",
-)
+auth_login_limiter = HttpRateLimiter(lambda: settings.rate_limit_auth_login_limit, lambda: settings.rate_limit_auth_login_window_seconds, "login")
+auth_register_limiter = HttpRateLimiter(lambda: settings.rate_limit_auth_register_limit, lambda: settings.rate_limit_auth_register_window_seconds, "register")
+chat_limiter = HttpRateLimiter(lambda: settings.rate_limit_chat_limit, lambda: settings.rate_limit_chat_window_seconds, "chat")
+tools_execute_limiter = HttpRateLimiter(lambda: settings.rate_limit_tools_execute_limit, lambda: settings.rate_limit_tools_execute_window_seconds, "tools_execute")
+monitoring_limiter = HttpRateLimiter(lambda: settings.rate_limit_monitoring_limit, lambda: settings.rate_limit_monitoring_window_seconds, "monitoring")
 
 
 def rate_limit_auth_login(request: Request) -> None:
-    ip = get_client_ip(request)
-    auth_login_limiter.check(f"auth_login:{ip}")
+    auth_login_limiter.check(f"auth_login:{get_client_ip(request)}")
 
 
 def rate_limit_auth_register(request: Request) -> None:
-    ip = get_client_ip(request)
-    auth_register_limiter.check(f"auth_register:{ip}")
+    auth_register_limiter.check(f"auth_register:{get_client_ip(request)}")
 
 
-def rate_limit_chat(
-    request: Request,
-    current_user: User = Depends(get_current_user),
-) -> None:
-    key = f"chat:{current_user.id}" if current_user else f"chat:{get_client_ip(request)}"
-    chat_limiter.check(key)
+def rate_limit_chat(request: Request, current_user: User = Depends(get_current_user)) -> None:
+    chat_limiter.check(f"chat:{current_user.id}" if current_user else f"chat:{get_client_ip(request)}")
 
 
-def rate_limit_tools_execute(
-    request: Request,
-    current_user: User = Depends(get_current_user),
-) -> None:
-    key = f"tools:{current_user.id}" if current_user else f"tools:{get_client_ip(request)}"
-    tools_execute_limiter.check(key)
+def rate_limit_tools_execute(request: Request, current_user: User = Depends(get_current_user)) -> None:
+    tools_execute_limiter.check(f"tools:{current_user.id}" if current_user else f"tools:{get_client_ip(request)}")
 
 
-def rate_limit_monitoring(
-    request: Request,
-    current_user: User = Depends(get_current_user),
-) -> None:
-    key = f"monitoring:{current_user.id}" if current_user else f"monitoring:{get_client_ip(request)}"
-    monitoring_limiter.check(key)
+def rate_limit_monitoring(request: Request, current_user: User = Depends(get_current_user)) -> None:
+    monitoring_limiter.check(f"monitoring:{current_user.id}" if current_user else f"monitoring:{get_client_ip(request)}")
