@@ -52,6 +52,8 @@ jobs:
         run: alembic upgrade head
       - name: Run backend tests
         run: pytest -q
+      - name: Verify latest migration downgrade
+        run: alembic downgrade -1
 
   frontend:
     runs-on: ubuntu-latest
