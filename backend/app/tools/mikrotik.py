@@ -57,6 +57,8 @@ import librouteros.exceptions
 from pydantic import BaseModel, Field
 
 from app.database.models import Device
+from app.config import settings
+from app.network.relay_tls import RelayTlsError, normalize_fingerprint, verify_certificate_pin
 from app.tools.context import ExecutionContext
 from app.tools.schemas import (
     LoggingPolicy,
@@ -146,7 +148,31 @@ def _connect(device: Device, password: str | None, sock=None):
         context = ssl.create_default_context()
         context.check_hostname = False
         context.verify_mode = ssl.CERT_NONE
-        connect_kwargs["ssl_wrapper"] = context.wrap_socket
+        configured_pin = (device.device_metadata or {}).get("tls_fingerprint")
+
+        if settings.app_env.lower() == "production" and not configured_pin and not settings.allow_unpinned_local_tls:
+            raise MikrotikConnectionError(
+                "Production menolak API-SSL lokal tanpa pin sertifikat. Isi metadata tls_fingerprint atau aktifkan ALLOW_UNPINNED_LOCAL_TLS secara sadar."
+            )
+
+        if configured_pin:
+            try:
+                expected_pin = normalize_fingerprint(configured_pin)
+            except (TypeError, ValueError):
+                raise MikrotikConnectionError("Device memiliki tls_fingerprint yang tidak valid.") from None
+
+            def _wrap_pinned(raw_socket):
+                wrapped = context.wrap_socket(raw_socket)
+                try:
+                    verify_certificate_pin(wrapped.getpeercert(binary_form=True), expected_pin)
+                except RelayTlsError:
+                    wrapped.close()
+                    raise MikrotikConnectionError("Sertifikat API-SSL lokal tidak cocok dengan pin. Koneksi ditolak.") from None
+                return wrapped
+
+            connect_kwargs["ssl_wrapper"] = _wrap_pinned
+        else:
+            connect_kwargs["ssl_wrapper"] = context.wrap_socket
 
     return librouteros.connect(**connect_kwargs)
 
