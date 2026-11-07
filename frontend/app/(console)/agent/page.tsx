@@ -433,7 +433,8 @@ export default function AgentPage() {
         ) : (
           <div className="divide-y divide-white/[0.06]">
             {agents.map((agent) => (
-              <article key={agent.id} className="flex flex-col gap-4 px-4 py-4 lg:flex-row lg:items-center">
+              <div key={agent.id}>
+              <article className="flex flex-col gap-4 px-4 py-4 lg:flex-row lg:items-center">
                 <div className="flex min-w-0 flex-1 items-center gap-3">
                   <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border ${agent.status === "online" ? "border-emerald-400/20 bg-emerald-400/10 text-emerald-300" : "border-white/10 bg-white/[0.04] text-slate-400"}`}>
                     {agent.status === "online" ? <Wifi size={18} /> : <WifiOff size={18} />}
@@ -460,6 +461,7 @@ export default function AgentPage() {
                 </div>
               </article>
               <RelayTargetsPanel agentId={agent.id} />
+              </div>
             ))}
           </div>
         )}
