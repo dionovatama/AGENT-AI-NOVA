@@ -3,7 +3,7 @@ from types import SimpleNamespace
 import pytest
 
 from app.config import validate_production_settings
-from app.security.http_hardening import _Window, websocket_origin_allowed
+from app.security.http_hardening import MAX_REQUEST_BODY_BYTES, HttpHardeningMiddleware, _Window, websocket_origin_allowed
 
 
 def _production(**overrides):
@@ -82,3 +82,48 @@ def test_rate_window_caps_unique_client_keys():
     assert limiter.hit("second") is False
     now[0] = 62.0
     assert limiter.hit("second") is True
+
+
+
+@pytest.mark.asyncio
+async def test_http_hardening_rejects_declared_oversized_body():
+    sent = []
+
+    async def app(scope, receive, send):
+        raise AssertionError("downstream app must not be called")
+
+    async def receive():
+        return {"type": "http.request", "body": b"", "more_body": False}
+
+    async def send(message):
+        sent.append(message)
+
+    middleware = HttpHardeningMiddleware(app)
+    await middleware(
+        {"type": "http", "path": "/upload", "headers": [
+            (b"content-length", str(MAX_REQUEST_BODY_BYTES + 1).encode())
+        ], "client": ("127.0.0.1", 1234)},
+        receive, send,
+    )
+    assert sent[0]["status"] == 413
+
+
+@pytest.mark.asyncio
+async def test_http_hardening_rejects_chunked_oversized_body():
+    sent = []
+
+    async def app(scope, receive, send):
+        await receive()
+
+    async def receive():
+        return {"type": "http.request", "body": b"x" * (MAX_REQUEST_BODY_BYTES + 1), "more_body": False}
+
+    async def send(message):
+        sent.append(message)
+
+    middleware = HttpHardeningMiddleware(app)
+    await middleware(
+        {"type": "http", "path": "/upload", "headers": [], "client": ("127.0.0.1", 1234)},
+        receive, send,
+    )
+    assert sent[0]["status"] == 413
