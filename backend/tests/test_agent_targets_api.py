@@ -14,7 +14,7 @@ from app.agents.registry import LiveConnection
 from app.agents.relay_service import (
     AgentOffline, RelayPortNotAllowed, RelayTargetNotFound, RelayUnavailable, open_relay,
 )
-from app.database.models import Agent, Device, User
+from app.database.models import Agent, AuditLog, Device, User
 from app.database.session import SessionLocal
 from app.main import app
 from app.security.hashing import create_access_token
@@ -238,3 +238,11 @@ def test_relay_pin_rotation_requires_confirmation_and_current_pin():
     })
     assert accepted.status_code == 200, accepted.text
     assert accepted.json()["tls_fingerprint"] == "cd" * 32
+    with SessionLocal() as db:
+        event = db.query(AuditLog).filter(
+            AuditLog.action == "agent.target.pin_updated"
+        ).order_by(AuditLog.created_at.desc()).first()
+        assert event is not None
+        assert event.request_metadata["old_fingerprint_prefix"] == "ab" * 6
+        assert event.request_metadata["new_fingerprint_prefix"] == "cd" * 6
+        assert "cd" * 32 not in str(event.request_metadata)
