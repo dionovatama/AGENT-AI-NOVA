@@ -251,7 +251,7 @@ export const novaApi = {
     request<{ observed: string; expires_in_seconds: number }>(
       `/devices/${deviceId}/observed-tls-fingerprint`,
     ),
-  updateDevice: (deviceId: string, payload: Partial<Pick<Device, "name" | "platform" | "host" | "port" | "connection_type" | "status" | "credential_id" | "metadata">> & { tls_fingerprint?: string | null; confirm_tls_fingerprint_change?: boolean }) =>
+  updateDevice: (deviceId: string, payload: Partial<Pick<Device, "name" | "platform" | "host" | "port" | "connection_type" | "status" | "credential_id" | "metadata">> & { tls_fingerprint?: string | null; expected_tls_fingerprint_prefix?: string | null; confirm_tls_fingerprint_change?: boolean }) =>
     request<Device>(`/devices/${deviceId}`, {
       method: "PATCH",
       body: JSON.stringify(payload),
