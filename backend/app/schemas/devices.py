@@ -12,7 +12,7 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_serializer
 
 
 class DeviceCreateRequest(BaseModel):
@@ -41,6 +41,14 @@ class DeviceResponse(BaseModel):
     updated_at: datetime
 
     model_config = {"from_attributes": True}
+
+    @field_serializer("metadata")
+    def _mask_tls_fingerprint(self, value: dict[str, Any] | None):
+        if not value or not value.get("tls_fingerprint"):
+            return value
+        masked = dict(value)
+        masked["tls_fingerprint"] = str(value["tls_fingerprint"])[:16]
+        return masked
 
 
 class CredentialCreateRequest(BaseModel):
@@ -89,4 +97,5 @@ class DeviceUpdateRequest(BaseModel):
     credential_id: uuid.UUID | None = None
     metadata: dict[str, Any] | None = None
     tls_fingerprint: str | None = Field(default=None, max_length=128)
+    expected_tls_fingerprint_prefix: str | None = Field(default=None, min_length=16, max_length=16)
     confirm_tls_fingerprint_change: bool = False
