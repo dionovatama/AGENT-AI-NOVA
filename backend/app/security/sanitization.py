@@ -35,6 +35,11 @@ _JWT_PATTERN = re.compile(r"^[A-Za-z0-9-_]+\.[A-Za-z0-9-_]+\.[A-Za-z0-9-_]+$")
 
 # Regex to detect database credentials in URLs: scheme://user:pass@host
 _DB_URL_PATTERN = re.compile(r"://([^:]+):([^@]+)@")
+_SECRET_ASSIGNMENT_PATTERN = re.compile(
+    r"(?i)\b(password|passwd|secret|token|api[_-]?key|authorization|credential)\b(\s*[:=]\s*)[^\s,;]+"
+)
+_BASIC_AUTH_PATTERN = re.compile(r"(?i)\bBasic\s+[A-Za-z0-9+/=]+")
+_FINGERPRINT_PATTERN = re.compile(r"(?i)\b(?:sha256:)?[0-9a-f]{64}\b")
 
 
 def _is_sensitive_key(key: str) -> bool:
@@ -103,7 +108,12 @@ def sanitize_error_message(error: str | None) -> str | None:
             flags=re.DOTALL,
         )
 
-    # Redact potential JWTs in error strings
+    # Redact inline key/value credentials, HTTP Basic auth and full SHA-256 pins.
+    sanitized = _SECRET_ASSIGNMENT_PATTERN.sub(r"\1\2[REDACTED]", sanitized)
+    sanitized = _BASIC_AUTH_PATTERN.sub("Basic [REDACTED]", sanitized)
+    sanitized = _FINGERPRINT_PATTERN.sub("[REDACTED_FINGERPRINT]", sanitized)
+
+    # Redact potential JWTs in error strings.
     sanitized = re.sub(
         r"eyJ[A-Za-z0-9-_]+\.[A-Za-z0-9-_]+\.[A-Za-z0-9-_]+",
         "[REDACTED_JWT]",
