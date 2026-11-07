@@ -118,8 +118,18 @@ def get_manual_topology(
     devices = {d.id: d for d in db.query(Device).filter(
         Device.owner_id == current_user.id, Device.id.in_(device_ids)
     ).all()} if device_ids else {}
+    monitored_devices = db.query(Device).join(
+        RelayTarget, RelayTarget.device_id == Device.id
+    ).filter(
+        Device.owner_id == current_user.id, RelayTarget.owner_id == current_user.id
+    ).distinct().order_by(Device.created_at).all()
+    placed_ids = {n.device_id for n in nodes if n.device_id}
     return {
         "nodes": [_manual_node_payload(n, devices.get(n.device_id)) for n in nodes],
+        "available_devices": [{
+            "id": str(d.id), "name": d.name, "platform": d.platform, "host": d.host,
+            "port": d.port, "connection_type": d.connection_type,
+        } for d in monitored_devices if d.id not in placed_ids],
         "links": [{
             "id": str(link.id), "source_node_id": str(link.source_node_id),
             "target_node_id": str(link.target_node_id), "label": link.label,
@@ -140,6 +150,14 @@ def create_manual_node(
         ).first()
         if device is None:
             raise HTTPException(status_code=404, detail="Device not found.")
+        target = db.query(RelayTarget).filter(
+            RelayTarget.owner_id == current_user.id, RelayTarget.device_id == device.id
+        ).first()
+        if target is None:
+            raise HTTPException(
+                status_code=400,
+                detail="Device must be assigned to a Remote Agent relay target before it can be monitored on topology.",
+            )
         existing = db.query(TopologyNode).filter(
             TopologyNode.owner_id == current_user.id, TopologyNode.device_id == device.id
         ).first()
