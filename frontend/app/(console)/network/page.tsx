@@ -17,7 +17,7 @@ function statusLabel(node: ManualTopologyNode) {
 
 export default function NetworkPage() {
   const [devices, setDevices] = useState<Device[]>([]);
-  const [topology, setTopology] = useState<ManualTopology>({ nodes: [], links: [] });
+  const [topology, setTopology] = useState<ManualTopology>({ nodes: [], links: [], available_devices: [] });
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
