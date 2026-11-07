@@ -128,6 +128,12 @@ def _connect(device: Device, password: str | None, sock=None):
         # login ini mengirim satu byte pun.
         return _connect_over_socket(sock, username, password)
 
+    if not settings.allow_direct_device_connections:
+        raise MikrotikConnectionError(
+            "Koneksi langsung dari backend ke perangkat dinonaktifkan. "
+            "Daftarkan Remote Agent dan relay target yang diotorisasi."
+        )
+
     connect_kwargs: dict = {
         "host": device.host,
         "port": device.port,
