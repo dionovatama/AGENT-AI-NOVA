@@ -13,7 +13,6 @@ Prinsip (sesuai PRD):
 
 import logging
 import time
-from collections import defaultdict, deque
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -22,6 +21,7 @@ from pydantic import BaseModel, Field
 from app.config import settings
 from app.database.models import User
 from app.security.dependencies import get_current_user
+from app.security.rate_limiter import rate_limit_images
 
 logger = logging.getLogger("nova.api.images")
 
@@ -29,15 +29,6 @@ router = APIRouter(prefix="/images", tags=["images"])
 
 MAX_PROMPT_CHARS = 2000
 REQUEST_TIMEOUT_SECONDS = 60.0
-
-# Rate limit sederhana in-memory per user: melindungi jatah gratis
-# (10.000 neurons/hari) dari satu user yang menekan tombol berulang.
-# Catatan: reset saat backend restart dan tidak dibagi antar-proses —
-# cukup untuk lab, bukan pengganti rate limiter production.
-RATE_LIMIT_MAX_REQUESTS = 10
-RATE_LIMIT_WINDOW_SECONDS = 60.0
-_recent_requests: dict[str, deque[float]] = defaultdict(deque)
-
 
 class ImageGenerateRequest(BaseModel):
     prompt: str = Field(min_length=1, max_length=MAX_PROMPT_CHARS)
@@ -49,19 +40,6 @@ class ImageGenerateResponse(BaseModel):
 
     # 'model' aman, tapi konsisten dengan pola di ChatCompletionResult.
     model_config = {"protected_namespaces": ()}
-
-
-def _check_rate_limit(user_id: str) -> None:
-    now = time.monotonic()
-    window = _recent_requests[user_id]
-    while window and now - window[0] > RATE_LIMIT_WINDOW_SECONDS:
-        window.popleft()
-    if len(window) >= RATE_LIMIT_MAX_REQUESTS:
-        raise HTTPException(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail="[RATE_LIMIT] Terlalu banyak permintaan gambar. Coba lagi sebentar lagi.",
-        )
-    window.append(now)
 
 
 def _sniff_mime(b64: str) -> str:
@@ -97,7 +75,7 @@ def _classify_http_error(status_code: int, detail: str) -> tuple[int, str]:
     return 502, f"[UPSTREAM] Cloudflare error (HTTP {status_code}): {detail}"
 
 
-@router.post("/generate", response_model=ImageGenerateResponse)
+@router.post("/generate", response_model=ImageGenerateResponse, dependencies=[Depends(rate_limit_images)])
 async def generate_image(
     payload: ImageGenerateRequest,
     current_user: User = Depends(get_current_user),
@@ -113,8 +91,6 @@ async def generate_image(
     prompt = payload.prompt.strip()
     if not prompt:
         raise HTTPException(status_code=422, detail="Prompt tidak boleh kosong.")
-
-    _check_rate_limit(str(current_user.id))
 
     model = settings.image_model
     url = f"https://api.cloudflare.com/client/v4/accounts/{account_id}/ai/run/{model}"
