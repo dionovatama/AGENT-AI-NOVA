@@ -40,6 +40,10 @@ def _open_connection() -> asyncssh.connect:
       diaktifkan menggunakan settings.linux_ssh_known_hosts_path (atau default system).
     - Host key atau private key tidak pernah dibocorkan ke caller/LLM.
     """
+    if settings.app_env.lower() == "production" and (
+        not settings.linux_ssh_host_key_checking or not settings.linux_ssh_known_hosts_path
+    ):
+        raise RuntimeError("Production SSH requires strict known_hosts verification.")
     known_hosts = None
     if settings.linux_ssh_host_key_checking:
         known_hosts = settings.linux_ssh_known_hosts_path or ()
