@@ -326,12 +326,12 @@ export const novaApi = {
     agentId: string,
     targetId: string,
     tls_fingerprint: string | null,
-    expected_current_fingerprint: string | null,
+    expected_current_fingerprint_prefix: string | null,
     confirm: boolean,
   ) =>
     request<RelayTarget>(`/agents/${agentId}/targets/${targetId}`, {
       method: "PATCH",
-      body: JSON.stringify({ tls_fingerprint, expected_current_fingerprint, confirm }),
+      body: JSON.stringify({ tls_fingerprint, expected_current_fingerprint_prefix, confirm }),
     }),
   deleteRelayTarget: (agentId: string, targetId: string) =>
     request<void>(`/agents/${agentId}/targets/${targetId}`, { method: "DELETE" }),
