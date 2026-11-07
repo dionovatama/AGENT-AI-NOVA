@@ -4,7 +4,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -192,7 +192,7 @@ def update_manual_node(
     return _manual_node_payload(node, device)
 
 
-@router.delete("/manual-topology/nodes/{node_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/manual-topology/nodes/{node_id}", status_code=status.HTTP_204_NO_CONTENT, response_class=Response)
 def delete_manual_node(
     node_id: uuid.UUID, current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -204,6 +204,7 @@ def delete_manual_node(
         raise HTTPException(status_code=404, detail="Topology node not found.")
     db.delete(node)
     db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.post("/manual-topology/links", status_code=status.HTTP_201_CREATED)
@@ -237,7 +238,7 @@ def create_manual_link(
             "connection_type": link.connection_type}
 
 
-@router.delete("/manual-topology/links/{link_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/manual-topology/links/{link_id}", status_code=status.HTTP_204_NO_CONTENT, response_class=Response)
 def delete_manual_link(
     link_id: uuid.UUID, current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -249,3 +250,4 @@ def delete_manual_link(
         raise HTTPException(status_code=404, detail="Topology link not found.")
     db.delete(link)
     db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
