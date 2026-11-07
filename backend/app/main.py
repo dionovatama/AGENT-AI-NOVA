@@ -109,13 +109,13 @@ tool_manager.register(linux_config_apply_tool)
 
 @app.on_event("startup")
 async def start_background_tasks():
-    global _audit_retention_task
     """
     Retention policy audit_logs (PRD section 32/33) — purge otomatis
     baris lebih tua dari AUDIT_LOG_RETENTION_DAYS, jalan di background
     selama aplikasi hidup. Lihat app/security/audit_retention.py untuk
     rasional kenapa ini otomatis, bukan tombol hapus manual.
     """
+    global _audit_retention_task
     validate_production_settings(settings)
     validate_single_worker_relay()
     if settings.app_env.lower() == "production" and settings.allow_unpinned_local_tls:
