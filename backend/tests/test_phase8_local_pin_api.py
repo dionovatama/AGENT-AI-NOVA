@@ -47,13 +47,35 @@ def test_local_device_pin_change_requires_confirmation_and_audits_prefixes():
     assert accepted.status_code == 200, accepted.text
     assert accepted.json()["metadata"]["tls_fingerprint"] == "ab" * 8
 
+    stale = client.patch(
+        f"/devices/{device_id}", headers=headers,
+        json={
+            "tls_fingerprint": "cd" * 32,
+            "expected_tls_fingerprint_prefix": "ff" * 8,
+            "confirm_tls_fingerprint_change": True,
+        },
+    )
+    assert stale.status_code == 409
+
+    rotated = client.patch(
+        f"/devices/{device_id}", headers=headers,
+        json={
+            "tls_fingerprint": "cd" * 32,
+            "expected_tls_fingerprint_prefix": "ab" * 8,
+            "confirm_tls_fingerprint_change": True,
+        },
+    )
+    assert rotated.status_code == 200
+    assert rotated.json()["metadata"]["tls_fingerprint"] == "cd" * 8
+
     with SessionLocal() as db:
         event = db.query(AuditLog).filter(
             AuditLog.user_id == owner_id, AuditLog.action == "device.tls_pin_updated"
         ).order_by(AuditLog.created_at.desc()).first()
         assert event is not None
-        assert event.request_metadata["new_fingerprint_prefix"] == "ab" * 6
-        assert "ab" * 32 not in str(event.request_metadata)
+        assert event.request_metadata["old_fingerprint_prefix"] == "ab" * 6
+        assert event.request_metadata["new_fingerprint_prefix"] == "cd" * 6
+        assert "cd" * 32 not in str(event.request_metadata)
 
 
 def test_foreign_user_cannot_update_local_device_pin():
