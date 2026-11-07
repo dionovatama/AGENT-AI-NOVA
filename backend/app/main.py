@@ -17,7 +17,8 @@ if sys.platform == "win32":
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.config import settings
+from app.config import settings, validate_production_settings
+from app.security.http_hardening import HttpHardeningMiddleware
 from app.tools.manager import tool_manager
 from app.tools.network import ping_tool
 from app.tools.linux import (
@@ -108,6 +109,7 @@ async def start_background_tasks():
     selama aplikasi hidup. Lihat app/security/audit_retention.py untuk
     rasional kenapa ini otomatis, bukan tombol hapus manual.
     """
+    validate_production_settings(settings)
     asyncio.create_task(audit_retention_loop())
     # Remote Agent Phase A: sweeper untuk status agent basi (idempoten, per worker).
     agent_manager.start()
@@ -135,13 +137,11 @@ def health_check():
 # for the Bearer-authenticated API and future cookie-based auth.
 # Instance FastAPI asli tetap dapat diakses (dependency_overrides untuk tes, dsb.);
 # `app` di bawah adalah pembungkus ASGI, bukan FastAPI.
+app.add_middleware(HttpHardeningMiddleware)
 fastapi_app = app
 app = CORSMiddleware(
     app,
-    allow_origins=[
-        "http://localhost:3000",
-        "http://127.0.0.1:3000",
-    ],
+    allow_origins=settings.cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
