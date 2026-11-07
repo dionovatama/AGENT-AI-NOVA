@@ -30,6 +30,14 @@ def test_manual_topology_node_link_crud_and_device_status_payload():
                       host="10.0.0.1", port=8729, connection_type="api-ssl"))
         db.commit()
 
+    agent_response = client.post("/agents", headers=headers, json={"name": f"agent-{uuid.uuid4().hex[:6]}"})
+    assert agent_response.status_code == 201, agent_response.text
+    agent_id = agent_response.json()["id"]
+    target_response = client.post(f"/agents/{agent_id}/targets", headers=headers, json={
+        "name": "router-relay", "host": "10.0.0.1", "ports": [8729], "device_id": str(device_id),
+    })
+    assert target_response.status_code == 201, target_response.text
+
     first = client.post("/network/manual-topology/nodes", headers=headers, json={
         "device_id": str(device_id), "name": "Core Router", "kind": "mikrotik", "x": 120, "y": 90,
     })
