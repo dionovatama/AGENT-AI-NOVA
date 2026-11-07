@@ -428,3 +428,56 @@ class ConversationMessage(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False, index=True
     )
+
+
+class TopologyNode(Base):
+    """Node yang digambar admin pada manual network topology."""
+    __tablename__ = "topology_nodes"
+    __table_args__ = (
+        Index("ix_topology_nodes_owner", "owner_id"),
+        UniqueConstraint("owner_id", "device_id", name="uq_topology_nodes_owner_device"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    owner_id: Mapped[uuid.UUID] = mapped_column(
+        PG_UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    device_id: Mapped[uuid.UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True), ForeignKey("devices.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    kind: Mapped[str] = mapped_column(String(30), nullable=False, default="other")
+    x: Mapped[float] = mapped_column(Float, nullable=False, default=80)
+    y: Mapped[float] = mapped_column(Float, nullable=False, default=80)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc), nullable=False
+    )
+
+
+class TopologyLink(Base):
+    """Koneksi manual antar node; bukan hasil discovery/scanning."""
+    __tablename__ = "topology_links"
+    __table_args__ = (
+        Index("ix_topology_links_owner", "owner_id"),
+        UniqueConstraint("owner_id", "source_node_id", "target_node_id", name="uq_topology_link_pair"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    owner_id: Mapped[uuid.UUID] = mapped_column(
+        PG_UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    source_node_id: Mapped[uuid.UUID] = mapped_column(
+        PG_UUID(as_uuid=True), ForeignKey("topology_nodes.id", ondelete="CASCADE"), nullable=False
+    )
+    target_node_id: Mapped[uuid.UUID] = mapped_column(
+        PG_UUID(as_uuid=True), ForeignKey("topology_nodes.id", ondelete="CASCADE"), nullable=False
+    )
+    label: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    connection_type: Mapped[str] = mapped_column(String(30), nullable=False, default="ethernet")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
+    )
