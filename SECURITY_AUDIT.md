@@ -64,14 +64,14 @@ Severity uses: Critical = immediate exploitable compromise; High = unsafe for st
 
 | ID | Severity | Finding / evidence | Status at audit |
 |---|---|---|---|
-| H-01 | **High** | Production startup does not validate JWT secret strength/length, mandatory Agent TLS, or CORS origins. `main.py` directly builds app; `config.py` has no production validators. `agent_require_tls=None` resolves secure by default in wiring, but explicit false can override. | Open |
-| H-02 | **High** | CORS is hardcoded to localhost origins in `main.py`, not deployment configuration. Public deployment would either reject the real frontend or encourage unsafe ad-hoc changes. | Open |
+| H-01 | **High** | Production startup did not validate JWT secret strength/length, mandatory Agent TLS, or CORS origins. | Implemented: startup rejects weak/low-diversity JWT secrets, Agent TLS not explicitly true, and unsafe CORS; regression tests added (not run here). |
+| H-02 | **High** | CORS was hardcoded to localhost origins. | Implemented: comma-separated `CORS_ALLOWED_ORIGINS` drives HTTP CORS and WebSocket Origin checks; tests added (not run here). |
 | H-03 | **High** | Local MikroTik `api-ssl` sets `ssl.CERT_NONE` with no certificate pin. `backend/app/tools/mikrotik.py::_connect`. Relay TLS is pinned, but local path is not. | Open |
 | H-04 | **High** | PATCH relay-target pin endpoint replaces/clears pin without explicit confirmation/expected-old-pin precondition. Audit records only `tls_pinned` boolean, not truncated old/new fingerprints. `FINGERPRINT_MISMATCH.observed` is held by exception but current remote transport drops it instead of exposing a controlled operator-only flow. | Open |
 | H-05 | **High** | SSH host-key verification is disabled by default and `known_hosts=None` when `linux_ssh_host_key_checking` is false. Seen in `app/tools/linux.py` and `network/adapters/linux.py`. No production startup/connect guard was observed. | Open |
-| H-06 | **High** | No rate limiting on login/register/chat/tools execution/device monitoring; only Agent connection/message limiter and image-generation per-process limiter exist. Password login brute force and expensive endpoints are exposed. | Open |
+| H-06 | **High** | No rate limiting on login/register/chat/tools execution/device monitoring. | Implemented per-process sliding windows: auth 10/min/IP, chat 20/min/IP, tools 30/min/IP, monitoring 12/min/IP. State is bounded; multi-worker global quota remains a limitation (M-05). Tests added (not run here). |
 | H-07 | **High** | Relay channel/registry/session/limiter are process-local. `relay_service.py` explicitly says Agent connection must be live in THIS worker; no worker affinity or broker. Multi-worker requests can fail intermittently. | Open |
-| H-08 | **High** | Error details may expose device/SSH/RouterOS/provider exception strings. Examples: MikroTik `_connection_error_message` and TrapError paths include raw exception; configuration creation returns `{exc}` in 502; Linux legacy tools return raw AsyncSSH exception. Sanitization coverage is not uniformly applied at every response boundary. | Open |
+| H-08 | **High** | Error details may expose raw device/SSH/RouterOS/provider exception strings. | Partially mitigated: configuration, MikroTik and legacy Linux paths now return generic messages/type-only logs. Remaining error surfaces still need review and regression coverage. |
 | M-01 | **Medium** | No global request-body size middleware/config was observed. Chat document uploads accept multipart UploadFile; file size limits need enforcement before parsing/extraction. | Open |
 | M-02 | **Medium** | No common security headers middleware observed (`nosniff`, frame-ancestors/X-Frame-Options, Referrer-Policy). | Open |
 | M-03 | **Medium** | Legacy `/agent/ws` gateway remains process-local and does not use the DB-backed owner-scoped Agent lifecycle; should be disabled/retired before public multi-tenant deployment if no longer required. | Open |
@@ -81,6 +81,16 @@ Severity uses: Critical = immediate exploitable compromise; High = unsafe for st
 | L-01 | **Low** | Frontend stores JWT in localStorage (`frontend/lib/auth.ts`), increasing token exposure under XSS; migrate to Secure, HttpOnly, SameSite cookie/BFF design. | Open |
 | L-02 | **Low** | Agent API response exposes owner_id (not secret, but unnecessary to browser clients). | Open |
 | L-03 | **Low** | Dependency audit has not yet been run in this environment. | Not assessed |
+
+## Phase 8.1 changes on `feat/phase8-hardening`
+
+- Added production startup validation for JWT secret strength, explicit Agent TLS, and HTTPS/non-local CORS origins.
+- Replaced hardcoded CORS list with `CORS_ALLOWED_ORIGINS` (comma-separated).
+- Added bounded per-process rate limits for login/register, chat, tool execution and monitoring.
+- Added `nosniff`, `DENY`, `Referrer-Policy`, and `frame-ancestors 'none'` response headers.
+- Added WebSocket Origin checks for browser connections; native Agent clients without Origin remain supported.
+- Replaced raw exception details in selected configuration, MikroTik and legacy Linux responses.
+- Added `backend/tests/test_phase8_http_hardening.py`. These tests have not been executed in this environment.
 
 ## Positive controls verified
 
