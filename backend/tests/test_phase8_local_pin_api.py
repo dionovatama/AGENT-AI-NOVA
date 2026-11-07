@@ -104,3 +104,20 @@ async def test_monitoring_error_does_not_echo_exception_secret(monkeypatch, capl
     assert raised.value.status_code == 502
     assert secret_marker not in str(raised.value.detail)
     assert secret_marker not in caplog.text
+
+
+
+def test_observed_local_tls_fingerprint_is_owner_only():
+    from app.network.remote_transport import record_observed_fingerprint
+
+    owner_id, owner_headers = _owner()
+    device_id = _device(owner_id)
+    record_observed_fingerprint(owner_id, device_id, "ef" * 32)
+
+    own = client.get(f"/devices/{device_id}/observed-tls-fingerprint", headers=owner_headers)
+    assert own.status_code == 200
+    assert own.json()["observed"] == "ef" * 32
+
+    _, other_headers = _owner()
+    foreign = client.get(f"/devices/{device_id}/observed-tls-fingerprint", headers=other_headers)
+    assert foreign.status_code == 404
