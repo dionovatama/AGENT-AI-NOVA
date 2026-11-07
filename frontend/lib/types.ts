@@ -455,4 +455,5 @@ export interface ManualTopologyLink {
 export interface ManualTopology {
   nodes: ManualTopologyNode[];
   links: ManualTopologyLink[];
+  available_devices: Array<Pick<Device, "id" | "name" | "platform" | "host" | "port" | "connection_type">>;
 }
