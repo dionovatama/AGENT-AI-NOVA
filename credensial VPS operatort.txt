@@ -1,0 +1,15 @@
+../venv/bin/alembic upgrade head
+
+read -p "Email: " nexanova@admin.com; read -s -p "Password: " NexaNovaPW; echo
+export NOVA_EMAIL NOVA_PASS
+../venv/bin/python - <<'PY'
+import os
+from app.database.session import SessionLocal
+from app.database.models import User
+from app.security.hashing import hash_password
+with SessionLocal() as db:
+    db.add(User(email=os.environ["NOVA_EMAIL"], hashed_password=hash_password(os.environ["NOVA_PASS"]), is_active=True))
+    db.commit()
+print("akun dibuat")
+PY
+unset NOVA_PASS
