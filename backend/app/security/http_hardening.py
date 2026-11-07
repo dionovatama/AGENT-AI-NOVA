@@ -13,6 +13,8 @@ from typing import Callable
 
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
+MAX_REQUEST_BODY_BYTES = 20 * 1024 * 1024
+
 _RULES = (
     (re.compile(r"^/auth/(login|register)$"), 10, 60.0, "auth"),
     (re.compile(r"^/chat/"), 20, 60.0, "chat"),
@@ -69,6 +71,28 @@ class HttpHardeningMiddleware:
             return
 
         path = scope.get("path", "")
+        content_length = next((value for key, value in scope.get("headers", []) if key.lower() == b"content-length"), None)
+        if content_length is not None:
+            try:
+                if int(content_length) > MAX_REQUEST_BODY_BYTES:
+                    await self._reject(send, 413, "Request body too large.")
+                    return
+            except ValueError:
+                await self._reject(send, 400, "Invalid Content-Length.")
+                return
+
+        body_size = 0
+        response_started = False
+
+        async def limited_receive() -> Message:
+            nonlocal body_size
+            message = await receive()
+            if message["type"] == "http.request":
+                body_size += len(message.get("body", b""))
+                if body_size > MAX_REQUEST_BODY_BYTES:
+                    raise _BodyTooLarge()
+            return message
+
         client = scope.get("client")
         ip = str(client[0]) if client else "unknown"
         for pattern, _, _, name in _RULES:
@@ -89,7 +113,9 @@ class HttpHardeningMiddleware:
                 break
 
         async def send_with_headers(message: Message) -> None:
+            nonlocal response_started
             if message["type"] == "http.response.start":
+                response_started = True
                 headers = list(message.get("headers", []))
                 existing = {key.lower() for key, _ in headers}
                 defaults = (
@@ -102,4 +128,26 @@ class HttpHardeningMiddleware:
                 message = {**message, "headers": headers}
             await send(message)
 
-        await self.app(scope, receive, send_with_headers)
+        try:
+            await self.app(scope, limited_receive, send_with_headers)
+        except _BodyTooLarge:
+            if not response_started:
+                await self._reject(send_with_headers, 413, "Request body too large.")
+            return
+
+    @staticmethod
+    async def _reject(send: Send, status: int, detail: str) -> None:
+        body = json.dumps({"detail": detail}).encode()
+        await send({"type": "http.response.start", "status": status, "headers": [
+            (b"content-type", b"application/json"),
+            (b"content-length", str(len(body)).encode()),
+            (b"x-content-type-options", b"nosniff"),
+            (b"x-frame-options", b"DENY"),
+            (b"referrer-policy", b"strict-origin-when-cross-origin"),
+            (b"content-security-policy", b"frame-ancestors 'none'"),
+        ]})
+        await send({"type": "http.response.body", "body": body})
+
+
+class _BodyTooLarge(Exception):
+    pass
