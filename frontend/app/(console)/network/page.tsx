@@ -63,6 +63,10 @@ export default function NetworkPage() {
   const [saving, setSaving] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [selectedDevice, setSelectedDevice] = useState<Device | null>(null);
+  const [routerStatus, setRouterStatus] = useState<Record<string, unknown> | null>(null);
+  const [routerStatusError, setRouterStatusError] = useState<string | null>(null);
+  const [checkingRouter, setCheckingRouter] = useState(false);
 
   const loadData = useCallback(async (quiet = false) => {
     if (quiet) setRefreshing(true);
@@ -189,42 +193,24 @@ export default function NetworkPage() {
       </header>
 
       <main className="min-h-0 flex-1 space-y-6 p-5">
-        <section className="overflow-hidden rounded-xl border border-white/[0.09] bg-[#090e16]">
+        <section className="overflow-hidden rounded-xl border border-white/[0.09] bg-[#080d14]">
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/[0.07] px-4 py-3">
-            <div>
-              <div className="flex items-center gap-2"><Network size={15} className="text-cyan-300"/><h2 className="text-sm font-semibold">Network topology</h2><span className="rounded bg-white/[0.05] px-2 py-0.5 text-[9px] text-slate-400">{devices.length + agents.length} nodes</span></div>
-              <p className="mt-1 text-[10px] text-slate-500">Live inventory · posisi otomatis · relasi menunggu data topology backend</p>
-            </div>
-            <span className="flex items-center gap-1.5 text-[9px] text-slate-500"><span className="h-1.5 w-1.5 rounded-full bg-emerald-400"/> Data API</span>
+            <div><div className="flex items-center gap-2"><Network size={15} className="text-cyan-300"/><h2 className="text-sm font-semibold">Network topology</h2><span className="rounded bg-white/[0.05] px-2 py-0.5 text-[9px] text-slate-400">{devices.length + agents.length} nodes</span></div><p className="mt-1 text-[10px] text-slate-500">Interactive canvas · pilih node untuk melihat detail dan diagnostic</p></div>
+            <div className="flex items-center gap-3 text-[9px] text-slate-500"><span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-cyan-400"/> Device</span><span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-violet-400"/> Agent</span></div>
           </div>
-          <div className="relative min-h-[310px] overflow-hidden p-4 sm:p-6" style={{backgroundImage:"radial-gradient(rgba(100,116,139,.22) 1px, transparent 1px)",backgroundSize:"22px 22px"}}>
-            {loading ? <div className="flex min-h-[260px] items-center justify-center gap-2 text-[11px] text-slate-400"><Loader2 size={15} className="animate-spin"/> Memuat node topology…</div> :
-              devices.length + agents.length === 0 ? <div className="flex min-h-[260px] flex-col items-center justify-center text-center"><Network size={28} className="mb-3 text-slate-600"/><p className="text-xs font-medium text-slate-300">Topology masih kosong</p><p className="mt-1 max-w-sm text-[10px] text-slate-500">Tambahkan Device atau provision Remote Agent. Node akan muncul di canvas ini setelah API mengembalikan datanya.</p><button type="button" onClick={openCreate} className="mt-4 rounded-md bg-cyan-500 px-3 py-2 text-[10px] font-semibold text-slate-950">Tambah device</button></div> :
-              <div className="mx-auto grid max-w-5xl grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-3">
-                {devices.map((device,index) => {
-                  const Icon=deviceIcon(device.platform);
-                  return <article key={`device-${device.id}`} className="relative rounded-xl border border-cyan-300/20 bg-[#101b29]/95 p-4 shadow-[0_8px_30px_rgba(0,0,0,.2)]">
-                    <div className="flex items-center gap-3">
-                      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-cyan-300/20 bg-cyan-300/[0.08] text-cyan-200"><Icon size={20}/></div>
-                      <div className="min-w-0 flex-1"><div className="flex items-center gap-2"><span className="text-[8px] font-semibold uppercase tracking-[.16em] text-cyan-300">DEVICE / {index+1}</span><span className="rounded bg-slate-500/10 px-1.5 py-0.5 text-[8px] text-slate-400">REGISTERED</span></div><h3 className="mt-1 truncate text-xs font-semibold text-slate-100">{device.name}</h3><p className="mt-1 truncate font-mono text-[10px] text-slate-400">{device.host}:{device.port}</p></div>
-                    </div>
-                    <div className="mt-3 flex items-center justify-between border-t border-white/[0.07] pt-2 text-[9px] text-slate-500"><span>{PLATFORM_LABELS[device.platform as DevicePlatform] ?? device.platform}</span><span>{device.connection_type}</span></div>
-                  </article>;
-                })}
-                {agents.map((agent,index) => {
-                  const status=agentStatus(agent.status);
-                  return <article key={`agent-${agent.id}`} className="relative rounded-xl border border-violet-300/20 bg-[#171329]/95 p-4 shadow-[0_8px_30px_rgba(0,0,0,.2)]">
-                    <div className="flex items-center gap-3">
-                      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-violet-300/20 bg-violet-300/[0.08] text-violet-200"><RadioTower size={20}/></div>
-                      <div className="min-w-0 flex-1"><div className="flex items-center gap-2"><span className="text-[8px] font-semibold uppercase tracking-[.16em] text-violet-300">REMOTE AGENT / {index+1}</span></div><h3 className="mt-1 truncate text-xs font-semibold text-slate-100">{agent.name}</h3><p className="mt-1 truncate font-mono text-[9px] text-slate-500">{agent.id}</p></div>
-                    </div>
-                    <div className="mt-3 flex items-center justify-between border-t border-white/[0.07] pt-2"><span className="truncate text-[9px] text-slate-500">{agent.hostname || agent.os || "Agent node"}</span><span className={`rounded border px-2 py-1 text-[8px] font-semibold ${status.className}`}>{status.label}</span></div>
-                  </article>;
-                })}
-              </div>
-            }
+          <div className="relative min-h-[520px] overflow-auto" style={{backgroundImage:"radial-gradient(rgba(100,116,139,.25) 1px, transparent 1px)",backgroundSize:"22px 22px"}}>
+            {loading ? <div className="flex min-h-[500px] items-center justify-center gap-2 text-[11px] text-slate-400"><Loader2 size={15} className="animate-spin"/> Memuat node…</div> :
+             devices.length + agents.length === 0 ? <div className="flex min-h-[500px] flex-col items-center justify-center text-center"><Network size={28} className="mb-3 text-slate-600"/><p className="text-xs text-slate-300">Belum ada node</p><button type="button" onClick={openCreate} className="mt-4 rounded-md bg-cyan-500 px-3 py-2 text-[10px] font-semibold text-slate-950">Tambah device</button></div> :
+             <div className="relative min-h-[520px] min-w-[900px]">
+               <svg className="pointer-events-none absolute inset-0 h-full w-full" aria-hidden="true"><defs><pattern id="topology-grid" width="22" height="22" patternUnits="userSpaceOnUse"><circle cx="1" cy="1" r="1" fill="rgba(100,116,139,.25)"/></pattern></defs><rect width="100%" height="100%" fill="url(#topology-grid)"/></svg>
+               {devices.map((device,index)=>{const Icon=deviceIcon(device.platform);const x=36+(index%3)*300;const y=44+Math.floor(index/3)*190;return <button key={`topo-device-${device.id}`} type="button" onClick={()=>{setSelectedDevice(device);setRouterStatus(null);setRouterStatusError(null);}} style={{left:x,top:y}} className={`absolute w-[250px] rounded-xl border p-4 text-left shadow-xl transition hover:-translate-y-1 hover:border-cyan-300/60 hover:shadow-cyan-950/40 focus:outline-none focus:ring-2 focus:ring-cyan-400/50 ${selectedDevice?.id===device.id?"border-cyan-300 bg-[#142638]":"border-cyan-300/25 bg-[#101b29]"}`}>
+                 <div className="flex items-center gap-3"><div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-cyan-300/20 bg-cyan-300/[0.08] text-cyan-200"><Icon size={21}/></div><div className="min-w-0"><p className="text-[8px] font-bold tracking-[.16em] text-cyan-300">{device.platform.toUpperCase()} ROUTER / DEVICE</p><p className="mt-1 truncate text-xs font-semibold text-slate-100">{device.name}</p><p className="mt-1 truncate font-mono text-[10px] text-slate-400">{device.host}</p></div></div>
+                 <div className="mt-3 flex items-center justify-between border-t border-white/[0.08] pt-2"><span className="text-[9px] text-slate-500">{device.connection_type} · {device.port}</span><span className="text-[9px] text-cyan-300">Click for status ↗</span></div>
+               </button>})}
+               {agents.map((agent,index)=>{const x=36+((devices.length+index)%3)*300;const y=44+Math.floor((devices.length+index)/3)*190;const status=agentStatus(agent.status);return <div key={`topo-agent-${agent.id}`} style={{left:x,top:y}} className="absolute w-[250px] rounded-xl border border-violet-300/25 bg-[#171329] p-4 shadow-xl"><div className="flex items-center gap-3"><div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-violet-300/20 bg-violet-300/[0.08] text-violet-200"><RadioTower size={20}/></div><div className="min-w-0"><p className="text-[8px] font-bold tracking-[.16em] text-violet-300">REMOTE AGENT</p><p className="mt-1 truncate text-xs font-semibold text-slate-100">{agent.name}</p><p className="mt-1 truncate font-mono text-[9px] text-slate-500">{agent.hostname || agent.id}</p></div></div><div className="mt-3 flex justify-end border-t border-white/[0.08] pt-2"><span className={`rounded border px-2 py-1 text-[8px] font-semibold ${status.className}`}>{status.label}</span></div></div>})}
+             </div>}
           </div>
-          <div className="flex flex-wrap items-center gap-4 border-t border-white/[0.07] bg-black/10 px-4 py-2.5 text-[9px] text-slate-500"><span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-sm border border-cyan-300/60 bg-cyan-300/20"/> Device</span><span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-sm border border-violet-300/60 bg-violet-300/20"/> Remote Agent</span><span className="ml-auto">Link belum ditampilkan: API relasi topology belum tersedia.</span></div>
+          <div className="border-t border-white/[0.07] bg-black/10 px-4 py-2 text-[9px] text-slate-500">Node Device dapat dipilih untuk membuka status. Link fisik/logis belum digambar karena backend belum menyediakan relasi topology.</div>
         </section>
         {error && <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-rose-400/20 bg-rose-400/[0.06] px-4 py-3 text-[11px] text-rose-200"><span>{error}</span><button type="button" onClick={() => void loadData(true)} className="underline underline-offset-2">Coba lagi</button></div>}
 
@@ -273,6 +259,19 @@ export default function NetworkPage() {
         <div className="flex items-start gap-2 rounded-lg border border-amber-300/15 bg-amber-300/[0.035] p-3 text-[10px] leading-5 text-amber-100/80"><Activity size={13} className="mt-0.5 shrink-0 text-amber-300"/> Halaman ini menampilkan inventory Device dan status Remote Agent yang tersedia saat ini. Backend branch ini belum menyediakan API topology/link manual atau telemetry perangkat; karena itu koneksi antar-node, ping, dan status online Device tidak dibuat-buat.</div>
       </main>
 
+      {selectedDevice && <div className="fixed inset-0 z-[60] flex justify-end bg-black/65 backdrop-blur-[2px]" onMouseDown={(event)=>{if(event.target===event.currentTarget)setSelectedDevice(null);}}>
+        <aside className="flex h-full w-full max-w-lg flex-col overflow-y-auto border-l border-white/[0.1] bg-[#0b1119] shadow-2xl">
+          <div className="flex items-start justify-between border-b border-white/[0.08] p-5"><div className="flex items-center gap-3"><div className="flex h-11 w-11 items-center justify-center rounded-lg border border-cyan-300/20 bg-cyan-300/[0.08] text-cyan-200"><Router size={21}/></div><div><p className="text-[9px] font-semibold uppercase tracking-[.18em] text-cyan-300">Device details</p><h2 className="mt-1 text-base font-semibold">{selectedDevice.name}</h2><p className="mt-1 font-mono text-[10px] text-slate-400">{selectedDevice.host}:{selectedDevice.port}</p></div></div><button type="button" onClick={()=>setSelectedDevice(null)} className="rounded-md p-2 text-slate-400 hover:bg-white/[.06]"><X size={17}/></button></div>
+          <div className="space-y-4 p-5">
+            <div className="rounded-lg border border-white/[.08] bg-white/[.025] p-4"><p className="text-[9px] uppercase tracking-wider text-slate-500">Inventory status</p><div className="mt-2 flex items-center justify-between"><span className="text-xs text-slate-200">Registered in NOVA</span><span className="rounded border border-cyan-300/20 bg-cyan-300/[.07] px-2 py-1 text-[9px] text-cyan-200">REGISTERED</span></div><p className="mt-2 text-[10px] text-slate-500">Status koneksi aktual hanya muncul setelah diagnostic berhasil dijalankan.</p></div>
+            <div><h3 className="text-xs font-semibold">Router diagnostics</h3><p className="mt-1 text-[10px] text-slate-500">Jalankan pembacaan langsung melalui tool backend yang diizinkan.</p></div>
+            <button type="button" disabled={checkingRouter || selectedDevice.platform.toLowerCase()!=="mikrotik"} onClick={async()=>{setCheckingRouter(true);setRouterStatus(null);setRouterStatusError(null);try{const result=await novaApi.executeTool("mikrotik.system_resource",{},false,selectedDevice.id);if(!result.success)throw new Error(result.error||"Router tidak merespons.");setRouterStatus(result.output||{});}catch(err){setRouterStatusError(err instanceof Error?err.message:"Diagnostic gagal.");}finally{setCheckingRouter(false);}}} className="flex w-full items-center justify-center gap-2 rounded-md bg-cyan-500 px-4 py-3 text-[11px] font-semibold text-slate-950 hover:bg-cyan-400 disabled:cursor-not-allowed disabled:opacity-50">{checkingRouter?<Loader2 size={14} className="animate-spin"/>:<Activity size={14}/>} {checkingRouter?"Memeriksa router…":"Check router status"}</button>
+            {selectedDevice.platform.toLowerCase()!=="mikrotik"&&<p className="rounded-md border border-amber-300/15 bg-amber-300/[.04] p-3 text-[10px] text-amber-100/80">Diagnostic status langsung saat ini tersedia untuk MikroTik melalui RouterOS API. Perangkat platform lain tetap menampilkan data inventory.</p>}
+            {routerStatusError&&<div role="alert" className="rounded-md border border-rose-400/20 bg-rose-400/[.06] p-3 text-[10px] text-rose-200">{routerStatusError}</div>}
+            {routerStatus&&<div className="space-y-3"><div className="rounded-lg border border-emerald-400/20 bg-emerald-400/[.05] p-3"><p className="text-[9px] font-semibold uppercase tracking-wider text-emerald-300">Router responded</p><p className="mt-1 text-sm font-semibold text-slate-100">{String(routerStatus.identity||selectedDevice.name)}</p><p className="mt-1 text-[10px] text-slate-400">{String(routerStatus.routeros_version||"RouterOS version unavailable")} · {String(routerStatus.board_name||"Board unavailable")}</p></div><div className="grid grid-cols-2 gap-2"><div className="rounded-lg border border-white/[.08] p-3"><p className="text-[9px] text-slate-500">CPU load</p><p className="mt-1 text-xl font-semibold">{routerStatus.cpu_load_percent!=null?`${routerStatus.cpu_load_percent}%`:"—"}</p></div><div className="rounded-lg border border-white/[.08] p-3"><p className="text-[9px] text-slate-500">Uptime</p><p className="mt-1 text-sm font-semibold">{String(routerStatus.uptime||"—")}</p></div><div className="rounded-lg border border-white/[.08] p-3"><p className="text-[9px] text-slate-500">Free memory</p><p className="mt-1 text-sm font-semibold">{routerStatus.free_memory_bytes!=null?`${(Number(routerStatus.free_memory_bytes)/1024/1024).toFixed(0)} MB`:"—"}</p></div><div className="rounded-lg border border-white/[.08] p-3"><p className="text-[9px] text-slate-500">Total memory</p><p className="mt-1 text-sm font-semibold">{routerStatus.total_memory_bytes!=null?`${(Number(routerStatus.total_memory_bytes)/1024/1024).toFixed(0)} MB`:"—"}</p></div></div><details className="rounded-lg border border-white/[.08] p-3"><summary className="cursor-pointer text-[10px] text-slate-400">Raw diagnostic response</summary><pre className="mt-3 overflow-auto text-[10px] text-slate-300">{JSON.stringify(routerStatus,null,2)}</pre></details></div>}
+          </div>
+        </aside>
+      </div>}
       {modalOpen && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm">
         <form onSubmit={submitDevice} className="w-full max-w-md rounded-xl border border-white/[0.12] bg-[#0c1119] p-5 shadow-2xl">
           <div className="mb-4 flex items-center justify-between"><div><p className="text-[9px] uppercase tracking-[0.2em] text-cyan-300">Backend inventory</p><h2 className="mt-1 text-sm font-semibold">{editing ? "Edit device" : "Register device"}</h2></div><button type="button" onClick={() => setModalOpen(false)} className="rounded p-1 text-slate-500 hover:bg-white/[0.06]"><X size={16}/></button></div>
