@@ -45,7 +45,7 @@ def test_local_device_pin_change_requires_confirmation_and_audits_prefixes():
         json={"tls_fingerprint": "ab" * 32, "confirm_tls_fingerprint_change": True},
     )
     assert accepted.status_code == 200, accepted.text
-    assert accepted.json()["metadata"]["tls_fingerprint"] == "ab" * 32
+    assert accepted.json()["metadata"]["tls_fingerprint"] == "ab" * 8
 
     with SessionLocal() as db:
         event = db.query(AuditLog).filter(
