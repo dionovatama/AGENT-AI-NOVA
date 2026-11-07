@@ -122,8 +122,8 @@ def update_target_pin(
                             detail="The current pin changed. Refresh the target and confirm again.")
     previous_pin = target.tls_fingerprint
     target.tls_fingerprint = payload.tls_fingerprint
-    clear_observed_fingerprint(current_user.id, target.id)
     db.commit()
+    clear_observed_fingerprint(current_user.id, target.id)
     db.refresh(target)
     record_audit_event(
         action="agent.target.pin_updated", result_status="SUCCESS", user_id=current_user.id,
