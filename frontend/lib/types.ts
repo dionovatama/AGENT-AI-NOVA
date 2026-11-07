@@ -126,7 +126,7 @@ export interface ToolFieldSpec {
 export interface KnownToolSpec {
   name: string;
   label: string;
-  platform: "network" | "linux" | "general";
+  platform: "network" | "general";
   permission_level: PermissionLevel;
   risk_level: RiskLevel;
   fields: ToolFieldSpec[];
@@ -198,85 +198,6 @@ export const KNOWN_TOOLS: Record<string, KnownToolSpec> = {
     fields: [
       { name: "target", label: "Target (host/IP)", type: "text", required: true, placeholder: "192.168.1.1" },
       { name: "count", label: "Jumlah paket", type: "number", required: false, default: 4, min: 1, max: 10 },
-    ],
-  },
-  "linux.system_info": {
-    name: "linux.system_info",
-    label: "System Info",
-    platform: "linux",
-    permission_level: "read",
-    risk_level: "low",
-    fields: [],
-  },
-  "linux.network_info": {
-    name: "linux.network_info",
-    label: "Network Info",
-    platform: "linux",
-    permission_level: "read",
-    risk_level: "low",
-    fields: [],
-  },
-  "linux.disk_info": {
-    name: "linux.disk_info",
-    label: "Disk Info",
-    platform: "linux",
-    permission_level: "read",
-    risk_level: "low",
-    fields: [],
-  },
-  "linux.memory_info": {
-    name: "linux.memory_info",
-    label: "Memory Info",
-    platform: "linux",
-    permission_level: "read",
-    risk_level: "low",
-    fields: [],
-  },
-  "linux.service_status": {
-    name: "linux.service_status",
-    label: "Service Status",
-    platform: "linux",
-    permission_level: "read",
-    risk_level: "low",
-    fields: [
-      {
-        name: "service_name",
-        label: "Nama systemd service",
-        type: "text",
-        required: true,
-        placeholder: "sshd",
-        helpText: "Hanya huruf, angka, . _ @ - (divalidasi backend).",
-      },
-    ],
-  },
-  "linux.process_status": {
-    name: "linux.process_status",
-    label: "Process Status",
-    platform: "linux",
-    permission_level: "read",
-    risk_level: "low",
-    fields: [
-      { name: "name_filter", label: "Filter nama proses (opsional)", type: "text", required: false },
-      { name: "limit", label: "Limit", type: "number", required: false, default: 10, min: 1, max: 50 },
-    ],
-  },
-  "linux.docker_status": {
-    name: "linux.docker_status",
-    label: "Docker Status",
-    platform: "linux",
-    permission_level: "read",
-    risk_level: "low",
-    fields: [],
-  },
-  "linux.log_check": {
-    name: "linux.log_check",
-    label: "Log Check (journalctl)",
-    platform: "linux",
-    permission_level: "read",
-    risk_level: "low",
-    fields: [
-      { name: "service_name", label: "Nama systemd service", type: "text", required: true, placeholder: "ssh" },
-      { name: "lines", label: "Jumlah baris", type: "number", required: false, default: 50, min: 1, max: 200 },
     ],
   },
   "web.search": {
