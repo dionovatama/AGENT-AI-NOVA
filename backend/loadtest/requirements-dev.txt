@@ -1,0 +1,5 @@
+# Development/load-test dependencies only; never install into production requirements.
+httpx==0.28.1
+websockets>=12,<15
+psutil>=5.9,<8
+uvicorn[standard]==0.30.6
