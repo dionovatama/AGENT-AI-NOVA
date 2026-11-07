@@ -92,10 +92,10 @@ class RelayTargetResponse(BaseModel):
 class RelayTargetPinUpdateRequest(BaseModel):
     """Replace or clear a pin only after an explicit operator confirmation."""
     tls_fingerprint: str | None = Field(..., max_length=128)
-    expected_current_fingerprint: str | None = Field(default=None, max_length=128)
+    expected_current_fingerprint_prefix: str | None = Field(default=None, min_length=16, max_length=16)
     confirm: bool = False
 
-    @field_validator("tls_fingerprint", "expected_current_fingerprint")
+    @field_validator("tls_fingerprint")
     @classmethod
     def _fp(cls, v: str | None) -> str | None:
         if v is None or not v.strip():
