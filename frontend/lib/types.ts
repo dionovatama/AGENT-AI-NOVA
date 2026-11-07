@@ -457,3 +457,20 @@ export interface ManualTopology {
   links: ManualTopologyLink[];
   available_devices: Array<Pick<Device, "id" | "name" | "platform" | "host" | "port" | "connection_type">>;
 }
+
+
+export interface MikrotikMonitoringHistoryPoint {
+  collected_at: string;
+  cpu_load_percent: number | null;
+  memory_used_percent: number | null;
+  storage_used_percent: number | null;
+  rx_bps: number | null;
+  tx_bps: number | null;
+  sample_count: number;
+}
+
+export interface MikrotikMonitoringHistory {
+  points: MikrotikMonitoringHistoryPoint[];
+  bucket_seconds: number;
+  count: number;
+}
