@@ -23,7 +23,7 @@ router = APIRouter(tags=["agent-targets"])
 def _to_response(t: RelayTarget) -> RelayTargetResponse:
     return RelayTargetResponse(
         id=t.id, agent_id=t.agent_id, device_id=t.device_id, name=t.name, host=t.host,
-        ports=list(t.ports), tls_fingerprint=t.tls_fingerprint, created_at=t.created_at,
+        ports=list(t.ports), tls_fingerprint=t.tls_fingerprint[:16] if t.tls_fingerprint else None, created_at=t.created_at,
         agent_config={"target_id": str(t.id), "host": t.host, "ports": list(t.ports)},
     )
 
@@ -117,7 +117,7 @@ def update_target_pin(
     if not payload.confirm:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT,
                             detail="Explicit confirmation is required to change the certificate pin.")
-    if payload.expected_current_fingerprint != target.tls_fingerprint:
+    if payload.expected_current_fingerprint_prefix != (target.tls_fingerprint[:16] if target.tls_fingerprint else None):
         raise HTTPException(status_code=status.HTTP_409_CONFLICT,
                             detail="The current pin changed. Refresh the target and confirm again.")
     previous_pin = target.tls_fingerprint
