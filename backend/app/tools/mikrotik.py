@@ -212,7 +212,7 @@ def _connection_error_message(exc: Exception) -> str:
     menyertakan password (exc dari librouteros tidak membawa password,
     tapi tetap dilewatkan lewat sanitasi umum di app/security/sanitization
     sebagai lapisan pertahanan kedua di app/tools/manager.py)."""
-    return f"Connection error: {exc}"
+    return f"Connection error: {type(exc).__name__}"
 
 
 async def _run_on_device(sync_fn, ctx: ExecutionContext):
@@ -276,7 +276,7 @@ async def execute_system_resource(
     except MikrotikConnectionError as exc:
         return SystemResourceOutput(success=False, error=str(exc))
     except librouteros.exceptions.TrapError as exc:
-        return SystemResourceOutput(success=False, error=f"RouterOS API error: {exc}")
+        return SystemResourceOutput(success=False, error="RouterOS API rejected the request.")
     except (OSError, librouteros.exceptions.ConnectionClosed, librouteros.exceptions.ProtocolError) as exc:
         return SystemResourceOutput(success=False, error=_connection_error_message(exc))
 
