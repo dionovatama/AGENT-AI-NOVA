@@ -3,7 +3,7 @@ from types import SimpleNamespace
 import pytest
 
 from app.config import validate_production_settings
-from app.security.http_hardening import _Window
+from app.security.http_hardening import _Window, websocket_origin_allowed
 
 
 def _production(**overrides):
@@ -59,3 +59,19 @@ def test_endpoint_rate_window_blocks_nth_request_and_resets():
 
     now[0] = 161.0
     assert limiter.hit("client") is True
+
+
+
+def test_websocket_origin_policy_allows_native_agent_and_configured_browser():
+    assert websocket_origin_allowed(None, ["https://console.example.com"])
+    assert websocket_origin_allowed("https://console.example.com", ["https://console.example.com"])
+    assert not websocket_origin_allowed("https://evil.example", ["https://console.example.com"])
+
+
+def test_rate_window_caps_unique_client_keys():
+    now = [1.0]
+    limiter = _Window(1, 60.0, clock=lambda: now[0], max_keys=1)
+    assert limiter.hit("first") is True
+    assert limiter.hit("second") is False
+    now[0] = 62.0
+    assert limiter.hit("second") is True
