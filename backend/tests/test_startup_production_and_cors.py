@@ -13,6 +13,9 @@ def _base_settings_kwargs(**overrides):
         "openrouter_api_key": "test-key",
         "linux_ssh_host": "127.0.0.1",
         "linux_ssh_private_key_path": "/tmp/key",
+        # Produksi menolak koneksi langsung ke perangkat; basis valid harus mematikannya
+        # supaya tiap tes mencapai aturan yang memang ingin diuji.
+        "allow_direct_device_connections": False,
     }
     base.update(overrides)
     return base

@@ -29,6 +29,11 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     jwt_access_token_expire_minutes: int = 30
 
+    # --- Public exposure guardrails ---
+    public_registration_enabled: bool = False
+    allow_direct_device_connections: bool = True
+    trusted_proxy_ips: list[str] = []
+
     # --- OpenRouter (AI Gateway) ---
     openrouter_api_key: str
     openrouter_base_url: str = "https://openrouter.ai/api/v1"
@@ -173,16 +178,18 @@ class Settings(BaseSettings):
     agent_require_tls: bool | None = None
 
     # --- HTTP Rate Limiting ---
-    rate_limit_auth_login_limit: int = 10
+    rate_limit_auth_login_limit: int = 5
     rate_limit_auth_login_window_seconds: float = 60.0
-    rate_limit_auth_register_limit: int = 10
+    rate_limit_auth_register_limit: int = 3
     rate_limit_auth_register_window_seconds: float = 60.0
-    rate_limit_chat_limit: int = 60
+    rate_limit_chat_limit: int = 5
     rate_limit_chat_window_seconds: float = 60.0
-    rate_limit_tools_execute_limit: int = 60
+    rate_limit_tools_execute_limit: int = 30
     rate_limit_tools_execute_window_seconds: float = 60.0
-    rate_limit_monitoring_limit: int = 120
+    rate_limit_monitoring_limit: int = 60
     rate_limit_monitoring_window_seconds: float = 60.0
+    rate_limit_images_limit: int = 2
+    rate_limit_images_window_seconds: float = 60.0
 
     # --- CORS (Cross-Origin Resource Sharing) ---
     cors_origins: list[str] = list(DEFAULT_DEV_CORS_ORIGINS)
@@ -190,6 +197,26 @@ class Settings(BaseSettings):
     @field_validator("cors_origins", mode="before")
     @classmethod
     def _parse_cors_origins(cls, v: Any) -> list[str]:
+        if isinstance(v, str):
+            v = v.strip()
+            if not v:
+                return []
+            if v.startswith("[") and v.endswith("]"):
+                import json
+                try:
+                    parsed = json.loads(v)
+                    if isinstance(parsed, list):
+                        return [str(item).strip() for item in parsed if str(item).strip()]
+                except Exception:
+                    pass
+            return [item.strip() for item in v.split(",") if item.strip()]
+        if isinstance(v, (list, set, tuple)):
+            return [str(item).strip() for item in v if str(item).strip()]
+        return v
+
+    @field_validator("trusted_proxy_ips", mode="before")
+    @classmethod
+    def _parse_trusted_proxy_ips(cls, v: Any) -> list[str]:
         if isinstance(v, str):
             v = v.strip()
             if not v:
@@ -215,6 +242,13 @@ class Settings(BaseSettings):
                 raise ValueError(
                     f"Production environment requires jwt_secret_key to be at least 32 characters long "
                     f"(currently {len(self.jwt_secret_key)} characters)."
+                )
+
+            if self.public_registration_enabled:
+                raise ValueError("Production must keep public_registration_enabled=False.")
+            if self.allow_direct_device_connections:
+                raise ValueError(
+                    "Production must set allow_direct_device_connections=False; use Remote Agent relay."
                 )
 
             # 2. Remote agent must enforce TLS
@@ -247,6 +281,14 @@ class Settings(BaseSettings):
                     raise ValueError(
                         f"CORS origin must start with http:// or https://: {origin}"
                     )
+
+        # Validate proxy entries at startup; malformed trust boundaries fail closed.
+        import ipaddress
+        for proxy in self.trusted_proxy_ips:
+            try:
+                ipaddress.ip_network(proxy, strict=False)
+            except ValueError as exc:
+                raise ValueError(f"Invalid TRUSTED_PROXY_IPS entry: {proxy}") from exc
 
         return self
 

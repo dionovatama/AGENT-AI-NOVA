@@ -13,6 +13,7 @@ Per-process limitation: documented under SEC-04/SEC-14 until shared cache (Redis
 
 from __future__ import annotations
 
+import ipaddress
 import math
 from typing import Callable
 from fastapi import Depends, HTTPException, Request, status
@@ -23,14 +24,37 @@ from app.database.models import User
 from app.security.dependencies import get_current_user
 
 
+def _is_trusted_proxy(address: str) -> bool:
+    try:
+        peer = ipaddress.ip_address(address)
+    except ValueError:
+        return False
+    for configured in settings.trusted_proxy_ips:
+        try:
+            if peer in ipaddress.ip_network(configured, strict=False):
+                return True
+        except ValueError:
+            continue
+    return False
+
+
 def get_client_ip(request: Request) -> str:
-    """Extract client IP, inspecting X-Forwarded-For if behind trusted proxy."""
-    forwarded = request.headers.get("x-forwarded-for")
-    if forwarded:
-        return forwarded.split(",")[0].strip()
-    if request.client and request.client.host:
-        return request.client.host
-    return "127.0.0.1"
+    """Trust X-Forwarded-For only when the immediate socket peer is trusted."""
+    peer = request.client.host if request.client and request.client.host else None
+    if not peer:
+        return "unknown"
+    if not _is_trusted_proxy(peer):
+        return peer
+
+    chain = [part.strip() for part in request.headers.get("x-forwarded-for", "").split(",") if part.strip()]
+    for candidate in reversed(chain):
+        try:
+            ipaddress.ip_address(candidate)
+        except ValueError:
+            continue
+        if not _is_trusted_proxy(candidate):
+            return candidate
+    return peer
 
 
 class HttpRateLimiter:
@@ -105,6 +129,12 @@ monitoring_limiter = HttpRateLimiter(
     name="monitoring",
 )
 
+images_limiter = HttpRateLimiter(
+    lambda: settings.rate_limit_images_limit,
+    lambda: settings.rate_limit_images_window_seconds,
+    name="images",
+)
+
 
 def rate_limit_auth_login(request: Request) -> None:
     ip = get_client_ip(request)
@@ -138,3 +168,8 @@ def rate_limit_monitoring(
 ) -> None:
     key = f"monitoring:{current_user.id}" if current_user else f"monitoring:{get_client_ip(request)}"
     monitoring_limiter.check(key)
+
+
+
+def rate_limit_images(current_user: User = Depends(get_current_user)) -> None:
+    images_limiter.check(f"images:{current_user.id}")

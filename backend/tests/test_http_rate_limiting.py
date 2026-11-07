@@ -16,6 +16,21 @@ from app.security.rate_limiter import (
 )
 
 
+def _from_peer(asgi_app, host: str = "10.0.0.2", port: int = 50000):
+    """Bungkus app ASGI agar peer soket terlihat berasal dari ``host``.
+
+    TestClient versi lama tidak punya parameter ``client=`` dan peer-nya selalu
+    "testclient" (bukan IP), sehingga X-Forwarded-For tidak pernah dipercaya. Pembungkus ini
+    mengisi scope["client"] dengan IP proxy, jadi logika kepercayaan asli yang diuji.
+    """
+    async def wrapped(scope, receive, send):
+        if scope["type"] in ("http", "websocket"):
+            scope = {**scope, "client": (host, port)}
+        await asgi_app(scope, receive, send)
+
+    return wrapped
+
+
 @pytest.fixture(autouse=True)
 def reset_limiters():
     auth_login_limiter.reset()
@@ -31,8 +46,11 @@ def reset_limiters():
     monitoring_limiter.reset()
 
 
-def test_auth_login_rate_limit():
-    client = TestClient(app)
+def test_auth_login_rate_limit(monkeypatch):
+    # XFF hanya dipercaya bila peer soket adalah proxy tepercaya. Tanpa ini semua request
+    # dianggap satu IP ("testclient"), sehingga IP lain pun kena 429.
+    monkeypatch.setattr(settings, "trusted_proxy_ips", ["10.0.0.0/8"])
+    client = TestClient(_from_peer(app))
     # Temporarily set a low limit for fast testing
     orig_limit = settings.rate_limit_auth_login_limit
     settings.rate_limit_auth_login_limit = 3
@@ -67,8 +85,10 @@ def test_auth_login_rate_limit():
         settings.rate_limit_auth_login_limit = orig_limit
 
 
-def test_auth_register_rate_limit():
-    client = TestClient(app)
+def test_auth_register_rate_limit(monkeypatch):
+    monkeypatch.setattr(settings, "public_registration_enabled", True)
+    monkeypatch.setattr(settings, "trusted_proxy_ips", ["10.0.0.0/8"])
+    client = TestClient(_from_peer(app))
     orig_limit = settings.rate_limit_auth_register_limit
     settings.rate_limit_auth_register_limit = 2
     try:

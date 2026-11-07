@@ -182,3 +182,25 @@ No dependency vulnerability result is claimed.
 ## Deployment note
 
 Until SEC-01 through SEC-07 are fixed and regression-tested, do not expose this branch as a public multi-tenant service. The current audit is a static baseline and does not certify a VPS deployment.
+
+
+## Phase 8.2 remediation update — 2026-11-07
+
+The following controls were added on `security/hardening-phase7` (PR #5, targeting `phase7-monitoring-history`):
+
+| ID | Finding | Remediation in branch | Validation |
+|---|---|---|---|
+| SEC-16 | Public self-registration allows untrusted users to consume shared AI/provider quota | `PUBLIC_REGISTRATION_ENABLED=false` by default; registration endpoint returns 403 unless explicitly enabled. Production settings reject enabling public registration. | Regression test added; runtime suite not run |
+| SEC-17 | User-supplied device host/port could make backend connect to unintended destinations | Production device create/update accepts only usable private IP literals; production settings require `ALLOW_DIRECT_DEVICE_CONNECTIONS=false`; direct MikroTik sockets are rejected and production device operations must use the authenticated Remote Agent relay. | Regression tests added; deployment integration not run |
+| SEC-18 | Client can spoof `X-Forwarded-For` to rotate the login rate-limit key | Forwarded headers are ignored unless the immediate peer is in `TRUSTED_PROXY_IPS`; trusted chains are parsed right-to-left. | Unit tests added for untrusted peer, trusted chain, and malformed header |
+
+HTTP limits were tightened (login 5/min, registration 3/min, chat 5/min, tools 30/min, monitoring 60/min, image generation 2/min). These are **per-process** in-memory limits, not global quotas. Multiple workers/instances multiply the effective allowance; Redis/shared rate-limit storage and provider-side spending limits remain required before a public multi-instance launch.
+
+Production environment requirements now include:
+- `PUBLIC_REGISTRATION_ENABLED=false`
+- `ALLOW_DIRECT_DEVICE_CONNECTIONS=false`
+- `AGENT_REQUIRE_TLS=true`
+- explicit non-localhost `CORS_ORIGINS`
+- `TRUSTED_PROXY_IPS` set only to actual reverse-proxy peers (or left empty if no trusted proxy is used)
+
+The regression tests are committed but have not been executed in a live checkout in this session. This update does not close the other open findings in this audit, including direct API-SSL certificate verification, SSH host-key verification, relay cross-worker routing, browser token storage, security headers, and request-body limits.

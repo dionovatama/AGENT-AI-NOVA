@@ -56,6 +56,7 @@ import librouteros
 import librouteros.exceptions
 from pydantic import BaseModel, Field
 
+from app.config import settings
 from app.database.models import Device
 from app.tools.context import ExecutionContext
 from app.tools.schemas import (
@@ -127,6 +128,12 @@ def _connect(device: Device, password: str | None, sock=None):
         # ssl.CERT_NONE di sini -- verifikasi = pin fingerprint, dilakukan sebelum
         # login ini mengirim satu byte pun.
         return _connect_over_socket(sock, username, password)
+
+    if not settings.allow_direct_device_connections:
+        raise MikrotikConnectionError(
+            "Koneksi langsung dari backend ke perangkat dinonaktifkan. "
+            "Daftarkan Remote Agent dan relay target yang diotorisasi."
+        )
 
     connect_kwargs: dict = {
         "host": device.host,
