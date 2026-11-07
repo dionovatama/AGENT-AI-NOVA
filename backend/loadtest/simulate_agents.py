@@ -126,8 +126,7 @@ async def main():
     sampler = asyncio.create_task(_sample_backend_process(args.backend_pid, process_samples)) if args.backend_pid else None
     print(f"Connected simulator tasks: {len(tasks)}. Press Ctrl+C to stop.")
     await STOP.wait()
-    for task in tasks:
-        task.cancel()
+    # Let connected simulators send the protocol-v1 bye frame before closing.
     await asyncio.gather(*tasks, return_exceptions=True)
     if sampler:
         sampler.cancel()
