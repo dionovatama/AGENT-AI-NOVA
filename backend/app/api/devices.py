@@ -28,6 +28,7 @@ from app.security.dependencies import get_current_user
 from app.security.credential_encryption import CredentialEncryptionError, encrypt_credential
 from app.network.relay_tls import normalize_fingerprint
 from app.security.audit import record_audit_event
+from app.network.remote_transport import clear_observed_fingerprint, get_observed_fingerprint
 
 router = APIRouter(tags=["devices", "credentials", "audit"])
 
@@ -197,6 +198,7 @@ def update_device(
     db.commit()
     db.refresh(device)
     if pin_supplied and new_pin != old_pin:
+        clear_observed_fingerprint(current_user.id, device.id)
         record_audit_event(
             action="device.tls_pin_updated", result_status="SUCCESS", user_id=current_user.id,
             device_id=device.id,
@@ -208,6 +210,24 @@ def update_device(
             db=db,
         )
     return device
+
+
+@router.get("/devices/{device_id}/observed-tls-fingerprint")
+def get_observed_device_tls_fingerprint(
+    device_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Return a recent observed certificate only to the owning operator."""
+    device = db.query(Device).filter(
+        Device.id == device_id, Device.owner_id == current_user.id
+    ).first()
+    if device is None:
+        raise HTTPException(status_code=404, detail="Device not found.")
+    observed = get_observed_fingerprint(current_user.id, device.id)
+    if observed is None:
+        raise HTTPException(status_code=404, detail="No recent observed certificate fingerprint.")
+    return {"observed": observed, "expires_in_seconds": 900}
 
 
 # ============================================================
