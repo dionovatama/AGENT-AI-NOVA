@@ -8,10 +8,11 @@ from __future__ import annotations
 import asyncio
 import uuid
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
+import re
 
 import librouteros
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.database.models import Device, User
@@ -171,10 +172,13 @@ async def get_mikrotik_monitoring(
         "compatibility": {"routeros": "v6/v7", "collection": "read-only",
             "optional_tables_may_be_empty": True},
     }
+    _save_metric_sample(db, device, response)
+    return response
+
 
 # Per-process throttle for retention work; database throttling remains authoritative.
 _LAST_MONITORING_PRUNE: dict[uuid.UUID, datetime] = {}
-_INTERFACE_NAME = __import__("re").compile(r"^[A-Za-z0-9_.:@/-]{1,64}$")
+_INTERFACE_NAME = re.compile(r"^[A-Za-z0-9_.:@/-]{1,64}$")
 
 
 def _save_metric_sample(db: Session, device: Device, snapshot: dict) -> None:
@@ -216,7 +220,7 @@ def _save_metric_sample(db: Session, device: Device, snapshot: dict) -> None:
 
         last_prune = _LAST_MONITORING_PRUNE.get(device.id)
         if last_prune is None or (now - last_prune).total_seconds() >= 3600:
-            cutoff = now - __import__("datetime").timedelta(days=settings.monitoring_retention_days)
+            cutoff = now - timedelta(days=settings.monitoring_retention_days)
             db.execute(delete(DeviceMetricSample).where(
                 DeviceMetricSample.device_id == device.id,
                 DeviceMetricSample.collected_at < cutoff,
@@ -238,8 +242,8 @@ def _save_metric_sample(db: Session, device: Device, snapshot: dict) -> None:
 @router.get("/{device_id}/monitoring/history")
 def get_mikrotik_monitoring_history(
     device_id: uuid.UUID,
-    minutes: int = __import__("fastapi").Query(60, ge=1, le=10080),
-    interface: str | None = __import__("fastapi").Query(None, min_length=1, max_length=64),
+    minutes: int = Query(60, ge=1, le=10080),
+    interface: str | None = Query(None, min_length=1, max_length=64),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -272,7 +276,7 @@ def get_mikrotik_monitoring_history(
     })
     for sample in samples:
         epoch = sample.collected_at.timestamp()
-        key = int(epoch // bucket_seconds)
+        key = int((epoch - start.timestamp()) // bucket_seconds)
         bucket = buckets[key]
         bucket["timestamps"].append(epoch)
         for source, target in (
@@ -308,4 +312,4 @@ def get_mikrotik_monitoring_history(
             "tx_bps": average(bucket["tx"]) if interface is not None else None,
             "sample_count": len(bucket["timestamps"]),
         })
-    return {"points": points[:500], "bucket_seconds": bucket_seconds, "count": len(samples)}
+    return {"points": points, "bucket_seconds": bucket_seconds, "count": len(samples)}
