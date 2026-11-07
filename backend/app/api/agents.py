@@ -19,6 +19,8 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.agents.starlette_adapter import StarletteSocket
+from app.config import settings
+from app.security.http_hardening import websocket_origin_allowed
 from app.agents.states import AgentStatus, effective_status
 from app.agents.tokens import generate_agent_token, hash_agent_token
 from app.agents.wiring import agent_manager
@@ -198,4 +200,7 @@ def delete_agent(
 async def agent_websocket(websocket: WebSocket, agent_id: str) -> None:
     """Endpoint koneksi Remote Agent. Seluruh logika ada di AgentConnectionManager;
     protokol: lihat app/agents/protocol.py."""
+    if not websocket_origin_allowed(websocket.headers.get("origin"), settings.cors_origins):
+        await websocket.close(code=4403, reason="Origin not allowed")
+        return
     await agent_manager.handle(StarletteSocket(websocket), agent_id)
