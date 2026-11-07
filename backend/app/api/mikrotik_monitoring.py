@@ -219,14 +219,15 @@ def _save_metric_sample(db: Session, device: Device, snapshot: dict) -> None:
         ))
 
         last_prune = _LAST_MONITORING_PRUNE.get(device.id)
-        if last_prune is None or (now - last_prune).total_seconds() >= 3600:
+        prune_due = last_prune is None or (now - last_prune).total_seconds() >= 3600
+        if prune_due:
             cutoff = now - timedelta(days=settings.monitoring_retention_days)
             db.execute(delete(DeviceMetricSample).where(
                 DeviceMetricSample.device_id == device.id,
                 DeviceMetricSample.collected_at < cutoff,
             ))
-            _LAST_MONITORING_PRUNE[device.id] = now
 
+        db.flush()
         overflow_ids = db.query(DeviceMetricSample.id).filter(
             DeviceMetricSample.device_id == device.id
         ).order_by(DeviceMetricSample.collected_at.desc()).offset(
@@ -234,6 +235,8 @@ def _save_metric_sample(db: Session, device: Device, snapshot: dict) -> None:
         ).subquery()
         db.execute(delete(DeviceMetricSample).where(DeviceMetricSample.id.in_(overflow_ids)))
         db.commit()
+        if prune_due:
+            _LAST_MONITORING_PRUNE[device.id] = now
     except Exception as exc:
         db.rollback()
         logger.warning("Monitoring history write failed for device %s (%s)", device.id, type(exc).__name__)
