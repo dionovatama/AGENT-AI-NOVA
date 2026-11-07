@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from app.database.models import Agent, Device, RelayTarget, User
 from app.database.session import get_db
 from app.schemas.relay_targets import (
-    MAX_TARGETS_PER_AGENT, RelayTargetCreateRequest, RelayTargetResponse,
+    MAX_TARGETS_PER_AGENT, RelayTargetCreateRequest, RelayTargetPinUpdateRequest, RelayTargetResponse,
 )
 from app.security.audit import record_audit_event
 from app.security.dependencies import get_current_user
@@ -80,6 +80,29 @@ def list_targets(
             .filter(RelayTarget.agent_id == agent.id, RelayTarget.owner_id == current_user.id)
             .order_by(RelayTarget.created_at).all())
     return [_to_response(t) for t in rows]
+
+
+@router.patch("/agents/{agent_id}/targets/{target_id}", response_model=RelayTargetResponse)
+def update_target_pin(
+    agent_id: uuid.UUID, target_id: uuid.UUID, payload: RelayTargetPinUpdateRequest,
+    current_user: User = Depends(get_current_user), db: Session = Depends(get_db),
+) -> RelayTargetResponse:
+    """Replace or clear a target certificate pin; target remains owner-scoped."""
+    agent = _owned_agent(db, agent_id, current_user)
+    target = db.query(RelayTarget).filter(
+        RelayTarget.id == target_id, RelayTarget.agent_id == agent.id,
+        RelayTarget.owner_id == current_user.id).first()
+    if target is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Target not found.")
+    target.tls_fingerprint = payload.tls_fingerprint
+    db.commit()
+    db.refresh(target)
+    record_audit_event(
+        action="agent.target.pin_updated", result_status="SUCCESS", user_id=current_user.id,
+        request_metadata={"agent_id": str(agent.id), "target_id": str(target.id),
+                          "tls_pinned": target.tls_fingerprint is not None},
+    )
+    return _to_response(target)
 
 
 @router.delete("/agents/{agent_id}/targets/{target_id}", status_code=status.HTTP_204_NO_CONTENT)
