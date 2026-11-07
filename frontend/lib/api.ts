@@ -314,6 +314,10 @@ export const novaApi = {
     request<RelayTarget>(`/agents/${agentId}/targets`, {
       method: "POST", body: JSON.stringify(payload),
     }),
+  getObservedRelayFingerprint: (agentId: string, targetId: string) =>
+    request<{ observed: string; expires_in_seconds: number }>(
+      `/agents/${agentId}/targets/${targetId}/observed-fingerprint`,
+    ),
   updateRelayTargetPin: (
     agentId: string,
     targetId: string,
