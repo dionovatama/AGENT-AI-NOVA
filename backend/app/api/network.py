@@ -119,11 +119,14 @@ def get_manual_topology(
     devices = {d.id: d for d in db.query(Device).filter(
         Device.owner_id == current_user.id, Device.id.in_(device_ids)
     ).all()} if device_ids else {}
-    monitored_devices = db.query(Device).join(
+    monitored_device_ids = [row[0] for row in db.query(Device.id).join(
         RelayTarget, RelayTarget.device_id == Device.id
     ).filter(
         Device.owner_id == current_user.id, RelayTarget.owner_id == current_user.id
-    ).distinct().order_by(Device.created_at).all()
+    ).distinct().all()]
+    monitored_devices = db.query(Device).filter(
+        Device.owner_id == current_user.id, Device.id.in_(monitored_device_ids)
+    ).order_by(Device.created_at).all() if monitored_device_ids else []
     placed_ids = {n.device_id for n in nodes if n.device_id}
     return {
         "nodes": [_manual_node_payload(n, devices.get(n.device_id)) for n in nodes],
