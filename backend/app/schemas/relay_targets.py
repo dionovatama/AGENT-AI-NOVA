@@ -90,10 +90,12 @@ class RelayTargetResponse(BaseModel):
 
 
 class RelayTargetPinUpdateRequest(BaseModel):
-    """Replace or clear the pinned SHA-256 certificate fingerprint."""
+    """Replace or clear a pin only after an explicit operator confirmation."""
     tls_fingerprint: str | None = Field(..., max_length=128)
+    expected_current_fingerprint: str | None = Field(default=None, max_length=128)
+    confirm: bool = False
 
-    @field_validator("tls_fingerprint")
+    @field_validator("tls_fingerprint", "expected_current_fingerprint")
     @classmethod
     def _fp(cls, v: str | None) -> str | None:
         if v is None or not v.strip():
