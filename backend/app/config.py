@@ -119,6 +119,7 @@ class Settings(BaseSettings):
     # LINUX_SSH_KNOWN_HOSTS_PATH ke file known_hosts untuk strict host verification.
     linux_ssh_host_key_checking: bool = False
     linux_ssh_known_hosts_path: str | None = None
+    allow_unpinned_local_tls: bool = False
 
     # --- Configuration Engine Kill-Switch (PRD section 39) ---
     # Default False: memblokir seluruh eksekusi perubahan konfigurasi ke perangkat jaringan.
@@ -195,6 +196,8 @@ def validate_production_settings(config: "Settings") -> None:
         raise RuntimeError("Production requires a high-entropy JWT_SECRET_KEY with at least 32 characters.")
     if config.agent_require_tls is not True:
         raise RuntimeError("Production requires AGENT_REQUIRE_TLS=true.")
+    if not config.linux_ssh_host_key_checking or not config.linux_ssh_known_hosts_path:
+        raise RuntimeError("Production requires LINUX_SSH_HOST_KEY_CHECKING=true and LINUX_SSH_KNOWN_HOSTS_PATH.")
     origins = config.cors_origins
     if not origins:
         raise RuntimeError("Production requires CORS_ALLOWED_ORIGINS with at least one HTTPS origin.")
