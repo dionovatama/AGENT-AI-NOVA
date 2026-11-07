@@ -26,6 +26,8 @@ from app.schemas.devices import (
 )
 from app.security.dependencies import get_current_user
 from app.security.credential_encryption import CredentialEncryptionError, encrypt_credential
+from app.network.relay_tls import normalize_fingerprint
+from app.security.audit import record_audit_event
 
 router = APIRouter(tags=["devices", "credentials", "audit"])
 
@@ -149,6 +151,18 @@ def update_device(
             detail="No device fields supplied for update.",
         )
 
+    pin_supplied = "tls_fingerprint" in changes
+    new_pin = changes.pop("tls_fingerprint", None)
+    confirm_pin_change = changes.pop("confirm_tls_fingerprint_change", False)
+    old_pin = (device.device_metadata or {}).get("tls_fingerprint")
+    if pin_supplied:
+        try:
+            new_pin = normalize_fingerprint(new_pin) if new_pin else None
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=422, detail="tls_fingerprint must be a SHA-256 fingerprint.") from None
+        if new_pin != old_pin and not confirm_pin_change:
+            raise HTTPException(status_code=409, detail="Explicit confirmation is required to change the device TLS pin.")
+
     if "credential_id" in changes and changes["credential_id"] is not None:
         credential = (
             db.query(Credential)
@@ -172,8 +186,27 @@ def update_device(
         else:
             setattr(device, field, value)
 
+    if pin_supplied:
+        metadata = dict(device.device_metadata or {})
+        if new_pin:
+            metadata["tls_fingerprint"] = new_pin
+        else:
+            metadata.pop("tls_fingerprint", None)
+        device.device_metadata = metadata
+
     db.commit()
     db.refresh(device)
+    if pin_supplied and new_pin != old_pin:
+        record_audit_event(
+            action="device.tls_pin_updated", result_status="SUCCESS", user_id=current_user.id,
+            device_id=device.id,
+            request_metadata={
+                "old_fingerprint_prefix": old_pin[:12] if isinstance(old_pin, str) else None,
+                "new_fingerprint_prefix": new_pin[:12] if isinstance(new_pin, str) else None,
+                "operator_confirmed": True,
+            },
+            db=db,
+        )
     return device
 
 
