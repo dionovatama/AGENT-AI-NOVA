@@ -51,7 +51,17 @@ class DeviceExecutionSlot:
             return
         if self._future is not None and not self._future.done():
             self._release_deferred = True
-            self._future.add_done_callback(lambda _: self._release_now())
+
+            def _finished(future: asyncio.Future) -> None:
+                # A caller may have timed out/cancelled while the thread kept running.
+                # Retrieve any late exception to avoid "Future exception was never retrieved".
+                try:
+                    future.exception()
+                except (asyncio.CancelledError, Exception):
+                    pass
+                self._release_now()
+
+            self._future.add_done_callback(_finished)
         else:
             self._release_now()
 
