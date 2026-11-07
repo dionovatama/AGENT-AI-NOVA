@@ -13,6 +13,8 @@ def _base_settings_kwargs(**overrides):
         "openrouter_api_key": "test-key",
         "linux_ssh_host": "127.0.0.1",
         "linux_ssh_private_key_path": "/tmp/key",
+        # Production forbids direct backend->device connections (Remote Agent relay only).
+        "allow_direct_device_connections": False,
     }
     base.update(overrides)
     return base

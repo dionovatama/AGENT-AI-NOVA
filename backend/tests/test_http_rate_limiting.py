@@ -7,6 +7,7 @@ from app.config import settings
 from app.database.session import get_db
 from app.database.models import User
 from app.security.hashing import hash_password, create_access_token
+from app.security import rate_limiter
 from app.security.rate_limiter import (
     auth_login_limiter,
     auth_register_limiter,
@@ -14,6 +15,13 @@ from app.security.rate_limiter import (
     tools_execute_limiter,
     monitoring_limiter,
 )
+
+
+def _trust_testclient_peer(monkeypatch):
+    """X-Forwarded-For is only honoured when the socket peer is a trusted proxy.
+    TestClient's peer is the literal host "testclient" (not an IP), so mark it
+    trusted; works on every Starlette version (no TestClient(client=...) needed)."""
+    monkeypatch.setattr(rate_limiter, "_is_trusted_proxy", lambda addr: addr == "testclient")
 
 
 @pytest.fixture(autouse=True)
@@ -31,7 +39,8 @@ def reset_limiters():
     monitoring_limiter.reset()
 
 
-def test_auth_login_rate_limit():
+def test_auth_login_rate_limit(monkeypatch):
+    _trust_testclient_peer(monkeypatch)
     client = TestClient(app)
     # Temporarily set a low limit for fast testing
     orig_limit = settings.rate_limit_auth_login_limit
@@ -67,7 +76,9 @@ def test_auth_login_rate_limit():
         settings.rate_limit_auth_login_limit = orig_limit
 
 
-def test_auth_register_rate_limit():
+def test_auth_register_rate_limit(monkeypatch):
+    _trust_testclient_peer(monkeypatch)
+    monkeypatch.setattr(settings, "public_registration_enabled", True)
     client = TestClient(app)
     orig_limit = settings.rate_limit_auth_register_limit
     settings.rate_limit_auth_register_limit = 2

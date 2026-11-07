@@ -56,6 +56,7 @@ import librouteros
 import librouteros.exceptions
 from pydantic import BaseModel, Field
 
+from app.config import settings
 from app.database.models import Device
 from app.tools.context import ExecutionContext
 from app.tools.schemas import (

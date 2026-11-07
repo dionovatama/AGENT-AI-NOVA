@@ -12,7 +12,9 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.api import images as images_module
+from app.config import settings
 from app.main import app, fastapi_app
+from app.security.rate_limiter import images_limiter
 from app.security.dependencies import get_current_user
 
 
@@ -22,13 +24,17 @@ class _FakeUser:
 
 @pytest.fixture(autouse=True)
 def _setup(monkeypatch):
-    fastapi_app.dependency_overrides[get_current_user] = lambda: _FakeUser()
+    # monkeypatch.setitem is undone even if setup fails later; a bare assignment
+    # leaked the fake user into every subsequent test module.
+    monkeypatch.setitem(fastapi_app.dependency_overrides, get_current_user, lambda: _FakeUser())
     monkeypatch.setattr(images_module.settings, "cloudflare_account_id", "acc123", raising=False)
     monkeypatch.setattr(images_module.settings, "cloudflare_api_token", "tok-secret", raising=False)
     monkeypatch.setattr(images_module.settings, "image_model", "@cf/black-forest-labs/flux-1-schnell", raising=False)
-    images_module._recent_requests.clear()
+    monkeypatch.setattr(settings, "rate_limit_images_limit", 10)
+    monkeypatch.setattr(settings, "rate_limit_images_window_seconds", 60.0)
+    images_limiter.reset()
     yield
-    fastapi_app.dependency_overrides.clear()
+    images_limiter.reset()
 
 
 client = TestClient(app)

@@ -11,6 +11,7 @@ import uuid
 import pytest
 from fastapi.testclient import TestClient
 
+from app.config import settings
 from app.main import app
 
 client = TestClient(app)
@@ -25,11 +26,12 @@ def test_health_check():
 
 
 @pytest.mark.integration
-def test_register_and_login_flow():
+def test_register_and_login_flow(monkeypatch):
     """
     Membutuhkan PostgreSQL aktif. Tandai sebagai integration test
     agar dapat dipisah dari unit test murni jika diperlukan.
     """
+    monkeypatch.setattr(settings, "public_registration_enabled", True)
     unique_email = f"test-{uuid.uuid4().hex[:8]}@example.com"
     password = "SecurePass123"
 
