@@ -2,10 +2,10 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { novaApi } from "@/lib/api";
-import type { Device, DevicePlatform, RemoteAgent } from "@/lib/types";
+import type { Device, DevicePlatform } from "@/lib/types";
 import {
   Activity, Cpu, Loader2, Plus, RefreshCw, Router, Search, Server,
-  Wifi, Pencil, Trash2, X, Network, RadioTower, Cable, Globe2,
+  Pencil, Trash2, X, Network, RadioTower,
 } from "lucide-react";
 
 type DeviceForm = {
@@ -37,13 +37,6 @@ function deviceIcon(platform: string) {
   return Cpu;
 }
 
-function agentStatus(status: string) {
-  if (status === "online") return { label: "ONLINE", className: "border-emerald-400/25 bg-emerald-400/10 text-emerald-300", dot: "bg-emerald-400" };
-  if (status === "connecting") return { label: "CONNECTING", className: "border-amber-400/25 bg-amber-400/10 text-amber-300", dot: "bg-amber-400" };
-  if (status === "error") return { label: "ERROR", className: "border-rose-400/25 bg-rose-400/10 text-rose-300", dot: "bg-rose-400" };
-  return { label: status.toUpperCase(), className: "border-slate-500/25 bg-slate-500/10 text-slate-400", dot: "bg-slate-500" };
-}
-
 function formatDate(value: string | null | undefined) {
   if (!value) return "Belum ada";
   const date = new Date(value);
@@ -52,7 +45,6 @@ function formatDate(value: string | null | undefined) {
 
 export default function NetworkPage() {
   const [devices, setDevices] = useState<Device[]>([]);
-  const [agents, setAgents] = useState<RemoteAgent[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -79,12 +71,8 @@ export default function NetworkPage() {
     else setLoading(true);
     setError(null);
     try {
-      const [deviceRows, agentRows] = await Promise.all([
-        novaApi.listDevices(),
-        novaApi.listAgents(),
-      ]);
+      const deviceRows = await novaApi.listDevices();
       setDevices(deviceRows);
-      setAgents(agentRows);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Gagal mengambil inventory dari API.");
     } finally {
@@ -169,7 +157,6 @@ export default function NetworkPage() {
 
 
 
-  const onlineAgents = agents.filter((agent) => agent.status === "online").length;
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-y-auto bg-[#07090d] text-slate-100">
@@ -192,10 +179,8 @@ export default function NetworkPage() {
             </button>
           </div>
         </div>
-        <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
+        <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3">
           <div className="rounded-lg border border-white/[0.07] bg-white/[0.025] px-3 py-2.5"><p className="text-[9px] uppercase tracking-wider text-slate-500">Registered devices</p><p className="mt-1 text-xl font-semibold">{devices.length}</p></div>
-          <div className="rounded-lg border border-white/[0.07] bg-white/[0.025] px-3 py-2.5"><p className="text-[9px] uppercase tracking-wider text-slate-500">Remote agents</p><p className="mt-1 text-xl font-semibold">{agents.length}</p></div>
-          <div className="rounded-lg border border-white/[0.07] bg-white/[0.025] px-3 py-2.5"><p className="text-[9px] uppercase tracking-wider text-slate-500">Agents online</p><p className="mt-1 text-xl font-semibold text-emerald-300">{onlineAgents}</p></div>
           <div className="rounded-lg border border-white/[0.07] bg-white/[0.025] px-3 py-2.5"><p className="text-[9px] uppercase tracking-wider text-slate-500">Topology links</p><p className="mt-1 text-xl font-semibold text-slate-500">—</p></div>
         </div>
       </header>
@@ -265,25 +250,8 @@ export default function NetworkPage() {
           }
         </section>
 
-        <section>
-          <div className="mb-3 flex items-center gap-2"><Bot size={15} className="text-cyan-300"/><h2 className="text-sm font-semibold">Remote Agents</h2><span className="rounded bg-white/[0.05] px-2 py-0.5 text-[9px] text-slate-500">{agents.length}</span></div>
-          <p className="mb-3 text-[10px] text-slate-500">Status koneksi berasal dari heartbeat/session Agent backend; bukan hasil pemindaian jaringan.</p>
-          {loading ? <div className="flex items-center gap-2 rounded-lg border border-white/[0.07] px-4 py-6 text-[11px] text-slate-400"><Loader2 size={14} className="animate-spin"/> Memuat Agent…</div> :
-            agents.length === 0 ? <div className="rounded-lg border border-dashed border-white/[0.1] px-4 py-8 text-center"><Wifi size={22} className="mx-auto mb-2 text-slate-600"/><p className="text-xs text-slate-300">Belum ada Remote Agent</p><p className="mt-1 text-[10px] text-slate-500">Buat dan provision Agent melalui halaman Agents.</p></div> :
-            <div className="grid gap-3 md:grid-cols-2 2xl:grid-cols-3">
-              {agents.map((agent) => {
-                const status = agentStatus(agent.status);
-                return <article key={agent.id} className="rounded-lg border border-white/[0.08] bg-[#0b1119] p-4">
-                  <div className="flex items-start justify-between gap-3"><div className="flex min-w-0 items-center gap-2.5"><div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-violet-300/15 bg-violet-300/[0.07] text-violet-200"><RadioTower size={17}/></div><div className="min-w-0"><h3 className="truncate text-xs font-semibold">{agent.name}</h3><p className="mt-1 truncate font-mono text-[9px] text-slate-500">{agent.id}</p></div></div><span className={`flex shrink-0 items-center gap-1.5 rounded border px-2 py-1 text-[8px] font-semibold tracking-wider ${status.className}`}><span className={`h-1.5 w-1.5 rounded-full ${status.dot}`}/>{status.label}</span></div>
-                  <div className="mt-4 grid grid-cols-2 gap-3 border-t border-white/[0.06] pt-3"><div><p className="text-[9px] text-slate-500">Hostname</p><p className="mt-1 truncate text-[10px] text-slate-300">{agent.hostname || "—"}</p></div><div><p className="text-[9px] text-slate-500">OS</p><p className="mt-1 truncate text-[10px] text-slate-300">{agent.os || "—"}</p></div><div><p className="text-[9px] text-slate-500">Last heartbeat</p><p className="mt-1 text-[10px] text-slate-300">{formatDate(agent.last_heartbeat_at)}</p></div><div><p className="text-[9px] text-slate-500">Agent version</p><p className="mt-1 text-[10px] text-slate-300">{agent.agent_version || "—"}</p></div></div>
-                  {agent.last_error && <p className="mt-3 rounded bg-rose-400/[0.06] px-2 py-1.5 text-[9px] text-rose-200">{agent.last_error}</p>}
-                </article>;
-              })}
-            </div>
-          }
-        </section>
 
-        <div className="flex items-start gap-2 rounded-lg border border-amber-300/15 bg-amber-300/[0.035] p-3 text-[10px] leading-5 text-amber-100/80"><Activity size={13} className="mt-0.5 shrink-0 text-amber-300"/> Halaman ini menampilkan inventory Device dan status Remote Agent yang tersedia saat ini. Backend branch ini belum menyediakan API topology/link manual atau telemetry perangkat; karena itu koneksi antar-node, ping, dan status online Device tidak dibuat-buat.</div>
+        <div className="flex items-start gap-2 rounded-lg border border-amber-300/15 bg-amber-300/[0.035] p-3 text-[10px] leading-5 text-amber-100/80"><Activity size={13} className="mt-0.5 shrink-0 text-amber-300"/> Halaman ini hanya menampilkan perangkat dari inventory backend. Backend branch ini belum menyediakan API topology/link manual atau telemetry perangkat; karena itu koneksi antar-node, ping, dan status online Device tidak dibuat-buat.</div>
       </main>
 
       {selectedDevice && <div className="fixed inset-0 z-[60] flex justify-end bg-black/65 backdrop-blur-[2px]" onMouseDown={(event)=>{if(event.target===event.currentTarget)setSelectedDevice(null);}}>
