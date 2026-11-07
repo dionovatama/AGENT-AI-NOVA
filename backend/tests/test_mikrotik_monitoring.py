@@ -197,6 +197,6 @@ def test_metric_write_failure_is_best_effort():
 def test_rows_catches_multitraperror_for_optional_menus():
     class MissingMenu:
         def path(self, *args):
-            raise librouteros.exceptions.MultiTrapError()
+            raise librouteros.exceptions.MultiTrapError.__new__(librouteros.exceptions.MultiTrapError)
 
     assert monitoring._rows(MissingMenu(), "system", "routerboard") == []
