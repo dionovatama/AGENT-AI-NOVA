@@ -17,7 +17,7 @@ if sys.platform == "win32":
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.config import settings
+from app.config import settings, Settings
 from app.tools.manager import tool_manager
 from app.tools.network import ping_tool
 from app.tools.linux import (
@@ -100,6 +100,35 @@ from app.tools.linux_config import linux_config_apply_tool
 tool_manager.register(linux_config_apply_tool)
 
 
+def validate_production_startup(cfg: Settings) -> None:
+    """Fail-closed validation on startup for production environment invariants."""
+    if cfg.app_env.lower() == "production":
+        if len(cfg.jwt_secret_key) < 32:
+            raise RuntimeError(
+                f"Production startup aborted: jwt_secret_key must be >= 32 characters (got {len(cfg.jwt_secret_key)})"
+            )
+        if cfg.agent_require_tls is not True:
+            raise RuntimeError(
+                "Production startup aborted: agent_require_tls must be True in production"
+            )
+        if not cfg.cors_origins:
+            raise RuntimeError(
+                "Production startup aborted: cors_origins must not be empty in production"
+            )
+        from app.config import DEFAULT_DEV_CORS_ORIGINS
+        if cfg.cors_origins == DEFAULT_DEV_CORS_ORIGINS:
+            raise RuntimeError(
+                "Production startup aborted: cors_origins cannot be default localhost origins in production"
+            )
+        for origin in cfg.cors_origins:
+            if origin == "*":
+                raise RuntimeError("Production startup aborted: wildcard CORS origin '*' not allowed")
+            if "localhost" in origin.lower() or "127.0.0.1" in origin.lower():
+                raise RuntimeError(
+                    f"Production startup aborted: localhost origin not allowed in production CORS: {origin}"
+                )
+
+
 @app.on_event("startup")
 async def start_background_tasks():
     """
@@ -108,6 +137,7 @@ async def start_background_tasks():
     selama aplikasi hidup. Lihat app/security/audit_retention.py untuk
     rasional kenapa ini otomatis, bukan tombol hapus manual.
     """
+    validate_production_startup(settings)
     asyncio.create_task(audit_retention_loop())
     # Remote Agent Phase A: sweeper untuk status agent basi (idempoten, per worker).
     agent_manager.start()
@@ -138,10 +168,10 @@ def health_check():
 fastapi_app = app
 app = CORSMiddleware(
     app,
-    allow_origins=[
-        "http://localhost:3000",
-        "http://127.0.0.1:3000",
-    ],
+    allow_origins=settings.cors_origins,
+
+
+
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

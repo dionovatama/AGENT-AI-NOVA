@@ -6,7 +6,14 @@ Prinsip:
 - Semua nilai sensitif/non-sensitif dibaca dari environment (.env).
 """
 
+from typing import Any
+from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+DEFAULT_DEV_CORS_ORIGINS: list[str] = [
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+]
 
 
 class Settings(BaseSettings):
@@ -164,6 +171,72 @@ class Settings(BaseSettings):
     agent_message_window_seconds: float = 10.0
     # None = otomatis: wajib TLS (wss) jika APP_ENV=production. Set false/true untuk override.
     agent_require_tls: bool | None = None
+
+    # --- CORS (Cross-Origin Resource Sharing) ---
+    cors_origins: list[str] = list(DEFAULT_DEV_CORS_ORIGINS)
+
+    @field_validator("cors_origins", mode="before")
+    @classmethod
+    def _parse_cors_origins(cls, v: Any) -> list[str]:
+        if isinstance(v, str):
+            v = v.strip()
+            if not v:
+                return []
+            if v.startswith("[") and v.endswith("]"):
+                import json
+                try:
+                    parsed = json.loads(v)
+                    if isinstance(parsed, list):
+                        return [str(item).strip() for item in parsed if str(item).strip()]
+                except Exception:
+                    pass
+            return [item.strip() for item in v.split(",") if item.strip()]
+        if isinstance(v, (list, set, tuple)):
+            return [str(item).strip() for item in v if str(item).strip()]
+        return v
+
+    @model_validator(mode="after")
+    def _validate_production_requirements(self) -> "Settings":
+        if self.app_env.lower() == "production":
+            # 1. JWT secret key >= 32 characters
+            if len(self.jwt_secret_key) < 32:
+                raise ValueError(
+                    f"Production environment requires jwt_secret_key to be at least 32 characters long "
+                    f"(currently {len(self.jwt_secret_key)} characters)."
+                )
+
+            # 2. Remote agent must enforce TLS
+            if self.agent_require_tls is not True:
+                raise ValueError(
+                    "Production environment requires agent_require_tls=True."
+                )
+
+            # 3. CORS origins must be explicitly configured from environment (no defaults, no wildcards, no localhost)
+            if not self.cors_origins:
+                raise ValueError(
+                    "Production environment requires cors_origins to be non-empty."
+                )
+            if self.cors_origins == DEFAULT_DEV_CORS_ORIGINS:
+                raise ValueError(
+                    "Production environment cannot use default localhost CORS origins. "
+                    "Configure CORS_ORIGINS from environment."
+                )
+            for origin in self.cors_origins:
+                if origin == "*":
+                    raise ValueError(
+                        "Production environment cannot use wildcard '*' in CORS_ORIGINS."
+                    )
+                lower_origin = origin.lower()
+                if "localhost" in lower_origin or "127.0.0.1" in lower_origin:
+                    raise ValueError(
+                        f"Production environment cannot contain localhost or 127.0.0.1 in CORS_ORIGINS: {origin}"
+                    )
+                if not origin.startswith(("http://", "https://")):
+                    raise ValueError(
+                        f"CORS origin must start with http:// or https://: {origin}"
+                    )
+
+        return self
 
     model_config = SettingsConfigDict(
         env_file=".env",

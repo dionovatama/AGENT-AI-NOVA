@@ -27,14 +27,14 @@ The source does **not** yet justify public multi-tenant production deployment. T
 
 | ID | Severity | Finding | Evidence | Status |
 |---|---|---|---|---|
-| SEC-01 | High | No production startup validation for JWT secret strength, Agent TLS requirement, CORS origin, or SSH host-key policy | `backend/app/config.py`, `backend/app/main.py`, `backend/app/agents/wiring.py` | Open |
+| SEC-01 | High | No production startup validation for JWT secret strength, Agent TLS requirement, CORS origin, or SSH host-key policy | `backend/app/config.py`, `backend/app/main.py`, `backend/app/agents/wiring.py` | In Progress (Startup/JWT/TLS/CORS fixed) |
 | SEC-02 | High | Direct/local MikroTik API-SSL disables certificate verification and has no pin | `backend/app/tools/mikrotik.py::_connect` | Open |
 | SEC-03 | High | Linux SSH host-key checking defaults off; known_hosts path is optional | `backend/app/config.py`, `backend/app/tools/linux.py`, `backend/app/network/adapters/linux.py` | Open |
 | SEC-04 | High | No HTTP rate-limit/lockout found on auth, chat, tool execution, or monitoring routes | `backend/app/api/auth.py`, `chat.py`, `tools.py`, `mikrotik_monitoring.py` | Open |
 | SEC-05 | High | Relay target pin can be overwritten/cleared via PATCH without explicit confirmation; full fingerprint is returned by target response | `backend/app/api/agent_targets.py::_to_response/update_target_pin` | Open |
 | SEC-06 | High | Relay channels, session registry, and Agent rate-limit state are process-local; cross-worker relay commands cannot reach the socket owner | `backend/app/agents/manager.py`, `relay_service.py`, `ratelimit.py`; PHASE3/4/5 docs | Open |
 | SEC-07 | High | Several error paths interpolate raw exception strings into HTTP responses/logs; sanitizer is not a universal boundary | `backend/app/api/configurations.py`, `chat.py`, `mikrotik.py`, `mikrotik_monitoring.py` | Open |
-| SEC-08 | Medium | CORS is hardcoded to localhost origins; there is no deployment-configured allowlist | `backend/app/main.py` | Open |
+| SEC-08 | Medium | CORS is hardcoded to localhost origins; there is no deployment-configured allowlist | `backend/app/main.py` | Fixed |
 | SEC-09 | Medium | No global security headers or explicit request-body size middleware observed | `backend/app/main.py` | Open |
 | SEC-10 | Medium | JWT is persisted in localStorage and attached as Bearer by frontend code | `frontend/lib/auth.ts`, `frontend/lib/api.ts` | Open |
 | SEC-11 | Medium | Relay target API exposes full SHA-256 fingerprint in response; fingerprint is not a password but should be treated as trust metadata and operator-only | `backend/app/api/agent_targets.py::_to_response` | Open |

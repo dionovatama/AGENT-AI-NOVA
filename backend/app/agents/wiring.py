@@ -16,6 +16,8 @@ def build_runtime_config() -> AgentRuntimeConfig:
     if require_tls is None:
         # Secure by default: wajib TLS di production, longgar di development.
         require_tls = settings.app_env.lower() == "production"
+    if settings.app_env.lower() == "production" and not require_tls:
+        raise ValueError("Production environment requires agent TLS (require_tls=True)")
     return AgentRuntimeConfig(
         auth_timeout_seconds=settings.agent_auth_timeout_seconds,
         heartbeat_interval_seconds=settings.agent_heartbeat_interval_seconds,
