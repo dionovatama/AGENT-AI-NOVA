@@ -427,3 +427,32 @@ export interface PersistedChatMessage {
   metadata: Record<string, unknown> | null;
   created_at: string;
 }
+
+
+export interface ManualTopologyNode {
+  id: string;
+  device_id: string | null;
+  name: string;
+  kind: string;
+  x: number;
+  y: number;
+  device: {
+    id: string; platform: string; host: string; port: number;
+    reachability: string; last_checked_at: string | null; last_check_detail: string | null;
+  } | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ManualTopologyLink {
+  id: string;
+  source_node_id: string;
+  target_node_id: string;
+  label: string | null;
+  connection_type: string;
+}
+
+export interface ManualTopology {
+  nodes: ManualTopologyNode[];
+  links: ManualTopologyLink[];
+}
