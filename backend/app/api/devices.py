@@ -42,7 +42,7 @@ def _validate_production_device_host(host: str) -> None:
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="Production device host must be a private IP address literal.",
         ) from exc
-    if not address.is_private or address.is_loopback or address.is_link_local or address.is_multicast or address.is_unspecified:
+    if not address.is_private or address.is_loopback or address.is_link_local or address.is_multicast or address.is_unspecified or address.is_reserved:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="Production device host must be a usable private IP address.",
