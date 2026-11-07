@@ -45,6 +45,7 @@ from app.tools.web import web_search_tool, web_read_page_tool
 from app.tools.diagram import diagram_create_tool
 from app.security.audit_retention import audit_retention_loop
 from app.agents.wiring import agent_manager
+from app.agents.worker_guard import validate_single_worker_relay
 
 logger = logging.getLogger("nova.startup")
 
@@ -113,6 +114,7 @@ async def start_background_tasks():
     rasional kenapa ini otomatis, bukan tombol hapus manual.
     """
     validate_production_settings(settings)
+    validate_single_worker_relay()
     if settings.app_env.lower() == "production" and settings.allow_unpinned_local_tls:
         logger.warning("SECURITY: ALLOW_UNPINNED_LOCAL_TLS is enabled; local MikroTik API-SSL peers are not certificate-pinned.")
     asyncio.create_task(audit_retention_loop())
