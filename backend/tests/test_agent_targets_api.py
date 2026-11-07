@@ -246,3 +246,31 @@ def test_relay_pin_rotation_requires_confirmation_and_current_pin():
         assert event.request_metadata["old_fingerprint_prefix"] == "ab" * 6
         assert event.request_metadata["new_fingerprint_prefix"] == "cd" * 6
         assert "cd" * 32 not in str(event.request_metadata)
+
+
+
+def test_observed_relay_fingerprint_is_owner_only():
+    from app.network.remote_transport import record_observed_fingerprint
+
+    _, owner_headers = _user("pin-owner")
+    agent = _agent(owner_headers)
+    target = _target(owner_headers, agent["id"]).json()
+    record_observed_fingerprint(
+        create_access_token.__globals__["uuid"].UUID(agent["owner_id"])
+        if "owner_id" in agent else uuid.UUID(agent["owner_id"]),
+        uuid.UUID(target["id"]),
+        "ef" * 32,
+    )
+    own = client.get(
+        f"/agents/{agent['id']}/targets/{target['id']}/observed-fingerprint",
+        headers=owner_headers,
+    )
+    assert own.status_code == 200
+    assert own.json()["observed"] == "ef" * 32
+
+    _, other_headers = _user("pin-other")
+    foreign = client.get(
+        f"/agents/{agent['id']}/targets/{target['id']}/observed-fingerprint",
+        headers=other_headers,
+    )
+    assert foreign.status_code == 404
