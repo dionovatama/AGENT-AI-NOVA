@@ -10,6 +10,7 @@ Prinsip:
 from __future__ import annotations
 
 import uuid
+import ipaddress
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy.orm import Session
@@ -26,8 +27,27 @@ from app.schemas.devices import (
 )
 from app.security.dependencies import get_current_user
 from app.security.credential_encryption import CredentialEncryptionError, encrypt_credential
+from app.config import settings
 
 router = APIRouter(tags=["devices", "credentials", "audit"])
+
+def _validate_production_device_host(host: str) -> None:
+    """Production device targets must be literal private IPs, never DNS names/public endpoints."""
+    if settings.app_env.lower() != "production":
+        return
+    try:
+        address = ipaddress.ip_address(host.strip())
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Production device host must be a private IP address literal.",
+        ) from exc
+    if not address.is_private or address.is_loopback or address.is_link_local or address.is_multicast or address.is_unspecified:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Production device host must be a usable private IP address.",
+        )
+
 
 
 # ============================================================
@@ -41,6 +61,7 @@ def create_device(
     db: Session = Depends(get_db),
 ) -> Device:
     """Membuat device baru yang terikat secara eksklusif ke owner_id pengguna saat ini."""
+    _validate_production_device_host(payload.host)
     if payload.credential_id is not None:
         # Validasi bahwa credential yang direferensikan benar-benar milik user ini
         credential = (
@@ -143,6 +164,8 @@ def update_device(
         )
 
     changes = payload.model_dump(exclude_unset=True)
+    if changes.get("host") is not None:
+        _validate_production_device_host(changes["host"])
     if not changes:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
