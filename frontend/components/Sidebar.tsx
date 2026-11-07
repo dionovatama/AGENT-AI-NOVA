@@ -47,6 +47,7 @@ export function Sidebar({
   const router = useRouter();
   const searchParams = useSearchParams();
   const searchKey = searchParams.toString();
+  const selectedConversationId = searchParams.get("conversation");
   const [email, setEmail] = useState<string | null>(null);
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
   const [deletingConversationId, setDeletingConversationId] = useState<string | null>(null);
