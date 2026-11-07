@@ -1,5 +1,7 @@
 import uuid
 
+import pytest
+
 from fastapi.testclient import TestClient
 
 from app.database.models import AuditLog, Device, User
@@ -64,3 +66,41 @@ def test_foreign_user_cannot_update_local_device_pin():
         json={"tls_fingerprint": "cd" * 32, "confirm_tls_fingerprint_change": True},
     )
     assert response.status_code == 404
+
+
+
+@pytest.mark.asyncio
+async def test_monitoring_error_does_not_echo_exception_secret(monkeypatch, caplog):
+    import logging
+    from fastapi import HTTPException
+    from app.api import mikrotik_monitoring
+    from app.database.models import User
+
+    owner_id = uuid.uuid4()
+    device_id = uuid.uuid4()
+    secret_marker = "PASSWORD_SECRET_SENTINEL"
+    with SessionLocal() as db:
+        user = User(id=owner_id, email=f"monitor-{owner_id.hex}@example.com",
+                    hashed_password="placeholder", is_active=True)
+        device = Device(
+            id=device_id, owner_id=owner_id, name="router", platform="mikrotik",
+            host="192.0.2.11", port=8729, connection_type="api-ssl",
+            status="active", device_metadata={"username": "operator"},
+        )
+        db.add_all([user, device])
+        db.commit()
+        db.refresh(user)
+
+        monkeypatch.setattr(mikrotik_monitoring, "build_device_context", lambda *args: object())
+
+        async def fail(*args):
+            raise RuntimeError(secret_marker)
+
+        monkeypatch.setattr(mikrotik_monitoring, "_run_on_device", fail)
+        with caplog.at_level(logging.ERROR):
+            with pytest.raises(HTTPException) as raised:
+                await mikrotik_monitoring.get_mikrotik_monitoring(device_id, user, db)
+
+    assert raised.value.status_code == 502
+    assert secret_marker not in str(raised.value.detail)
+    assert secret_marker not in caplog.text
