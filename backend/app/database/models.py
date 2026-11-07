@@ -14,7 +14,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Index, Integer, JSON, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Index, Integer, JSON, String, Text, UniqueConstraint, desc
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -136,6 +136,24 @@ class Device(Base):
 
     def __repr__(self) -> str:
         return f"<Device id={self.id} name={self.name} platform={self.platform} host={self.host}>"
+
+
+class DeviceMetricSample(Base):
+    """Sanitized time-series metrics only; never stores raw RouterOS payloads."""
+    __tablename__ = "device_metric_samples"
+    __table_args__ = (
+        Index("ix_device_metric_samples_device_collected", "device_id", desc("collected_at")),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    device_id: Mapped[uuid.UUID] = mapped_column(
+        PG_UUID(as_uuid=True), ForeignKey("devices.id", ondelete="CASCADE"), nullable=False
+    )
+    collected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    cpu_load_percent: Mapped[float | None] = mapped_column(Float, nullable=True)
+    memory_used_percent: Mapped[float | None] = mapped_column(Float, nullable=True)
+    storage_used_percent: Mapped[float | None] = mapped_column(Float, nullable=True)
+    interfaces: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
 
 
 class AuditLog(Base):
