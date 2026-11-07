@@ -9,7 +9,7 @@ Client → FastAPI → Auth → PostgreSQL
 
 import asyncio
 import sys
-from app.api import auth, chat, configurations, devices, tools, mikrotik_generator, images, linux_generator, agent, agents, agent_targets, conversations, network, mikrotik_monitoring
+from app.api import auth, chat, configurations, devices, tools, mikrotik_generator, images, agent, agents, agent_targets, conversations, network, mikrotik_monitoring
 
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
@@ -20,16 +20,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings, Settings
 from app.tools.manager import tool_manager
 from app.tools.network import ping_tool
-from app.tools.linux import (
-    system_info_tool,
-    network_info_tool,
-    disk_info_tool,
-    memory_info_tool,
-    service_status_tool,
-    process_status_tool,
-    docker_status_tool,
-    log_check_tool,
-)
 from app.tools.mikrotik import (
     system_resource_tool,
     interface_status_tool,
@@ -59,21 +49,12 @@ app.include_router(tools.router)
 app.include_router(devices.router)
 app.include_router(configurations.router)
 app.include_router(mikrotik_generator.router)
-app.include_router(linux_generator.router)
 app.include_router(images.router)
 app.include_router(agent.router)   # legacy Phase 1 static-token gateway (/agent/ws), unchanged
 app.include_router(agent_targets.router)  # Phase 4: relay target allow-list per agent
 app.include_router(agents.router)  # Phase A: DB-backed agents (REST /agents + WS /ws/agent/{id})
 
 tool_manager.register(ping_tool)
-tool_manager.register(system_info_tool)
-tool_manager.register(network_info_tool)
-tool_manager.register(disk_info_tool)
-tool_manager.register(memory_info_tool)
-tool_manager.register(service_status_tool)
-tool_manager.register(process_status_tool)
-tool_manager.register(docker_status_tool)
-tool_manager.register(log_check_tool)
 tool_manager.register(web_search_tool)
 tool_manager.register(web_read_page_tool)
 tool_manager.register(diagram_create_tool)
@@ -95,9 +76,6 @@ tool_manager.register(firewall_rules_tool)
 from app.tools.mikrotik_config import mikrotik_config_apply_tool
 tool_manager.register(mikrotik_config_apply_tool)
 
-# Linux configuration writer is internal-only and can only be called by the orchestrator.
-from app.tools.linux_config import linux_config_apply_tool
-tool_manager.register(linux_config_apply_tool)
 
 
 def validate_production_startup(cfg: Settings) -> None:
