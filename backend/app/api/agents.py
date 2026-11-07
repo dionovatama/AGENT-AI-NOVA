@@ -78,8 +78,8 @@ def _close_local_connection(agent_id: uuid.UUID) -> None:
     lain tetap tertutup lewat heartbeat berikutnya)."""
     try:
         from_thread.run(agent_manager.disconnect_local, agent_id)
-    except Exception:  # noqa: BLE001
-        logger.warning("gagal menutup koneksi lokal agent=%s", agent_id, exc_info=True)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("gagal menutup koneksi lokal agent=%s type=%s", agent_id, type(exc).__name__)
 
 
 @router.post("/agents", response_model=AgentCreatedResponse, status_code=status.HTTP_201_CREATED)
