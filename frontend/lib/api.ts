@@ -218,7 +218,7 @@ export const novaApi = {
   deleteDevice: (deviceId: string) =>
     request<void>(`/devices/${deviceId}`, { method: "DELETE" }),
 
-  updateDevice: (deviceId: string, payload: { metadata?: Record<string, unknown> | null }) =>
+  updateDevice: (deviceId: string, payload: Partial<Pick<Device, "name" | "platform" | "host" | "port" | "connection_type" | "status" | "credential_id" | "metadata">>) =>
     request<Device>(`/devices/${deviceId}`, {
       method: "PATCH",
       body: JSON.stringify(payload),
