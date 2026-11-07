@@ -133,15 +133,15 @@ async def get_mikrotik_monitoring(
         # Preserve actionable relay/context errors produced by the shared transport.
         raise
     except ValueError as exc:
-        logger.warning("MikroTik monitoring validation failed for device %s: %s", device_id, exc)
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+        logger.warning("MikroTik monitoring validation failed for device %s (%s)", device_id, type(exc).__name__)
+        raise HTTPException(status_code=422, detail="Device monitoring configuration is invalid.") from None
     except Exception as exc:
-        # Include the exception class in server logs, never credentials or API payloads.
-        logger.exception("MikroTik monitoring failed for device %s (%s)", device_id, type(exc).__name__)
+        # Do not reflect transport/library exception text: it may contain target details.
+        logger.error("MikroTik monitoring failed for device %s (%s)", device_id, type(exc).__name__)
         raise HTTPException(
             status_code=502,
-            detail=f"RouterOS monitoring failed ({type(exc).__name__}): {exc}",
-        ) from exc
+            detail="RouterOS monitoring failed. Check the device connection and operator logs.",
+        ) from None
 
     resource = raw["resource"]
     identity = raw["identity"]
