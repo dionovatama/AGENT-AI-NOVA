@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import uuid
+import logging
 from datetime import datetime, timezone
 
 import librouteros
@@ -19,6 +20,7 @@ from app.network.device_context import build_device_context
 from app.security.dependencies import get_current_user
 from app.tools.mikrotik import _run_on_device, _api_session, _safe_int, _to_bool
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/devices", tags=["mikrotik-monitoring"])
 
 
@@ -109,12 +111,19 @@ async def get_mikrotik_monitoring(
     try:
         ctx = build_device_context(device, current_user, db)
         raw = await _run_on_device(_monitor_sync, ctx)
+    except HTTPException:
+        # Preserve actionable relay/context errors produced by the shared transport.
+        raise
     except ValueError as exc:
+        logger.warning("MikroTik monitoring validation failed for device %s: %s", device_id, exc)
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    except (OSError, librouteros.exceptions.TrapError,
-            librouteros.exceptions.ConnectionClosed,
-            librouteros.exceptions.ProtocolError) as exc:
-        raise HTTPException(status_code=502, detail="RouterOS monitoring request failed.") from exc
+    except Exception as exc:
+        # Include the exception class in server logs, never credentials or API payloads.
+        logger.exception("MikroTik monitoring failed for device %s (%s)", device_id, type(exc).__name__)
+        raise HTTPException(
+            status_code=502,
+            detail=f"RouterOS monitoring failed ({type(exc).__name__}). Check backend logs for the device-specific cause.",
+        ) from exc
 
     resource = raw["resource"]
     identity = raw["identity"]
