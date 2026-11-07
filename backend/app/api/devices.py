@@ -161,6 +161,9 @@ def update_device(
             new_pin = normalize_fingerprint(new_pin) if new_pin else None
         except (TypeError, ValueError):
             raise HTTPException(status_code=422, detail="tls_fingerprint must be a SHA-256 fingerprint.") from None
+        old_prefix = old_pin[:16] if isinstance(old_pin, str) else None
+        if payload.expected_tls_fingerprint_prefix != old_prefix:
+            raise HTTPException(status_code=409, detail="The current device pin changed. Refresh and confirm again.")
         if new_pin != old_pin and not confirm_pin_change:
             raise HTTPException(status_code=409, detail="Explicit confirmation is required to change the device TLS pin.")
 
