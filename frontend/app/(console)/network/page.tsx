@@ -22,6 +22,8 @@ export default function NetworkPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<ManualTopologyNode | null>(null);
+  const [monitoring, setMonitoring] = useState<Awaited<ReturnType<typeof novaApi.getMikrotikMonitoring>> | null>(null);
+  const [monitoringBusy, setMonitoringBusy] = useState(false);
   const [linkMode, setLinkMode] = useState(false);
   const [linkStart, setLinkStart] = useState<string | null>(null);
   const [addingDevice, setAddingDevice] = useState("");
@@ -113,6 +115,20 @@ export default function NetworkPage() {
     catch (e) { setError(e instanceof Error ? e.message : "Link gagal dihapus."); }
   };
 
+  const loadMikrotikMonitoring = async (node: ManualTopologyNode) => {
+    if (!node.device_id || node.device?.platform !== "mikrotik") return;
+    setMonitoringBusy(true);
+    setMonitoring(null);
+    try {
+      const snapshot = await novaApi.getMikrotikMonitoring(node.device_id);
+      setMonitoring(snapshot);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Monitoring MikroTik gagal.");
+    } finally {
+      setMonitoringBusy(false);
+    }
+  };
+
   const refreshDevice = async (node: ManualTopologyNode) => {
     if (!node.device_id) return;
     setBusy(true);
@@ -185,7 +201,22 @@ export default function NetworkPage() {
         </div>
         <aside className="rounded-xl border border-white/[0.08] bg-[#0b1119] p-4">
           {selected ? <><div className="flex items-start justify-between"><div><p className="text-[9px] font-bold tracking-[.18em] text-cyan-300">NODE INSPECTOR</p><h3 className="mt-1 text-sm font-semibold">{selected.name}</h3><p className="mt-1 text-[10px] text-slate-500">{selected.device ? `${selected.device.host}:${selected.device.port}` : `Manual node · ${selected.kind}`}</p></div><button onClick={() => setSelected(null)}><X size={14}/></button></div>
-            {selected.device ? <><div className="mt-3 rounded border border-white/[.07] p-3"><p className="text-[9px] text-slate-500">Reachability</p><p className="mt-1 text-sm font-semibold">{selected.device.reachability.toUpperCase()}</p><p className="mt-1 text-[9px] text-slate-500">Last checked: {selected.device.last_checked_at ? new Date(selected.device.last_checked_at).toLocaleString("id-ID") : "Belum pernah"}</p></div><button disabled={busy} onClick={() => void refreshDevice(selected)} className="mt-3 flex w-full items-center justify-center gap-2 rounded bg-cyan-500 px-3 py-2 text-[10px] font-semibold text-slate-950 disabled:opacity-50"><Activity size={12}/> Refresh via Agent</button></> : <p className="mt-3 text-[10px] text-slate-500">Node manual untuk merepresentasikan perangkat/komponen tambahan.</p>}
+            {selected.device ? <><div className="mt-3 rounded border border-white/[.07] p-3"><p className="text-[9px] text-slate-500">Reachability</p><p className="mt-1 text-sm font-semibold">{selected.device.reachability.toUpperCase()}</p><p className="mt-1 text-[9px] text-slate-500">Last checked: {selected.device.last_checked_at ? new Date(selected.device.last_checked_at).toLocaleString("id-ID") : "Belum pernah"}</p></div><button disabled={busy} onClick={() => void refreshDevice(selected)} className="mt-3 flex w-full items-center justify-center gap-2 rounded bg-cyan-500 px-3 py-2 text-[10px] font-semibold text-slate-950 disabled:opacity-50"><Activity size={12}/> Refresh via Agent</button>
+              {selected.device.platform === "mikrotik" && <button disabled={monitoringBusy} onClick={() => void loadMikrotikMonitoring(selected)} className="mt-2 flex w-full items-center justify-center gap-2 rounded border border-cyan-300/30 px-3 py-2 text-[10px] font-semibold text-cyan-200 disabled:opacity-50"><Activity size={12}/>{monitoringBusy ? "Collecting metrics…" : "Full MikroTik monitoring"}</button>}
+              {monitoring && monitoring.device_id === selected.device_id && <div className="mt-3 space-y-3 rounded border border-white/[.07] p-3">
+                <div><p className="text-[9px] font-semibold uppercase tracking-wider text-cyan-300">Live router metrics</p><p className="mt-1 text-[10px] text-slate-400">{monitoring.router.identity || selected.name} · RouterOS {monitoring.router.routeros_version || "unknown"}</p></div>
+                <div className="grid grid-cols-2 gap-2 text-[10px]">
+                  <div><span className="text-slate-500">CPU</span><p className="font-semibold">{monitoring.router.cpu_load_percent ?? "—"}%</p></div>
+                  <div><span className="text-slate-500">Memory</span><p className="font-semibold">{monitoring.router.memory_used_percent ?? "—"}%</p></div>
+                  <div><span className="text-slate-500">Uptime</span><p className="font-semibold">{monitoring.router.uptime || "—"}</p></div>
+                  <div><span className="text-slate-500">Interfaces</span><p className="font-semibold">{monitoring.interfaces.length}</p></div>
+                  <div><span className="text-slate-500">Neighbors</span><p className="font-semibold">{monitoring.neighbors.length}</p></div>
+                  <div><span className="text-slate-500">DHCP leases</span><p className="font-semibold">{monitoring.dhcp_leases.length}</p></div>
+                </div>
+                <div><p className="mb-1 text-[9px] font-semibold text-slate-400">INTERFACES / TRAFFIC</p>{monitoring.interfaces.map((iface) => <div key={iface.name} className="flex items-center justify-between gap-2 border-t border-white/[.05] py-1.5 text-[9px]"><span className="truncate">{iface.name} <span className={iface.running ? "text-emerald-300" : "text-rose-300"}>{iface.running ? "UP" : "DOWN"}</span></span><span className="shrink-0 font-mono text-slate-400">↓ {iface.rx_bps ?? "—"} / ↑ {iface.tx_bps ?? "—"} bps</span></div>)}</div>
+                <div><p className="mb-1 text-[9px] font-semibold text-slate-400">DISCOVERED NEIGHBORS</p>{monitoring.neighbors.length ? monitoring.neighbors.map((n, i) => <p key={i} className="border-t border-white/[.05] py-1 text-[9px]">{n.identity || "Unknown"} · {n.address || n.mac_address || "—"} · {n.interface || "—"}</p>) : <p className="text-[9px] text-slate-500">Belum ada neighbor terdeteksi.</p>}</div>
+                <p className="text-[8px] text-slate-600">Collected: {new Date(monitoring.collected_at).toLocaleString("id-ID")}</p>
+              </div>}</> : <p className="mt-3 text-[10px] text-slate-500">Node manual untuk merepresentasikan perangkat/komponen tambahan.</p>}
             <button onClick={() => void removeNode(selected)} className="mt-3 flex w-full items-center justify-center gap-2 rounded border border-rose-400/20 px-3 py-2 text-[10px] text-rose-300"><Trash2 size={12}/> Remove from canvas</button>
           </> : <div className="flex min-h-[140px] flex-col items-center justify-center text-center"><Activity size={22} className="mb-2 text-slate-600"/><p className="text-xs text-slate-300">Node inspector</p><p className="mt-1 text-[9px] text-slate-500">Klik node untuk melihat status dan detail.</p></div>}
         </aside>
