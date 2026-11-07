@@ -73,6 +73,9 @@ async def _agent(agent_id: str, token: str, url_template: str, heartbeat_seconds
 async def _sample_backend_process(pid: int, samples: list[dict]):
     try:
         import psutil
+    except ImportError:
+        return
+    try:
         process = psutil.Process(pid)
         process.cpu_percent(interval=None)
         while not STOP.is_set():
@@ -81,7 +84,7 @@ async def _sample_backend_process(pid: int, samples: list[dict]):
                 "cpu_percent": process.cpu_percent(interval=None),
                 "rss_mb": round(process.memory_info().rss / 1024 / 1024, 2),
             })
-    except (ImportError, psutil.NoSuchProcess, psutil.AccessDenied):
+    except (psutil.NoSuchProcess, psutil.AccessDenied):
         return
 
 
