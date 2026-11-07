@@ -112,6 +112,8 @@ class Settings(BaseSettings):
     rate_limit_tools_execute_window_seconds: float = 60.0
     rate_limit_monitoring_limit: int = 60
     rate_limit_monitoring_window_seconds: float = 60.0
+    rate_limit_images_limit: int = 5
+    rate_limit_images_window_seconds: float = 60.0
 
     # --- CORS ---
     cors_origins: list[str] = list(DEFAULT_DEV_CORS_ORIGINS)
