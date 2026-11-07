@@ -28,10 +28,12 @@ def _get_executor() -> ThreadPoolExecutor:
 
 
 def shutdown_device_executor(wait: bool = True) -> None:
-    global _executor
+    global _executor, _global_slots, _device_slots
     executor, _executor = _executor, None
     if executor is not None:
         executor.shutdown(wait=wait, cancel_futures=True)
+    _global_slots = asyncio.Semaphore(GLOBAL_LIMIT)
+    _device_slots = {}
 _global_slots = asyncio.Semaphore(GLOBAL_LIMIT)
 _device_slots: dict[str, asyncio.Semaphore] = {}
 
