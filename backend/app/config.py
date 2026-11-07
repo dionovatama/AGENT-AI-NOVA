@@ -184,8 +184,15 @@ def validate_production_settings(config: "Settings") -> None:
     if config.app_env.strip().lower() != "production":
         return
     secret = config.jwt_secret_key or ""
-    if len(secret) < 32 or secret.lower() in {"changeme", "secret", "your-secret-key", "dev-secret"}:
-        raise RuntimeError("Production requires JWT_SECRET_KEY with at least 32 characters of high-entropy secret.")
+    lowered_secret = secret.lower()
+    weak_markers = ("changeme", "change-me", "your-secret", "your-secret-key", "password", "dev-secret", "replace-me")
+    if (
+        len(secret) < 32
+        or len(set(secret)) < 12
+        or lowered_secret in {"secret", "admin", "default"}
+        or any(marker in lowered_secret for marker in weak_markers)
+    ):
+        raise RuntimeError("Production requires a high-entropy JWT_SECRET_KEY with at least 32 characters.")
     if config.agent_require_tls is not True:
         raise RuntimeError("Production requires AGENT_REQUIRE_TLS=true.")
     origins = config.cors_origins
