@@ -106,13 +106,13 @@ class Settings(BaseSettings):
     rate_limit_auth_login_window_seconds: float = 60.0
     rate_limit_auth_register_limit: int = 3
     rate_limit_auth_register_window_seconds: float = 60.0
-    rate_limit_chat_limit: int = 10
+    rate_limit_chat_limit: int = 5
     rate_limit_chat_window_seconds: float = 60.0
     rate_limit_tools_execute_limit: int = 30
     rate_limit_tools_execute_window_seconds: float = 60.0
     rate_limit_monitoring_limit: int = 60
     rate_limit_monitoring_window_seconds: float = 60.0
-    rate_limit_images_limit: int = 5
+    rate_limit_images_limit: int = 2
     rate_limit_images_window_seconds: float = 60.0
 
     # --- CORS ---
